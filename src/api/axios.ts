@@ -8,14 +8,14 @@ const getBaseUrl = (): string => {
   if (import.meta.env.DEV) {
     return "/api/v1";
   }
-  if (envApiUrl && envApiUrl.trim() !== "") {
+  if (envApiUrl && envApiUrl.trim() !== "" && envApiUrl.trim() !== "/api/v1") {
     const trimmed = envApiUrl.trim();
     if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
       return trimmed.endsWith("/api/v1") ? trimmed : `${trimmed.replace(/\/+$/, "")}/api/v1`;
     }
     return trimmed;
   }
-  return "/api/v1";
+  return "https://pawguard-backend-dev.onrender.com/api/v1";
 };
 
 const API_BASE_URL = getBaseUrl();
@@ -25,7 +25,7 @@ const api = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
-  timeout: 15000,
+  timeout: 45000,
   withCredentials: true,
 });
 

@@ -14,16 +14,16 @@ type CardFilter = "all" | "review" | "schedule" | "approve" | "completed" | "pen
 const StatusBadge = ({ status }: { status: string }) => {
   const s = String(status || "").toLowerCase();
   let bg = "#EFF6FF";
-  let color = "#2563EB";
+  let color = "#1E3A8A";
   let label = s.toUpperCase();
 
   if (s === "submitted") {
     bg = "#EFF6FF";
-    color = "#2563EB";
+    color = "#1E3A8A";
     label = "Submitted";
   } else if (s === "screening") {
     bg = "#F3E8FF";
-    color = "#7E22CE";
+    color = "#1E3A8A";
     label = "Screening";
   } else if (s === "interview") {
     bg = "#FEF3C7";
@@ -31,11 +31,11 @@ const StatusBadge = ({ status }: { status: string }) => {
     label = "Interview";
   } else if (s === "home_check") {
     bg = "#E0E7FF";
-    color = "#4338CA";
+    color = "#1E3A8A";
     label = "Home Visit";
   } else if (s === "approved" || s === "adoptable") {
     bg = "#D1FAE5";
-    color = "#047857";
+    color = "#15803D";
     label = s === "adoptable" ? "Adoptable" : "Approved";
   } else if (s === "completed") {
     bg = "#DCFCE7";
@@ -172,7 +172,7 @@ const AdoptionCoordinatorDashboard = () => {
       title: "Adoptions Completed",
       value: loading ? "..." : String(completedCount),
       trend: cardFilter === "completed" ? "★ ACTIVE FILTER" : "YoY Progress",
-      color: cardFilter === "completed" ? "#047857" : "#10B981",
+      color: cardFilter === "completed" ? "#15803D" : "#16A34A",
       icon: <FaHeart />,
       onClick: () => handleCardClick("completed"),
     },
@@ -188,7 +188,7 @@ const AdoptionCoordinatorDashboard = () => {
       title: "Home Visits Scheduled",
       value: loading ? "..." : String(homeVisitsCount),
       trend: cardFilter === "schedule" ? "★ ACTIVE FILTER" : "Active Visits",
-      color: cardFilter === "schedule" ? "#1E40AF" : "#2563EB",
+      color: cardFilter === "schedule" ? "#1E3A8A" : "#1E3A8A",
       icon: <FaUserCheck />,
       onClick: () => handleCardClick("schedule"),
     },
@@ -196,7 +196,7 @@ const AdoptionCoordinatorDashboard = () => {
       title: "Adoptable Dogs",
       value: loading ? "..." : String(adoptableCountFinal),
       trend: cardFilter === "adoptable_dogs" ? "★ ACTIVE FILTER" : "Ready",
-      color: cardFilter === "adoptable_dogs" ? "#4338CA" : "#6366F1",
+      color: cardFilter === "adoptable_dogs" ? "#1E3A8A" : "#1E3A8A",
       icon: <FaFileContract />,
       onClick: () => handleCardClick("adoptable_dogs"),
     },
@@ -312,14 +312,14 @@ const AdoptionCoordinatorDashboard = () => {
           icon={<FaHeart />}
           title="Approve Adoption"
           subtitle={cardFilter === "approve" ? "★ FILTER ACTIVE (Click to Clear)" : "Finalize legal paperwork & issuance"}
-          color={cardFilter === "approve" ? "#EF4444" : "#10B981"}
+          color={cardFilter === "approve" ? "#EF4444" : "#16A34A"}
           onClick={() => handleCardClick("approve")}
         />
         <QuickActionCard
           icon={<FaUserCheck />}
           title="Schedule Home Verification"
           subtitle={cardFilter === "schedule" ? "★ FILTER ACTIVE (Click to Clear)" : "Assign field coordinator for inspection"}
-          color={cardFilter === "schedule" ? "#EF4444" : "#2563EB"}
+          color={cardFilter === "schedule" ? "#EF4444" : "#1E3A8A"}
           onClick={() => handleCardClick("schedule")}
         />
         <QuickActionCard
@@ -337,7 +337,7 @@ const AdoptionCoordinatorDashboard = () => {
           <h3 style={{ margin: 0, color: "#0F172A", fontSize: "16px", fontWeight: 700 }}>
             Adoption Applications Queue &amp; Verification Progress
           </h3>
-          {loading && <span style={{ fontSize: "13px", color: "#2563EB", fontWeight: 600 }}>Loading data...</span>}
+          {loading && <span style={{ fontSize: "13px", color: "#1E3A8A", fontWeight: 600 }}>Loading data...</span>}
         </div>
 
         <DataTable

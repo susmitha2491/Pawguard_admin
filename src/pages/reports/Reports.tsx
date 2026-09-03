@@ -157,12 +157,31 @@ const Reports = () => {
       // 2. Load Rescue Data (if Rescue Role, Super Admin)
       if (isRescueRole || isSuperAdmin) {
         try {
+          const currentUser = getCurrentUser();
+          const currentCentreId = (currentUser as any)?.rescue_centre_id || (currentUser as any)?.rescue_center_id;
+          const queryParams: Record<string, any> = { page: 1, page_size: 100 };
+          if (userRole === "rescue_centre_admin" && currentCentreId) {
+            queryParams.rescue_centre_id = currentCentreId;
+          }
+
           const [casesRes, dispatchRes] = await Promise.allSettled([
-            rescueService.getRescueCases({ page: 1, page_size: 100 }),
-            rescueService.getDispatches({ page: 1, page_size: 100 }),
+            rescueService.getRescueCases(queryParams),
+            rescueService.getDispatches(queryParams),
           ]);
-          const casesList = casesRes.status === "fulfilled" ? (Array.isArray(casesRes.value?.data) ? casesRes.value.data : Array.isArray(casesRes.value) ? casesRes.value : []) : [];
-          const dispatchList = dispatchRes.status === "fulfilled" ? (Array.isArray(dispatchRes.value?.data) ? dispatchRes.value.data : Array.isArray(dispatchRes.value) ? dispatchRes.value : []) : [];
+          let casesList = casesRes.status === "fulfilled" ? (Array.isArray(casesRes.value?.data) ? casesRes.value.data : Array.isArray(casesRes.value) ? casesRes.value : []) : [];
+          let dispatchList = dispatchRes.status === "fulfilled" ? (Array.isArray(dispatchRes.value?.data) ? dispatchRes.value.data : Array.isArray(dispatchRes.value) ? dispatchRes.value : []) : [];
+
+          if (userRole === "rescue_centre_admin" && currentCentreId) {
+            casesList = casesList.filter((c: any) => {
+              const cCentreId = c.rescue_centre_id || c.rescue_center_id || c.organization_id;
+              return !cCentreId || String(cCentreId) === String(currentCentreId);
+            });
+            dispatchList = dispatchList.filter((d: any) => {
+              const dCentreId = d.rescue_centre_id || d.rescue_center_id || d.organization_id;
+              return !dCentreId || String(dCentreId) === String(currentCentreId);
+            });
+          }
+
           setRescueCases(casesList);
           setDispatches(dispatchList);
         } catch (e) {
@@ -306,7 +325,7 @@ const Reports = () => {
           setFosterProfiles(rawFosters);
 
           const activeProfiles = rawFosters.filter((f: any) => Number(f.active_count || 0) > 0);
-          let placementList: any[] = [];
+          const placementList: any[] = [];
           if (activeProfiles.length > 0) {
             const pResults = await Promise.allSettled(
               activeProfiles.map((f: any) => fosterService.getProfilePlacements(f.id))

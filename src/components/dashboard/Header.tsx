@@ -228,7 +228,7 @@ const Header = ({
                 style={{ width: "36px", height: "36px", borderRadius: "50%", objectFit: "cover" }}
               />
             ) : (
-              <FaUserCircle size={36} style={{ color: "#2563EB" }} />
+              <FaUserCircle size={36} style={{ color: "#1E3A8A" }} />
             )}
 
             <div style={{ display: "flex", flexDirection: "column" }}>
@@ -239,7 +239,7 @@ const Header = ({
                 style={{
                   fontSize: "11px",
                   fontWeight: 600,
-                  color: "#2563EB",
+                  color: "#1E3A8A",
                   background: "#EFF6FF",
                   padding: "1px 6px",
                   borderRadius: "4px",
@@ -259,12 +259,12 @@ const Header = ({
             style={{
               background: "#FEF2F2",
               border: "1px solid #FCA5A5",
-              borderRadius: "10px",
+              borderRadius: "8px",
               padding: "8px 12px",
               display: "flex",
               alignItems: "center",
               gap: "6px",
-              color: "#EF4444",
+              color: "#DC2626",
               fontSize: "13px",
               fontWeight: 600,
               cursor: "pointer",
@@ -281,10 +281,10 @@ const Header = ({
       <Modal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} title="Authenticated Staff Profile">
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "16px", padding: "16px", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
-            <FaUserCircle size={48} style={{ color: "#2563EB" }} />
+            <FaUserCircle size={48} style={{ color: "#1E3A8A" }} />
             <div>
               <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 800, color: "#0F172A" }}>{displayName}</h3>
-              <span style={{ fontSize: "12px", color: "#2563EB", fontWeight: 700, background: "#EFF6FF", padding: "2px 8px", borderRadius: "4px", marginTop: "4px", display: "inline-block" }}>
+              <span style={{ fontSize: "12px", color: "#1E3A8A", fontWeight: 700, background: "#EFF6FF", padding: "2px 8px", borderRadius: "4px", marginTop: "4px", display: "inline-block" }}>
                 {roleTitle}
               </span>
             </div>
@@ -298,7 +298,7 @@ const Header = ({
               <FaShieldAlt style={{ color: "#64748B" }} /> <strong>Internal Role Code:</strong> {currentRole || "super_admin"}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#475569" }}>
-              <FaUserCheck style={{ color: "#10B981" }} /> <strong>Session Status:</strong> Active JWT Authenticated Session
+              <FaUserCheck style={{ color: "#16A34A" }} /> <strong>Session Status:</strong> Active JWT Authenticated Session
             </div>
           </div>
 
@@ -311,7 +311,7 @@ const Header = ({
             </button>
             <button
               onClick={handleLogout}
-              style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#EF4444", color: "#FFFFFF", cursor: "pointer", fontWeight: 600, display: "flex", alignItems: "center", gap: "6px" }}
+              style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#DC2626", color: "#FFFFFF", cursor: "pointer", fontWeight: 600, display: "flex", alignItems: "center", gap: "6px" }}
             >
               <FaSignOutAlt /> Sign Out
             </button>

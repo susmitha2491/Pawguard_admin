@@ -63,8 +63,7 @@ export const Modal: React.FC<ModalProps> = ({
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: "rgba(15, 23, 42, 0.65)",
-        backdropFilter: "blur(4px)",
+        backgroundColor: "rgba(15, 23, 42, 0.6)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -78,13 +77,13 @@ export const Modal: React.FC<ModalProps> = ({
       <div
         style={{
           background: "#FFFFFF",
-          borderRadius: "16px",
+          borderRadius: "12px",
           width: "min(100%, calc(100vw - 32px))",
           maxWidth: resolvedMaxWidth,
           maxHeight: "calc(100vh - 48px)",
           display: "flex",
           flexDirection: "column",
-          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+          boxShadow: "0 10px 25px -5px rgba(15, 23, 42, 0.15), 0 8px 10px -6px rgba(15, 23, 42, 0.08)",
           overflow: "hidden",
           border: "1px solid #E2E8F0",
         }}

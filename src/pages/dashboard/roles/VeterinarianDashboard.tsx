@@ -817,7 +817,7 @@ const VeterinarianDashboard = () => {
       title: "Appointments Today",
       value: loading ? "..." : String(todayApptsCount),
       trend: `${pendingTodayCount} Pending / ${confirmedTodayCount} Confirmed`,
-      color: "#2563EB",
+      color: "#1E3A8A",
       icon: <FaCalendarAlt />,
       onClick: () => {
         setStatusFilter("all");
@@ -829,7 +829,7 @@ const VeterinarianDashboard = () => {
       title: "Critical Medical Cases",
       value: loading ? "..." : String(criticalCasesCount),
       trend: "High Priority Medical Watch",
-      color: "#EF4444",
+      color: "#DC2626",
       icon: <FaExclamationCircle />,
       onClick: () => {
         const el = document.getElementById("icu-queue");
@@ -848,7 +848,7 @@ const VeterinarianDashboard = () => {
       title: "Medically Cleared Dogs",
       value: loading ? "..." : String(clearedDogsCount),
       trend: "Ready for Adoption",
-      color: "#10B981",
+      color: "#16A34A",
       icon: <FaFileMedical />,
       onClick: () => navigate("/medical-records"),
     },
@@ -892,7 +892,7 @@ const VeterinarianDashboard = () => {
       render: (_: unknown, r: Row) => {
         const src = pick(r, "source", "channel", "platform", "booking_source");
         return (
-          <span style={badgeStyle("#EFF6FF", "#1D4ED8")}>{String(src || "PUBLIC_WEB").toUpperCase()}</span>
+          <span style={badgeStyle("#EFF6FF", "#1E3A8A")}>{String(src || "PUBLIC_WEB").toUpperCase()}</span>
         );
       },
     },
@@ -978,7 +978,7 @@ const VeterinarianDashboard = () => {
         const isCleared = medStatus.toLowerCase().includes("clear") || Boolean(r.is_fit_for_adoption || r.is_adoptable);
         const label = isCleared ? "MEDICALLY CLEARED" : (medStatus || "PENDING CHECK").toUpperCase();
         return (
-          <span style={badgeStyle(isCleared ? "#ECFDF5" : "#EFF6FF", isCleared ? "#047857" : "#1D4ED8")}>
+          <span style={badgeStyle(isCleared ? "#ECFDF5" : "#EFF6FF", isCleared ? "#15803D" : "#1E3A8A")}>
             {label}
           </span>
         );
@@ -990,7 +990,7 @@ const VeterinarianDashboard = () => {
       render: (_: unknown, r: Row) => {
         const isAdoptable = Boolean(r.is_fit_for_adoption || r.is_adoptable || str(r.medical_status).toLowerCase().includes("clear"));
         return (
-          <span style={badgeStyle(isAdoptable ? "#ECFDF5" : "#FFFBEB", isAdoptable ? "#047857" : "#B45309")}>
+          <span style={badgeStyle(isAdoptable ? "#ECFDF5" : "#FFFBEB", isAdoptable ? "#15803D" : "#B45309")}>
             {isAdoptable ? "READY FOR ADOPTION" : "PENDING CLEARANCE"}
           </span>
         );
@@ -1026,10 +1026,10 @@ const VeterinarianDashboard = () => {
 
       {/* Quick Action Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", marginBottom: "20px" }}>
-        <QuickActionCard icon={<FaStethoscope />} title="Medical Records" subtitle="Exams & Diagnoses" color="#2563EB" onClick={() => navigate("/medical-records")} />
-        <QuickActionCard icon={<FaSyringe />} title="Vaccination Suite" subtitle="Booster Reminders" color="#10B981" onClick={() => navigate("/medical-reminders")} />
-        <QuickActionCard icon={<FaFileMedical />} title="Issue Certificate" subtitle="Medical clearance" color="#6366F1" onClick={() => navigate("/certificates")} />
-        <QuickActionCard icon={<FaUserMd />} title="Vet Directory" subtitle="Browse Partner Clinics" color="#8B5CF6" onClick={() => navigate("/vet-directory")} />
+        <QuickActionCard icon={<FaStethoscope />} title="Medical Records" subtitle="Exams & Diagnoses" color="#1E3A8A" onClick={() => navigate("/medical-records")} />
+        <QuickActionCard icon={<FaSyringe />} title="Vaccination Suite" subtitle="Booster Reminders" color="#16A34A" onClick={() => navigate("/medical-reminders")} />
+        <QuickActionCard icon={<FaFileMedical />} title="Issue Certificate" subtitle="Medical clearance" color="#1E3A8A" onClick={() => navigate("/certificates")} />
+        <QuickActionCard icon={<FaUserMd />} title="Vet Directory" subtitle="Browse Partner Clinics" color="#1E3A8A" onClick={() => navigate("/vet-directory")} />
       </div>
 
       {/* Headline Stats */}
@@ -1050,9 +1050,9 @@ const VeterinarianDashboard = () => {
               style={{
                 padding: "9px 16px",
                 borderRadius: "10px",
-                border: activeSourceTab === "shelter_requests" ? "2px solid #2563EB" : "1px solid #CBD5E1",
+                border: activeSourceTab === "shelter_requests" ? "2px solid #1E3A8A" : "1px solid #CBD5E1",
                 background: activeSourceTab === "shelter_requests" ? "#EFF6FF" : "#FFFFFF",
-                color: activeSourceTab === "shelter_requests" ? "#1D4ED8" : "#475569",
+                color: activeSourceTab === "shelter_requests" ? "#1E3A8A" : "#475569",
                 fontWeight: 700,
                 fontSize: "13px",
                 cursor: "pointer",
@@ -1070,9 +1070,9 @@ const VeterinarianDashboard = () => {
               style={{
                 padding: "9px 16px",
                 borderRadius: "10px",
-                border: activeSourceTab === "public_appts" ? "2px solid #2563EB" : "1px solid #CBD5E1",
+                border: activeSourceTab === "public_appts" ? "2px solid #1E3A8A" : "1px solid #CBD5E1",
                 background: activeSourceTab === "public_appts" ? "#EFF6FF" : "#FFFFFF",
-                color: activeSourceTab === "public_appts" ? "#1D4ED8" : "#475569",
+                color: activeSourceTab === "public_appts" ? "#1E3A8A" : "#475569",
                 fontWeight: 700,
                 fontSize: "13px",
                 cursor: "pointer",
@@ -1159,7 +1159,7 @@ const VeterinarianDashboard = () => {
                     type="button"
                     title="View Dog Master Profile"
                     onClick={() => handleOpenDogProfile(row)}
-                    style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #2563EB", background: "#EFF6FF", color: "#1D4ED8", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                    style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #1E3A8A", background: "#EFF6FF", color: "#1E3A8A", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
                   >
                     <FaEye /> View Dog
                   </button>
@@ -1168,14 +1168,14 @@ const VeterinarianDashboard = () => {
                     type="button"
                     title="Perform Examination & Record Findings"
                     onClick={() => handleOpenConsultation(row)}
-                    style={{ padding: "6px 10px", borderRadius: "6px", border: "none", background: "#2563EB", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                    style={{ padding: "6px 10px", borderRadius: "6px", border: "none", background: "#1E3A8A", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
                   >
                     <FaStethoscope /> {isCleared ? "Re-examine" : "Start Exam"}
                   </button>
 
                   {isCleared ? (
                     <span
-                      style={{ padding: "6px 10px", borderRadius: "6px", background: "#ECFDF5", color: "#047857", fontSize: "12px", fontWeight: 800, border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      style={{ padding: "6px 10px", borderRadius: "6px", background: "#ECFDF5", color: "#15803D", fontSize: "12px", fontWeight: 800, border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: "4px" }}
                     >
                       <FaCheckCircle /> Cleared
                     </span>
@@ -1185,7 +1185,7 @@ const VeterinarianDashboard = () => {
                       title="Issue Medical Clearance & Adoption Readiness"
                       onClick={() => handleIssueMedicalClearance(row)}
                       disabled={isClearingAdoption}
-                      style={{ padding: "6px 10px", borderRadius: "6px", border: "none", background: "#10B981", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      style={{ padding: "6px 10px", borderRadius: "6px", border: "none", background: "#16A34A", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
                     >
                       <FaCheckCircle /> Issue Clearance
                     </button>
@@ -1244,7 +1244,7 @@ const VeterinarianDashboard = () => {
                       type="button"
                       onClick={() => handleConfirm(row)}
                       disabled={confirmingId === id}
-                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #10B981", background: "#ECFDF5", color: "#047857", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #16A34A", background: "#ECFDF5", color: "#15803D", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
                     >
                       <FaCheck /> Confirm
                     </button>
@@ -1265,7 +1265,7 @@ const VeterinarianDashboard = () => {
                     <button
                       type="button"
                       onClick={() => handleOpenConsultation(row)}
-                      style={{ padding: "6px 12px", borderRadius: "6px", border: "none", background: "#2563EB", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      style={{ padding: "6px 12px", borderRadius: "6px", border: "none", background: "#1E3A8A", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                     >
                       <FaStethoscope /> Start Consultation
                     </button>
@@ -1301,7 +1301,7 @@ const VeterinarianDashboard = () => {
           <button
             type="button"
             onClick={() => navigate("/medical-records")}
-            style={{ padding: "6px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", color: "#2563EB", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+            style={{ padding: "6px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", color: "#1E3A8A", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
           >
             Full Medical Archive &rarr;
           </button>
@@ -1393,7 +1393,7 @@ const VeterinarianDashboard = () => {
                     </div>
                     <div>
                       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "4px" }}>
-                        <span style={{ padding: "2px 8px", borderRadius: "999px", fontSize: "11px", fontWeight: 700, background: "#EFF6FF", color: "#1D4ED8" }}>
+                        <span style={{ padding: "2px 8px", borderRadius: "999px", fontSize: "11px", fontWeight: 700, background: "#EFF6FF", color: "#1E3A8A" }}>
                           {displaySource}
                         </span>
                       </div>
@@ -1505,7 +1505,7 @@ const VeterinarianDashboard = () => {
                   <button
                     type="button"
                     onClick={() => setShowTreatmentSection(!showTreatmentSection)}
-                    style={{ padding: "6px 12px", borderRadius: "6px", border: showTreatmentSection ? "1px solid #2563EB" : "1px solid #CBD5E1", background: showTreatmentSection ? "#EFF6FF" : "#FFF", color: showTreatmentSection ? "#1D4ED8" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+                    style={{ padding: "6px 12px", borderRadius: "6px", border: showTreatmentSection ? "1px solid #1E3A8A" : "1px solid #CBD5E1", background: showTreatmentSection ? "#EFF6FF" : "#FFF", color: showTreatmentSection ? "#1E3A8A" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
                   >
                     {showTreatmentSection ? "✓ Treatment/Surgery" : "+ Treatment / Surgery"}
                   </button>
@@ -1513,7 +1513,7 @@ const VeterinarianDashboard = () => {
                   <button
                     type="button"
                     onClick={() => setShowPrescriptionSection(!showPrescriptionSection)}
-                    style={{ padding: "6px 12px", borderRadius: "6px", border: showPrescriptionSection ? "1px solid #2563EB" : "1px solid #CBD5E1", background: showPrescriptionSection ? "#EFF6FF" : "#FFF", color: showPrescriptionSection ? "#1D4ED8" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+                    style={{ padding: "6px 12px", borderRadius: "6px", border: showPrescriptionSection ? "1px solid #1E3A8A" : "1px solid #CBD5E1", background: showPrescriptionSection ? "#EFF6FF" : "#FFF", color: showPrescriptionSection ? "#1E3A8A" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
                   >
                     {showPrescriptionSection ? "✓ Prescription" : "+ Prescription"}
                   </button>
@@ -1521,7 +1521,7 @@ const VeterinarianDashboard = () => {
                   <button
                     type="button"
                     onClick={() => setShowVaccineSection(!showVaccineSection)}
-                    style={{ padding: "6px 12px", borderRadius: "6px", border: showVaccineSection ? "1px solid #2563EB" : "1px solid #CBD5E1", background: showVaccineSection ? "#EFF6FF" : "#FFF", color: showVaccineSection ? "#1D4ED8" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+                    style={{ padding: "6px 12px", borderRadius: "6px", border: showVaccineSection ? "1px solid #1E3A8A" : "1px solid #CBD5E1", background: showVaccineSection ? "#EFF6FF" : "#FFF", color: showVaccineSection ? "#1E3A8A" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
                   >
                     {showVaccineSection ? "✓ Vaccination" : "+ Vaccination"}
                   </button>
@@ -1529,7 +1529,7 @@ const VeterinarianDashboard = () => {
                   <button
                     type="button"
                     onClick={() => setShowFollowupSection(!showFollowupSection)}
-                    style={{ padding: "6px 12px", borderRadius: "6px", border: showFollowupSection ? "1px solid #2563EB" : "1px solid #CBD5E1", background: showFollowupSection ? "#EFF6FF" : "#FFF", color: showFollowupSection ? "#1D4ED8" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+                    style={{ padding: "6px 12px", borderRadius: "6px", border: showFollowupSection ? "1px solid #1E3A8A" : "1px solid #CBD5E1", background: showFollowupSection ? "#EFF6FF" : "#FFF", color: showFollowupSection ? "#1E3A8A" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
                   >
                     {showFollowupSection ? "✓ Follow-Up" : "+ Schedule Follow-Up"}
                   </button>
@@ -1537,7 +1537,7 @@ const VeterinarianDashboard = () => {
                   <button
                     type="button"
                     onClick={() => setShowHistorySection(!showHistorySection)}
-                    style={{ padding: "6px 12px", borderRadius: "6px", border: showHistorySection ? "1px solid #2563EB" : "1px solid #CBD5E1", background: showHistorySection ? "#EFF6FF" : "#FFF", color: showHistorySection ? "#1D4ED8" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+                    style={{ padding: "6px 12px", borderRadius: "6px", border: showHistorySection ? "1px solid #1E3A8A" : "1px solid #CBD5E1", background: showHistorySection ? "#EFF6FF" : "#FFF", color: showHistorySection ? "#1E3A8A" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
                   >
                     {showHistorySection ? "✓ Medical History" : `📋 History (${petHistory.length})`}
                   </button>
@@ -1545,7 +1545,7 @@ const VeterinarianDashboard = () => {
                   <button
                     type="button"
                     onClick={() => setShowAttachmentSection(!showAttachmentSection)}
-                    style={{ padding: "6px 12px", borderRadius: "6px", border: showAttachmentSection ? "1px solid #2563EB" : "1px solid #CBD5E1", background: showAttachmentSection ? "#EFF6FF" : "#FFF", color: showAttachmentSection ? "#1D4ED8" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+                    style={{ padding: "6px 12px", borderRadius: "6px", border: showAttachmentSection ? "1px solid #1E3A8A" : "1px solid #CBD5E1", background: showAttachmentSection ? "#EFF6FF" : "#FFF", color: showAttachmentSection ? "#1E3A8A" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
                   >
                     {showAttachmentSection ? "✓ Lab Attachment" : "📎 Attach Document"}
                   </button>
@@ -1725,7 +1725,7 @@ const VeterinarianDashboard = () => {
                 <div style={{ background: "#FFF", border: "1px solid #CBD5E1", borderRadius: "10px", padding: "14px", maxHeight: "220px", overflowY: "auto" }}>
                   <div style={{ fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "8px" }}>📋 Patient Prior Medical Records</div>
                   {historyLoading ? (
-                    <div style={{ padding: "12px", textAlign: "center", color: "#2563EB", fontSize: "12px" }}>Loading patient medical history...</div>
+                    <div style={{ padding: "12px", textAlign: "center", color: "#1E3A8A", fontSize: "12px" }}>Loading patient medical history...</div>
                   ) : petHistory.length === 0 ? (
                     <div style={{ padding: "12px", background: "#F8FAFC", borderRadius: "6px", textAlign: "center", color: "#64748B", fontSize: "12px" }}>
                       No prior medical records logged for this pet.
@@ -1771,7 +1771,7 @@ const VeterinarianDashboard = () => {
                     style={{ width: "100%", padding: "6px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "12px" }}
                   />
                   {consultationForm.attachmentUrl && (
-                    <div style={{ fontSize: "12px", color: "#10B981", fontWeight: 700, marginTop: "4px" }}>
+                    <div style={{ fontSize: "12px", color: "#16A34A", fontWeight: 700, marginTop: "4px" }}>
                       ✓ Document attached: {consultationForm.attachmentUrl.slice(0, 45)}...
                     </div>
                   )}
@@ -1791,7 +1791,7 @@ const VeterinarianDashboard = () => {
                 <button
                   type="submit"
                   disabled={isSubmittingConsultation}
-                  style={{ padding: "10px 22px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: isSubmittingConsultation ? "not-allowed" : "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  style={{ padding: "10px 22px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: isSubmittingConsultation ? "not-allowed" : "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                 >
                   {isSubmittingConsultation ? "Saving..." : "✓ Save & Complete Examination"}
                 </button>
@@ -1819,7 +1819,7 @@ const VeterinarianDashboard = () => {
                 <div style={{ fontSize: "12px", color: "#64748B", fontFamily: "monospace" }}>Reg Number: {str(selectedDogMaster.registration_number || "-")}</div>
                 <div style={{ fontSize: "12px", color: "#475569", fontFamily: "monospace", marginTop: "2px" }}>Dog Master ID: {str(selectedDogMaster.id || selectedDogMaster.dog_id || "-")}</div>
               </div>
-              <span style={{ padding: "6px 12px", borderRadius: "999px", fontSize: "12px", fontWeight: 800, background: "#ECFDF5", color: "#047857", textTransform: "uppercase" }}>
+              <span style={{ padding: "6px 12px", borderRadius: "999px", fontSize: "12px", fontWeight: 800, background: "#ECFDF5", color: "#15803D", textTransform: "uppercase" }}>
                 {str(selectedDogMaster.status || "SHELTER")}
               </span>
             </div>
@@ -1843,11 +1843,11 @@ const VeterinarianDashboard = () => {
               </div>
               <div style={{ background: "#FFF", padding: "10px 12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
                 <strong style={{ color: "#64748B" }}>Cage / Kennel Assignment:</strong>
-                <div style={{ fontWeight: 700, color: "#2563EB" }}>{str(selectedDogMaster.kennel_assignment || "Unassigned")}</div>
+                <div style={{ fontWeight: 700, color: "#1E3A8A" }}>{str(selectedDogMaster.kennel_assignment || "Unassigned")}</div>
               </div>
               <div style={{ background: "#FFF", padding: "10px 12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
                 <strong style={{ color: "#64748B" }}>Medical Status:</strong>
-                <div style={{ fontWeight: 700, color: "#059669" }}>{str(selectedDogMaster.medical_status || "Pending Check")}</div>
+                <div style={{ fontWeight: 700, color: "#15803D" }}>{str(selectedDogMaster.medical_status || "Pending Check")}</div>
               </div>
             </div>
 
@@ -1889,7 +1889,7 @@ const VeterinarianDashboard = () => {
             <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", marginTop: "8px", flexWrap: "wrap" }}>
               {selectedDogMaster.is_fit_for_adoption || selectedDogMaster.is_adoptable || str(selectedDogMaster.medical_status).toLowerCase().includes("clear") ? (
                 <span
-                  style={{ padding: "9px 16px", borderRadius: "8px", background: "#ECFDF5", color: "#047857", fontWeight: 800, fontSize: "13px", border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  style={{ padding: "9px 16px", borderRadius: "8px", background: "#ECFDF5", color: "#15803D", fontWeight: 800, fontSize: "13px", border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: "6px" }}
                 >
                   <FaCheckCircle /> Medically Cleared & Ready for Adoption
                 </span>
@@ -1898,7 +1898,7 @@ const VeterinarianDashboard = () => {
                   type="button"
                   disabled={isClearingAdoption}
                   onClick={() => handleIssueMedicalClearance(selectedDogMaster)}
-                  style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                 >
                   <FaCheckCircle /> {isClearingAdoption ? "Clearing..." : "Issue Medical Clearance & Adoption Fitness"}
                 </button>
@@ -1911,7 +1911,7 @@ const VeterinarianDashboard = () => {
                     setIsDogProfileOpen(false);
                     handleOpenConsultation({ pet_id: selectedDogMaster.id || selectedDogMaster.dog_id, reason: selectedDogMaster.medical_status || "Shelter Exam" });
                   }}
-                  style={{ padding: "9px 14px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  style={{ padding: "9px 14px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                 >
                   <FaStethoscope /> Perform Examination
                 </button>
@@ -1987,7 +1987,7 @@ const VeterinarianDashboard = () => {
                   </div>
                   <div>
                     <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "6px" }}>
-                      <span style={{ padding: "4px 10px", borderRadius: "999px", fontSize: "12px", fontWeight: 700, background: "#EFF6FF", color: "#2563EB", border: "1px solid #BFDBFE" }}>
+                      <span style={{ padding: "4px 10px", borderRadius: "999px", fontSize: "12px", fontWeight: 700, background: "#EFF6FF", color: "#1E3A8A", border: "1px solid #BFDBFE" }}>
                         {category}
                       </span>
                     </div>
@@ -2015,7 +2015,7 @@ const VeterinarianDashboard = () => {
                     <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", marginBottom: "4px" }}>
                       Medical Status
                     </div>
-                    <div style={{ fontSize: "14px", fontWeight: 700, color: medStatus.toLowerCase().includes("clear") ? "#059669" : "#2563EB", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <div style={{ fontSize: "14px", fontWeight: 700, color: medStatus.toLowerCase().includes("clear") ? "#15803D" : "#1E3A8A", display: "flex", alignItems: "center", gap: "6px" }}>
                       <FaHeartbeat /> {medStatus}
                     </div>
                   </div>
@@ -2141,7 +2141,7 @@ const VeterinarianDashboard = () => {
                       <span style={{ padding: "4px 10px", borderRadius: "999px", fontSize: "12px", fontWeight: 700, background: priorityStr.includes("HIGH") || priorityStr.includes("URGENT") ? "#FEF2F2" : "#F1F5F9", color: priorityStr.includes("HIGH") || priorityStr.includes("URGENT") ? "#DC2626" : "#475569" }}>
                         Priority: {priorityStr}
                       </span>
-                      <span style={{ padding: "4px 10px", borderRadius: "999px", fontSize: "12px", fontWeight: 700, background: isCleared ? "#ECFDF5" : "#EFF6FF", color: isCleared ? "#047857" : "#1D4ED8" }}>
+                      <span style={{ padding: "4px 10px", borderRadius: "999px", fontSize: "12px", fontWeight: 700, background: isCleared ? "#ECFDF5" : "#EFF6FF", color: isCleared ? "#15803D" : "#1E3A8A" }}>
                         {isCleared ? "MEDICALLY CLEARED" : medStatus.toUpperCase()}
                       </span>
                     </div>
@@ -2172,7 +2172,7 @@ const VeterinarianDashboard = () => {
                     <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", marginBottom: "4px" }}>
                       Requested Examination / Check-up
                     </div>
-                    <div style={{ fontSize: "14px", fontWeight: 700, color: "#2563EB" }}>
+                    <div style={{ fontSize: "14px", fontWeight: 700, color: "#1E3A8A" }}>
                       {requestedExam}
                     </div>
                   </div>
@@ -2221,7 +2221,7 @@ const VeterinarianDashboard = () => {
                       setSelectedShelterRequest(null);
                       if (targetRecord) handleOpenConsultation(targetRecord);
                     }}
-                    style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <FaStethoscope /> Perform Examination &amp; Record Findings
                   </button>
@@ -2236,7 +2236,7 @@ const VeterinarianDashboard = () => {
                           setSelectedShelterRequest(null);
                           handleIssueMedicalClearance(targetRecord);
                         }}
-                        style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                        style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                       >
                         <FaCheckCircle /> Issue Medical Clearance
                       </button>
@@ -2334,7 +2334,7 @@ const VeterinarianDashboard = () => {
                     <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A" }}>
                       {clinicStr}
                     </div>
-                    <div style={{ fontSize: "12px", color: "#2563EB", fontWeight: 600, marginTop: "4px" }}>
+                    <div style={{ fontSize: "12px", color: "#1E3A8A", fontWeight: 600, marginTop: "4px" }}>
                       Vet: {vetStr}
                     </div>
                   </div>
@@ -2347,7 +2347,7 @@ const VeterinarianDashboard = () => {
                       Reason for Visit
                     </div>
                     {source && (
-                      <span style={{ padding: "2px 8px", borderRadius: "999px", fontSize: "11px", fontWeight: 700, background: "#EFF6FF", color: "#1D4ED8" }}>
+                      <span style={{ padding: "2px 8px", borderRadius: "999px", fontSize: "11px", fontWeight: 700, background: "#EFF6FF", color: "#1E3A8A" }}>
                         Channel: {source.toUpperCase()}
                       </span>
                     )}
@@ -2378,7 +2378,7 @@ const VeterinarianDashboard = () => {
                       setSelectedPublicAppt(null);
                       if (targetRecord) handleOpenConsultation(targetRecord);
                     }}
-                    style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <FaStethoscope /> Start Consultation
                   </button>
@@ -2393,7 +2393,7 @@ const VeterinarianDashboard = () => {
                           setSelectedPublicAppt(null);
                           void handleConfirm(target);
                         }}
-                        style={{ padding: "9px 16px", borderRadius: "8px", border: "1px solid #6EE7B7", background: "#FFF", color: "#047857", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                        style={{ padding: "9px 16px", borderRadius: "8px", border: "1px solid #6EE7B7", background: "#FFF", color: "#15803D", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                       >
                         <FaCheckCircle /> {confirmingId === apptId ? "Confirming..." : "Confirm Appointment"}
                       </button>

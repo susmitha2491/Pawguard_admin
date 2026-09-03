@@ -28,6 +28,7 @@ import petService from "../../services/petService";
 import vetService from "../../services/vetService";
 import { notifyDataChanged } from "../../utils/dataSync";
 import { formatDateTime } from "../../utils/dateUtils";
+import { getCurrentUserRole } from "../../utils/roleUtils";
 
 export interface FosterProfileRow {
   id: string;
@@ -59,12 +60,24 @@ const unwrapList = (v: any) =>
   Array.isArray(v) ? v : Array.isArray(v?.data) ? v.data : Array.isArray(v?.items) ? v.items : [];
 
 const FosterManagement = () => {
+  const isRescueCentreAdmin = getCurrentUserRole() === "rescue_centre_admin";
   const [activeTab, setActiveTab] = useState<"profiles" | "placements">("profiles");
   const [fosters, setFosters] = useState<FosterProfileRow[]>([]);
   const [dogs, setDogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { addToast } = useToast();
+
+  if (isRescueCentreAdmin) {
+    return (
+      <div style={{ padding: "40px 20px", textAlign: "center" }}>
+        <h2 style={{ color: "#DC2626", fontWeight: 800 }}>Access Restricted</h2>
+        <p style={{ color: "#64748B", maxWidth: "600px", margin: "12px auto" }}>
+          Foster Management is reserved for Foster Coordinators and Super Administrators. Rescue Centre Admin access is restricted to centre rescue operations, dispatch, vehicle fleet, and dog master management.
+        </p>
+      </div>
+    );
+  }
   const [searchParams] = useSearchParams();
 
   // Search & Pagination & Filtering

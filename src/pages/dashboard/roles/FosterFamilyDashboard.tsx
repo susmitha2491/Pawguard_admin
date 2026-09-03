@@ -48,9 +48,9 @@ const FosterFamilyDashboard = () => {
     : [];
 
   const stats = [
-    { title: "Fostered Pets", value: loading ? "..." : String(dashboardData?.fostered_count ?? dashboardData?.fosteredCount ?? petsList.length), trend: "Active Care", color: "#2563EB", icon: <FaPaw /> },
-    { title: "Care Duration", value: loading ? "..." : `${dashboardData?.care_duration ?? dashboardData?.careDuration ?? 0} Days`, trend: "Active", color: "#10B981", icon: <FaCalendarCheck /> },
-    { title: "Next Vet Check", value: loading ? "..." : String(dashboardData?.next_vet_check ?? dashboardData?.nextVetCheck ?? "Scheduled"), trend: "Veterinary", color: "#6366F1", icon: <FaStethoscope /> },
+    { title: "Fostered Pets", value: loading ? "..." : String(dashboardData?.fostered_count ?? dashboardData?.fosteredCount ?? petsList.length), trend: "Active Care", color: "#1E3A8A", icon: <FaPaw /> },
+    { title: "Care Duration", value: loading ? "..." : `${dashboardData?.care_duration ?? dashboardData?.careDuration ?? 0} Days`, trend: "Active", color: "#16A34A", icon: <FaCalendarCheck /> },
+    { title: "Next Vet Check", value: loading ? "..." : String(dashboardData?.next_vet_check ?? dashboardData?.nextVetCheck ?? "Scheduled"), trend: "Veterinary", color: "#1E3A8A", icon: <FaStethoscope /> },
   ];
 
   const columns = [
@@ -96,8 +96,8 @@ const FosterFamilyDashboard = () => {
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", marginBottom: "20px" }}>
-        <QuickActionCard icon={<FaCamera />} title="Upload Pet Photo" subtitle="Share health update photo" color="#2563EB" onClick={() => addToast("Select pet photo from your device to upload", "info")} />
-        <QuickActionCard icon={<FaStethoscope />} title="Request Vet Appointment" subtitle="Book routine checkup" color="#10B981" onClick={() => navigate("/medical")} />
+        <QuickActionCard icon={<FaCamera />} title="Upload Pet Photo" subtitle="Share health update photo" color="#1E3A8A" onClick={() => addToast("Select pet photo from your device to upload", "info")} />
+        <QuickActionCard icon={<FaStethoscope />} title="Request Vet Appointment" subtitle="Book routine checkup" color="#16A34A" onClick={() => navigate("/medical")} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "20px" }}>
@@ -111,7 +111,7 @@ const FosterFamilyDashboard = () => {
           <h3 style={{ margin: 0, color: "#0F172A", fontSize: "16px", fontWeight: 700 }}>
             My Fostered Pet Profile & Medical Plan
           </h3>
-          {loading && <span style={{ fontSize: "13px", color: "#2563EB", fontWeight: 600 }}>Loading foster profile...</span>}
+          {loading && <span style={{ fontSize: "13px", color: "#1E3A8A", fontWeight: 600 }}>Loading foster profile...</span>}
         </div>
         <DataTable columns={columns} data={formattedPets} />
       </div>

@@ -132,10 +132,11 @@ function DataTable<T = any>({
       lower.includes("completed") ||
       lower.includes("approved") ||
       lower.includes("healthy") ||
-      lower.includes("discharged")
+      lower.includes("discharged") ||
+      lower.includes("recovered")
     ) {
-      bg = "#ECFDF5";
-      color = "#10B981";
+      bg = "#F0FDF4";
+      color = "#15803D";
     } else if (
       lower.includes("pending") ||
       lower.includes("treatment") ||
@@ -143,18 +144,19 @@ function DataTable<T = any>({
       lower.includes("assigned")
     ) {
       bg = "#FFFBEB";
-      color = "#F59E0B";
+      color = "#D97706";
     } else if (
       lower.includes("critical") ||
       lower.includes("failed") ||
       lower.includes("urgent") ||
-      lower.includes("rejected")
+      lower.includes("rejected") ||
+      lower.includes("destructive")
     ) {
       bg = "#FEF2F2";
-      color = "#EF4444";
+      color = "#DC2626";
     } else if (lower.includes("active") || lower.includes("in progress")) {
       bg = "#EFF6FF";
-      color = "#2563EB";
+      color = "#1E3A8A";
     }
 
     return (
@@ -368,7 +370,7 @@ function DataTable<T = any>({
               <tr>
                 <td
                   colSpan={actionColCount}
-                  style={{ padding: "40px", textAlign: "center", color: "#2563EB" }}
+                  style={{ padding: "40px", textAlign: "center", color: "#1E3A8A" }}
                 >
                   <div
                     style={{
@@ -376,7 +378,7 @@ function DataTable<T = any>({
                       width: "24px",
                       height: "24px",
                       border: "3px solid #EFF6FF",
-                      borderTopColor: "#2563EB",
+                      borderTopColor: "#1E3A8A",
                       borderRadius: "50%",
                       animation: "spin 0.8s linear infinite",
                     }}
@@ -409,7 +411,7 @@ function DataTable<T = any>({
                         style={{
                           padding: "6px 14px",
                           borderRadius: "6px",
-                          background: "#EF4444",
+                          background: "#DC2626",
                           color: "#FFFFFF",
                           border: "none",
                           fontSize: "12px",
@@ -538,8 +540,9 @@ function DataTable<T = any>({
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: "4px",
-                padding: "6px 12px",
+                gap: "6px",
+                padding: "8px 14px",
+                minHeight: "44px",
                 borderRadius: "8px",
                 border: "1px solid #CBD5E1",
                 background: activePage === 1 ? "#F1F5F9" : "#FFFFFF",
@@ -558,8 +561,9 @@ function DataTable<T = any>({
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: "4px",
-                padding: "6px 12px",
+                gap: "6px",
+                padding: "8px 14px",
+                minHeight: "44px",
                 borderRadius: "8px",
                 border: "1px solid #CBD5E1",
                 background: activePage === totalPages ? "#F1F5F9" : "#FFFFFF",
@@ -583,7 +587,7 @@ function DataTable<T = any>({
             setModalMode(null);
             setSelectedRow(null);
           }}
-          title={modalMode === "view" ? `View Details - ${selectedRow.name || selectedRow.id || "Record"}` : `Edit Record - ${selectedRow.name || selectedRow.id || "Record"}`}
+          title={modalMode === "view" ? `View Details - ${selectedRow.name || selectedRow.title || selectedRow.id || "Record"}` : `Edit Record - ${selectedRow.name || selectedRow.title || selectedRow.id || "Record"}`}
           maxWidth="600px"
           footer={
             modalMode === "view" ? (
@@ -593,7 +597,7 @@ function DataTable<T = any>({
                     <button
                       onClick={handleStartEdit}
                       style={{
-                        background: "#2563EB",
+                        background: "#1E3A8A",
                         color: "#FFFFFF",
                         border: "none",
                         padding: "9px 18px",
@@ -613,7 +617,7 @@ function DataTable<T = any>({
                     <button
                       onClick={() => setIsDeleteConfirmOpen(true)}
                       style={{
-                        background: "#EF4444",
+                        background: "#DC2626",
                         color: "#FFFFFF",
                         border: "none",
                         padding: "9px 18px",
@@ -636,7 +640,7 @@ function DataTable<T = any>({
                 <button
                   onClick={handleSaveChanges}
                   style={{
-                    background: "#10B981",
+                    background: "#16A34A",
                     color: "#FFFFFF",
                     border: "none",
                     padding: "9px 18px",
@@ -718,14 +722,14 @@ function DataTable<T = any>({
         <Modal
           isOpen={true}
           onClose={() => setIsDeleteConfirmOpen(false)}
-          title="Delete Record"
+          title={`Confirm Record Deletion: ${selectedRow?.name || selectedRow?.title || selectedRow?.id || "Record"}`}
           maxWidth="450px"
           footer={
             <div style={{ display: "flex", gap: "10px", width: "100%", justifyContent: "flex-end" }}>
               <button
                 onClick={handleConfirmDelete}
                 style={{
-                  background: "#EF4444",
+                  background: "#DC2626",
                   color: "#FFFFFF",
                   border: "none",
                   padding: "9px 18px",
@@ -735,7 +739,7 @@ function DataTable<T = any>({
                   cursor: "pointer",
                 }}
               >
-                Delete
+                Delete Record
               </button>
               <button
                 onClick={() => setIsDeleteConfirmOpen(false)}
@@ -756,12 +760,12 @@ function DataTable<T = any>({
           }
         >
           <div style={{ textAlign: "center", padding: "12px 0" }}>
-            <FaExclamationTriangle size={36} style={{ color: "#EF4444", marginBottom: "12px" }} />
+            <FaExclamationTriangle size={36} style={{ color: "#DC2626", marginBottom: "12px" }} />
             <h4 style={{ margin: "0 0 8px", fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
-              Delete Record
+              Delete Record Confirmation
             </h4>
-            <p style={{ margin: 0, fontSize: "14px", color: "#64748B", lineHeight: 1.5 }}>
-              Are you sure you want to delete this record? This action cannot be undone.
+            <p style={{ margin: 0, fontSize: "14px", color: "#475569", lineHeight: 1.5 }}>
+              Are you sure you want to delete <strong>{selectedRow?.name || selectedRow?.title || selectedRow?.id || "this record"}</strong>? This operation will remove the entry from active databases.
             </p>
           </div>
         </Modal>

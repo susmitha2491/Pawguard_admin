@@ -243,6 +243,20 @@ export const getCurrentUserRole = (): UserRole | null => {
   return normalizeRole(user);
 };
 
+export const getRescueCentreId = (userInput?: unknown): string | null => {
+  const user = userInput || getCurrentUser();
+  if (!user || typeof user !== "object") return null;
+  const raw =
+    (user as any)?.rescue_centre_id ||
+    (user as any)?.rescue_center_id ||
+    (user as any)?.rescue_facility_id ||
+    (user as any)?.facility_id ||
+    (user as any)?.organization_id;
+  if (!raw) return null;
+  const str = String(raw).trim();
+  return str && str !== "undefined" && str !== "null" ? str : null;
+};
+
 
 export const getDashboardPathForRole = (role?: string | UserRole | null): string => {
   const normalized = normalizeRole(role) || "super_admin";
@@ -519,8 +533,6 @@ export const getMenusForRole = (role?: string | UserRole | null): RoleMenuItem[]
         { name: "Dog Management", path: "/pets", iconType: "pets" },
         { name: "Shelter Management", path: "/shelters", iconType: "shelters" },
         { name: "Shelter Dogs", path: "/shelter-dogs", iconType: "pets" },
-        { name: "Staff & Users", path: "/users", iconType: "users" },
-        { name: "Medical Records", path: "/medical-records", iconType: "medical" },
         { name: "Notifications", path: "/notifications", iconType: "notifications" },
         { name: "Reports & Analytics", path: "/reports", iconType: "reports" },
       ];
@@ -559,7 +571,7 @@ export const getMenusForRole = (role?: string | UserRole | null): RoleMenuItem[]
         { name: "Overview", path: dashboardPath, iconType: "dashboard" },
         { name: "Shelter Facilities", path: "/shelters", iconType: "shelters" },
         { name: "Shelter Dogs", path: "/shelter-dogs", iconType: "pets" },
-        { name: "Dog Profiles", path: "/pets", iconType: "pets" },
+        { name: "Dog Management", path: "/pets", iconType: "pets" },
         { name: "Shelter Staff", path: "/users", iconType: "users" },
         { name: "Medical Records", path: "/medical-records", iconType: "medical" },
         { name: "Vaccination & Medication Reminders", path: "/medical-reminders", iconType: "medical" },

@@ -36,7 +36,7 @@ const isVolApproved = (st?: string) => { const s = String(st || "").toLowerCase(
 
 const VolBadge = ({ status }: { status?: string }) => {
   const s = String(status || "applied").toLowerCase();
-  const color = isVolApproved(s) ? "#047857" : isVolPending(s) ? "#D97706" : s === "rejected" ? "#DC2626" : "#64748B";
+  const color = isVolApproved(s) ? "#15803D" : isVolPending(s) ? "#D97706" : s === "rejected" ? "#DC2626" : "#64748B";
   const bg   = isVolApproved(s) ? "#ECFDF5" : isVolPending(s) ? "#FEF3C7" : s === "rejected" ? "#FEE2E2" : "#F1F5F9";
   return <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 10px", borderRadius: "999px", background: bg, color, textTransform: "uppercase" }}>{s}</span>;
 };
@@ -452,7 +452,7 @@ const RescueCoordinatorDashboard = () => {
       title: "Total Rescue Calls",
       value: loading ? "..." : String(totalCount),
       trend: "All Rescue Requests",
-      color: "#EF4444",
+      color: "#DC2626",
       icon: <FaExclamationTriangle />,
       selected: activeCard === "all",
       onClick: () => {
@@ -465,7 +465,7 @@ const RescueCoordinatorDashboard = () => {
       title: "My Assigned Cases",
       value: loading ? "..." : String(assignedCases.length),
       trend: "Assigned to You",
-      color: "#2563EB",
+      color: "#1E3A8A",
       icon: <FaClipboardList />,
       selected: activeCard === "assigned",
       onClick: () => {
@@ -491,7 +491,7 @@ const RescueCoordinatorDashboard = () => {
       title: "Dogs Rescued",
       value: loading ? "..." : String(rescuedCount),
       trend: "Successfully Completed",
-      color: "#10B981",
+      color: "#16A34A",
       icon: <FaCheckCircle />,
       selected: activeCard === "rescued",
       onClick: () => {
@@ -504,7 +504,7 @@ const RescueCoordinatorDashboard = () => {
       title: "Transport Volunteers",
       value: volLoading ? "..." : String(transportVols.length),
       trend: `${approvedTransportVols.length} Available`,
-      color: "#7C3AED",
+      color: "#1E3A8A",
       icon: <FaBus />,
     },
   ];
@@ -551,7 +551,7 @@ const RescueCoordinatorDashboard = () => {
           padding: "6px 12px",
           borderRadius: "6px",
           border: "none",
-          background: isVerified ? "#10B981" : "#2563EB",
+          background: isVerified ? "#16A34A" : "#1E3A8A",
           color: "#FFF",
           fontSize: "12px",
           fontWeight: 600,
@@ -614,7 +614,7 @@ const RescueCoordinatorDashboard = () => {
           icon={<FaAmbulance />}
           title="New Emergency"
           subtitle="Log Distress Call"
-          color="#EF4444"
+          color="#DC2626"
           onClick={() => navigate("/rescue-requests?action=new")}
         />
 
@@ -622,7 +622,7 @@ const RescueCoordinatorDashboard = () => {
           icon={<FaUserPlus />}
           title="Assign Agent"
           subtitle="Dispatch Field Agent"
-          color="#2563EB"
+          color="#1E3A8A"
           onClick={() => navigate("/rescue-dispatch")}
         />
 
@@ -630,7 +630,7 @@ const RescueCoordinatorDashboard = () => {
           icon={<FaMapMarkerAlt />}
           title="Track Agents"
           subtitle="Live Tracking"
-          color="#10B981"
+          color="#16A34A"
           onClick={() => navigate("/rescue-dispatch")}
         />
 
@@ -638,7 +638,7 @@ const RescueCoordinatorDashboard = () => {
           icon={<FaClipboardList />}
           title="Shelter Directory"
           subtitle="Handover Destination"
-          color="#6366F1"
+          color="#1E3A8A"
           onClick={() => navigate("/shelters")}
         />
       </div>
@@ -662,13 +662,13 @@ const RescueCoordinatorDashboard = () => {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "10px" }}>
           <div>
             <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#0F172A", display: "inline-flex", alignItems: "center", gap: "8px" }}>
-              <FaMapMarkerAlt style={{ color: "#10B981" }} /> Live Field Agent GPS Locations &amp; Dispatch Radar
+              <FaMapMarkerAlt style={{ color: "#16A34A" }} /> Live Field Agent GPS Locations &amp; Dispatch Radar
             </h3>
             <p style={{ margin: "2px 0 0", color: "#64748B", fontSize: "12.5px" }}>
               Real-time telemetry and coordinates fetched directly from backend OpenAPI location stream.
             </p>
           </div>
-          <span style={{ fontSize: "12px", background: "#ECFDF5", color: "#047857", padding: "4px 10px", borderRadius: "999px", fontWeight: 700 }}>
+          <span style={{ fontSize: "12px", background: "#ECFDF5", color: "#15803D", padding: "4px 10px", borderRadius: "999px", fontWeight: 700 }}>
             {agentGpsLocations.length} Active GPS Transmitters Connected
           </span>
         </div>
@@ -686,7 +686,7 @@ const RescueCoordinatorDashboard = () => {
                 <div key={agent.agent_id || agent.id || idx} style={{ padding: "12px 14px", borderRadius: "10px", background: "#FFFFFF", border: "1px solid #E2E8F0", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                     <strong style={{ fontSize: "13.5px", color: "#0F172A" }}>{agent.agent_name || agent.full_name || agent.name || `Agent #${idx + 1}`}</strong>
-                    <span style={{ fontSize: "10px", fontWeight: 800, padding: "2px 6px", borderRadius: "4px", background: isBusy ? "#FEF3C7" : "#ECFDF5", color: isBusy ? "#D97706" : "#047857", textTransform: "uppercase" }}>
+                    <span style={{ fontSize: "10px", fontWeight: 800, padding: "2px 6px", borderRadius: "4px", background: isBusy ? "#FEF3C7" : "#ECFDF5", color: isBusy ? "#D97706" : "#15803D", textTransform: "uppercase" }}>
                       {isBusy ? "ON DISPATCH" : "AVAILABLE"}
                     </span>
                   </div>
@@ -742,7 +742,7 @@ const RescueCoordinatorDashboard = () => {
               />
             </div>
             {loading && (
-              <span style={{ color: "#2563EB", fontSize: "12px", fontWeight: 600 }}>
+              <span style={{ color: "#1E3A8A", fontSize: "12px", fontWeight: 600 }}>
                 Loading...
               </span>
             )}
@@ -777,7 +777,7 @@ const RescueCoordinatorDashboard = () => {
                   <button
                     disabled={isActionLoading}
                     onClick={() => handleVerifyRequest(String(selectedRequest.id || ""))}
-                    style={{ padding: "8px 16px", background: "#10B981", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
+                    style={{ padding: "8px 16px", background: "#16A34A", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
                   >
                     Verify Incident
                   </button>
@@ -791,14 +791,14 @@ const RescueCoordinatorDashboard = () => {
                   <button
                     disabled={isActionLoading || isSuggestingAgents}
                     onClick={() => handleSuggestNearestAgents(String(selectedRequest.id || ""))}
-                    style={{ padding: "8px 16px", background: "#2563EB", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
+                    style={{ padding: "8px 16px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
                   >
                     {isSuggestingAgents ? "Finding Agents..." : "📍 Suggest Nearest Agents (GPS)"}
                   </button>
                   <button
                     disabled={isActionLoading}
                     onClick={() => handleEscalateRequest(String(selectedRequest.id || ""))}
-                    style={{ padding: "8px 16px", background: "#7C3AED", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
+                    style={{ padding: "8px 16px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
                   >
                     Escalate
                   </button>
@@ -813,14 +813,14 @@ const RescueCoordinatorDashboard = () => {
                       setIsViewModalOpen(false);
                       navigate(`/rescue-dispatch?case_id=${encodeURIComponent(String(selectedRequest.id || ""))}`);
                     }}
-                    style={{ padding: "8px 16px", background: "#2563EB", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    style={{ padding: "8px 16px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <FaTruck size={12} /> Accept Case & Dispatch Team
                   </button>
                   <button
                     disabled={isActionLoading}
                     onClick={() => handleEscalateRequest(String(selectedRequest.id || ""))}
-                    style={{ padding: "8px 16px", background: "#7C3AED", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
+                    style={{ padding: "8px 16px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
                   >
                     Escalate
                   </button>
@@ -832,14 +832,14 @@ const RescueCoordinatorDashboard = () => {
                   <button
                     disabled={isActionLoading}
                     onClick={() => handleLocatedRequest(String(selectedRequest.id || ""))}
-                    style={{ padding: "8px 16px", background: "#0891B2", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
+                    style={{ padding: "8px 16px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
                   >
                     Mark Located
                   </button>
                   <button
                     disabled={isActionLoading}
                     onClick={() => handleEscalateRequest(String(selectedRequest.id || ""))}
-                    style={{ padding: "8px 16px", background: "#7C3AED", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
+                    style={{ padding: "8px 16px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
                   >
                     Escalate
                   </button>
@@ -860,7 +860,7 @@ const RescueCoordinatorDashboard = () => {
                 <button
                   disabled={isActionLoading}
                   onClick={() => handleAdmittedRequest(String(selectedRequest.id || ""))}
-                  style={{ padding: "8px 16px", background: "#059669", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
+                  style={{ padding: "8px 16px", background: "#15803D", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
                 >
                   Admit to Centre
                 </button>
@@ -869,7 +869,7 @@ const RescueCoordinatorDashboard = () => {
               {String(selectedRequest.status || "").toLowerCase() === "admitted" && (
                 <button
                   onClick={() => window.open(`/public-scan/${(selectedRequest.raw as Record<string, unknown>)?.dog_id || selectedRequest.id}`, "_blank")}
-                  style={{ padding: "8px 16px", background: "#2563EB", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  style={{ padding: "8px 16px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
                 >
                   <FaExternalLinkAlt size={12} /> View Dog Profile
                 </button>
@@ -941,7 +941,7 @@ const RescueCoordinatorDashboard = () => {
               <button
                 type="submit"
                 disabled={isUpdatingPriority}
-                style={{ padding: "4px 10px", borderRadius: "6px", border: "none", background: "#2563EB", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                style={{ padding: "4px 10px", borderRadius: "6px", border: "none", background: "#1E3A8A", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
               >
                 {isUpdatingPriority ? "Saving..." : "Save Priority"}
               </button>
@@ -961,7 +961,7 @@ const RescueCoordinatorDashboard = () => {
 
             {selectedRequest.dispatch ? (
               <div style={{ background: "#F5F3FF", padding: "12px 14px", borderRadius: "8px", border: "1px solid #DDD6FE" }}>
-                <strong style={{ color: "#7C3AED" }}>Dispatch & Field Operations</strong>
+                <strong style={{ color: "#1E3A8A" }}>Dispatch & Field Operations</strong>
                 <div style={{ marginTop: "6px", fontSize: "13px", display: "flex", flexDirection: "column", gap: "4px" }}>
                   {(selectedRequest.dispatch as Record<string, unknown>).assigned_vehicle_id || (selectedRequest.dispatch as Record<string, unknown>).vehicle_id ? (
                     <div><strong>Vehicle:</strong> {String((selectedRequest.dispatch as Record<string, unknown>).assigned_vehicle_id || (selectedRequest.dispatch as Record<string, unknown>).vehicle_id)}</div>
@@ -984,7 +984,7 @@ const RescueCoordinatorDashboard = () => {
           <h3 style={{ margin: 0, color: "#0F172A", fontSize: "16px", fontWeight: 700 }}>
             Transport Response Volunteers ({approvedTransportVols.length} Active, {pendingTransportVols.length} Pending Review)
           </h3>
-          {volLoading && <span style={{ fontSize: "13px", color: "#2563EB", fontWeight: 600 }}>Loading volunteers...</span>}
+          {volLoading && <span style={{ fontSize: "13px", color: "#1E3A8A", fontWeight: 600 }}>Loading volunteers...</span>}
         </div>
         <DataTable
           columns={[
@@ -1049,7 +1049,7 @@ const RescueCoordinatorDashboard = () => {
                     type="button"
                     disabled={isVolSubmitting}
                     onClick={() => handleVolApprove(selectedVol)}
-                    style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <FaCheckCircle /> Approve Volunteer
                   </button>
@@ -1142,7 +1142,7 @@ const RescueCoordinatorDashboard = () => {
                       setIsViewModalOpen(false);
                       navigate(`/rescue-dispatch?case_id=${encodeURIComponent(String(selectedRequest?.id || ""))}&agent_id=${encodeURIComponent(String(ag.agent_id || ag.id || ""))}`);
                     }}
-                    style={{ padding: "6px 14px", background: "#2563EB", color: "#FFF", borderRadius: "6px", border: "none", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
+                    style={{ padding: "6px 14px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
                   >
                     Select &amp; Dispatch
                   </button>

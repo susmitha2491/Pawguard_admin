@@ -8,14 +8,16 @@ const PrimaryButton = ({ text, onClick }: PrimaryButtonProps) => {
     <button
       onClick={onClick}
       style={{
-        background: "#2563EB",
-        color: "#fff",
+        background: "#1E3A8A",
+        color: "#FFFFFF",
         border: "none",
-        padding: "12px 20px",
+        padding: "10px 18px",
         borderRadius: "8px",
         cursor: "pointer",
-        fontSize: "15px",
-        fontWeight: "600",
+        fontSize: "14px",
+        lineHeight: "20px",
+        fontWeight: 600,
+        transition: "background-color 0.15s ease",
       }}
     >
       {text}

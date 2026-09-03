@@ -1,47 +1,46 @@
+import logo from "../../assets/logo.png";
+
+// Geometry measured from the approved 1024×1024 asset (1-px alpha scan: artwork
+// bbox 297,140 → 726,697 = 430×558 px, padded ~6 px so no artwork edge is clipped).
+// The canvas is mostly transparent padding; the artwork is horizontally centered
+// but sits above the vertical midpoint, so a plain square <img> renders the shield
+// far too small and off-center. Paint only the artwork region instead.
+const ARTWORK = {
+  widthFrac: 0.4316, // (430 + 12) / 1024 — padded artwork width / canvas width
+  heightFrac: 0.5566, // (558 + 12) / 1024 — padded artwork height / canvas height
+  centerYFrac: 0.4087, // artwork vertical center / canvas height (418.5 / 1024)
+};
+
 interface PawGuardLogoProps {
   size?: number;
-  badgeBg?: string;
-  iconColor?: string;
+  alt?: string;
 }
 
-const PawGuardLogo = ({
-  size = 34,
-  badgeBg = "#2563EB",
-  iconColor = "#FFFFFF",
-}: PawGuardLogoProps) => {
+const PawGuardLogo = ({ size = 34, alt = "PawGuard" }: PawGuardLogoProps) => {
+  // Scale the canvas so the artwork height equals `size`, box to the artwork's
+  // aspect, and position the artwork center on the box center. `size` is the
+  // visible artwork height, so every call site keeps its visual intent.
+  const canvasPx = size / ARTWORK.heightFrac;
+  const boxW = Math.round(size * (ARTWORK.widthFrac / ARTWORK.heightFrac));
+  const posY = Math.round(
+    (100 * (0.5 - ARTWORK.centerYFrac * (canvasPx / size))) /
+      (1 - canvasPx / size)
+  );
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 36 36"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      style={{ flexShrink: 0, display: "block" }}
-    >
-      {/* Background Rounded Card */}
-      <rect width="36" height="36" rx="10" fill={badgeBg} />
-
-      {/* Shield Outline */}
-      <path
-        d="M18 6L9 10V16.5C9 22.2 12.8 27.5 18 29C23.2 27.5 27 22.2 27 16.5V10L18 6Z"
-        fill={badgeBg}
-        stroke={iconColor}
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
-
-      {/* Paw Center Pad */}
-      <path
-        d="M18 19C16.3 19 15 20.3 15 22C15 23.3 16 24.5 18 24.5C20 24.5 21 23.3 21 22C21 20.3 19.7 19 18 19Z"
-        fill={iconColor}
-      />
-
-      {/* Paw Toes */}
-      <circle cx="13.5" cy="17.5" r="1.3" fill={iconColor} />
-      <circle cx="16.2" cy="14.5" r="1.3" fill={iconColor} />
-      <circle cx="19.8" cy="14.5" r="1.3" fill={iconColor} />
-      <circle cx="22.5" cy="17.5" r="1.3" fill={iconColor} />
-    </svg>
+    <span
+      role="img"
+      aria-label={alt}
+      style={{
+        display: "inline-block",
+        flexShrink: 0,
+        width: boxW,
+        height: size,
+        backgroundImage: `url(${logo})`,
+        backgroundSize: `auto ${Math.round(canvasPx)}px`,
+        backgroundPosition: `50% ${posY}%`,
+        backgroundRepeat: "no-repeat",
+      }}
+    />
   );
 };
 

@@ -27,7 +27,7 @@ import medicalService from "../../services/medicalService";
 import userService from "../../services/userService";
 import storageService from "../../services/storageService";
 import adoptionService from "../../services/adoptionService";
-import { getCurrentUserRole } from "../../utils/roleUtils";
+import { getCurrentUser, getCurrentUserRole, normalizeRole, getRescueCentreId } from "../../utils/roleUtils";
 import { useDataSync, notifyDataChanged } from "../../utils/dataSync";
 import { publishActionEvent } from "../../utils/eventSystem";
 import { generateQrDataUrl, generateQrBlob } from "../../utils/qrGenerator";
@@ -629,6 +629,17 @@ const ShelterDogs = () => {
       setLoading(true);
       setError(null);
 
+      const currentUser = getCurrentUser();
+      const currentRole = normalizeRole(currentUser);
+      const userRescueCentreId = getRescueCentreId(currentUser);
+
+      if (currentRole === "rescue_centre_admin" && !userRescueCentreId) {
+        setError("No Rescue Centre Assigned: Your account does not have an assigned Rescue Centre. Contact a Super Administrator.");
+        setDogs([]);
+        setLoading(false);
+        return;
+      }
+
       const [facilitiesRes, dogsRes] = await Promise.allSettled([
         shelterService.getShelters({ page: 1, page_size: 50 }),
         petService.getAllDogs(),
@@ -636,7 +647,14 @@ const ShelterDogs = () => {
 
       const facList = facilitiesRes.status === "fulfilled" ? unwrapList(facilitiesRes.value) : [];
       const rawDogs = dogsRes.status === "fulfilled" ? unwrapList(dogsRes.value) : [];
-      const dogList = rawDogs.map(formatDog);
+      let dogList = rawDogs.map(formatDog);
+
+      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
+        dogList = dogList.filter((d: any) => {
+          const dCentreId = d.rescue_centre_id || d.rescue_center_id || d.facility_id || d.organization_id || d.rescue_centre?.id;
+          return !dCentreId || String(dCentreId) === String(userRescueCentreId);
+        });
+      }
 
       if (dogsRes.status === "rejected") {
         const errDetail = (dogsRes.reason as any)?.response?.data?.detail || (dogsRes.reason as any)?.response?.data?.message || "Failed to load shelter dogs data.";

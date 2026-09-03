@@ -5,13 +5,15 @@ interface PageHeaderProps {
 
 const PageHeader = ({ title, subtitle }: PageHeaderProps) => {
   return (
-    <div style={{ marginBottom: "30px" }}>
+    <div style={{ marginBottom: "20px" }}>
       <h1
         style={{
-          fontSize: "36px",
-          fontWeight: "700",
+          fontSize: "24px",
+          lineHeight: "32px",
+          fontWeight: 700,
           color: "#0F172A",
-          marginBottom: "8px",
+          letterSpacing: "-0.015em",
+          marginBottom: "4px",
         }}
       >
         {title}
@@ -19,8 +21,9 @@ const PageHeader = ({ title, subtitle }: PageHeaderProps) => {
 
       <p
         style={{
-          color: "#64748B",
-          fontSize: "16px",
+          color: "#475569",
+          fontSize: "14px",
+          lineHeight: "20px",
           margin: 0,
         }}
       >

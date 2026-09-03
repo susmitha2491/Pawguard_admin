@@ -16,7 +16,7 @@ const QuickActionCard = ({
   title,
   subtitle,
   description,
-  color = "#2563EB",
+  color = "#1E3A8A",
   path,
   onClick,
 }: QuickActionCardProps) => {

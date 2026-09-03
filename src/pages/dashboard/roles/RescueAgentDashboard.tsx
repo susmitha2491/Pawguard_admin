@@ -790,7 +790,7 @@ const RescueAgentDashboard = () => {
       title: "Assigned Cases",
       value: loading ? "..." : String(assignedCases.filter((c) => String(c.status || "").toLowerCase() !== "admitted").length),
       trend: "Assigned to You",
-      color: "#2563EB",
+      color: "#1E3A8A",
       icon: <FaAmbulance />,
       selected: activeCard === "assigned",
       onClick: () => setActiveCard("assigned"),
@@ -808,7 +808,7 @@ const RescueAgentDashboard = () => {
       title: "Completed Rescues",
       value: loading ? "..." : String(assignedCases.filter((c) => /rescued|admitted|completed/i.test(String(c.status || ""))).length),
       trend: "Successfully Completed",
-      color: "#10B981",
+      color: "#16A34A",
       icon: <FaCheckCircle />,
       selected: activeCard === "completed",
       onClick: () => setActiveCard("completed"),
@@ -817,7 +817,7 @@ const RescueAgentDashboard = () => {
       title: "Total Rescue Calls",
       value: loading ? "..." : String(assignedCases.length || dashboardData.total_calls),
       trend: "Overall Requests",
-      color: "#6366F1",
+      color: "#1E3A8A",
       icon: <FaCamera />,
       selected: activeCard === "all",
       onClick: () => setActiveCard("all"),
@@ -899,7 +899,7 @@ const RescueAgentDashboard = () => {
             e.stopPropagation();
             handleMarkEnRoute(dispatchId, caseId);
           }}
-          style={{ padding: "5px 10px", background: "#7C3AED", color: "#FFF", borderRadius: "6px", border: "none", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+          style={{ padding: "5px 10px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
         >
           <FaAmbulance /> En Route
         </button>
@@ -916,7 +916,7 @@ const RescueAgentDashboard = () => {
                 e.stopPropagation();
                 handleAcceptDispatch(caseId);
               }}
-              style={{ padding: "5px 10px", background: "#10B981", color: "#FFF", borderRadius: "6px", border: "none", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+              style={{ padding: "5px 10px", background: "#16A34A", color: "#FFF", borderRadius: "6px", border: "none", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
             >
               Accept Dispatch
             </button>
@@ -926,7 +926,7 @@ const RescueAgentDashboard = () => {
                 setDeclineCaseId(caseId);
                 setIsDeclineModalOpen(true);
               }}
-              style={{ padding: "5px 8px", background: "#EF4444", color: "#FFF", borderRadius: "6px", border: "none", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+              style={{ padding: "5px 8px", background: "#DC2626", color: "#FFF", borderRadius: "6px", border: "none", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
             >
               Decline
             </button>
@@ -939,7 +939,7 @@ const RescueAgentDashboard = () => {
             e.stopPropagation();
             handleMarkEnRoute(dispatchId, caseId);
           }}
-          style={{ padding: "5px 10px", background: "#7C3AED", color: "#FFF", borderRadius: "6px", border: "none", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+          style={{ padding: "5px 10px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
         >
           <FaAmbulance /> En Route
         </button>
@@ -952,7 +952,7 @@ const RescueAgentDashboard = () => {
             e.stopPropagation();
             handleMarkLocated(caseId);
           }}
-          style={{ padding: "5px 10px", background: "#0891B2", color: "#FFF", borderRadius: "6px", border: "none", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+          style={{ padding: "5px 10px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
         >
           <FaMapMarkerAlt /> Located
         </button>
@@ -978,7 +978,7 @@ const RescueAgentDashboard = () => {
             e.stopPropagation();
             handleMarkAdmitted(caseId);
           }}
-          style={{ padding: "5px 10px", background: "#059669", color: "#FFF", borderRadius: "6px", border: "none", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+          style={{ padding: "5px 10px", background: "#15803D", color: "#FFF", borderRadius: "6px", border: "none", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
         >
           <FaCheckCircle /> Confirm Delivery
         </button>
@@ -1034,7 +1034,7 @@ const RescueAgentDashboard = () => {
                 padding: "6px 12px",
                 borderRadius: "8px",
                 border: "none",
-                background: gpsStatus === "active" ? "#10B981" : gpsStatus === "denied" || gpsStatus === "error" ? "#DC2626" : "#2563EB",
+                background: gpsStatus === "active" ? "#16A34A" : gpsStatus === "denied" || gpsStatus === "error" ? "#DC2626" : "#1E3A8A",
                 color: "#FFFFFF",
                 cursor: "pointer",
                 display: "inline-flex",
@@ -1085,7 +1085,7 @@ const RescueAgentDashboard = () => {
           icon={<FaCamera />}
           title="Upload Photos"
           subtitle="Attach Rescue Images"
-          color="#2563EB"
+          color="#1E3A8A"
           onClick={() => {
             if (assignedCases.length > 0) setUploadCaseId(String(assignedCases[0].id));
             setIsUploadModalOpen(true);
@@ -1096,7 +1096,7 @@ const RescueAgentDashboard = () => {
           icon={<FaClipboardCheck />}
           title="Update Status"
           subtitle="Progress Lifecycle Stage"
-          color="#10B981"
+          color="#16A34A"
           onClick={() => {
             if (assignedCases.length > 0) setStatusCaseId(String(assignedCases[0].id));
             setIsStatusModalOpen(true);
@@ -1107,7 +1107,7 @@ const RescueAgentDashboard = () => {
           icon={<FaDog />}
           title="Register Rescued Dog"
           subtitle="Generate UUID & Safety Tag"
-          color="#7C3AED"
+          color="#1E3A8A"
           onClick={() => {
             if (assignedCases.length > 0) setRegisterDogForm((prev) => ({ ...prev, case_id: String(assignedCases[0].id) }));
             setIsDogModalOpen(true);
@@ -1118,7 +1118,7 @@ const RescueAgentDashboard = () => {
           icon={<FaAmbulance />}
           title="Confirm Delivery"
           subtitle="Handover to Shelter Intake"
-          color="#6366F1"
+          color="#1E3A8A"
           onClick={() => {
             const rescuable = assignedCases.find((c) => ["secured", "rescued", "located"].includes(String(c.status || "").toLowerCase()));
             if (rescuable) setDeliveryCaseId(String(rescuable.id));
@@ -1131,7 +1131,7 @@ const RescueAgentDashboard = () => {
           icon={<FaCompass />}
           title="Field Observation"
           subtitle="Log Animal Condition & Notes"
-          color="#0891B2"
+          color="#1E3A8A"
           onClick={() => {
             if (assignedCases.length > 0) setObservationCaseId(String(assignedCases[0].id));
             setIsObservationModalOpen(true);
@@ -1176,7 +1176,7 @@ const RescueAgentDashboard = () => {
                 </div>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{ fontSize: "12px", fontWeight: 800, background: "#10B981", color: "#FFF", padding: "2px 8px", borderRadius: "12px", textTransform: "uppercase" }}>
+                    <span style={{ fontSize: "12px", fontWeight: 800, background: "#16A34A", color: "#FFF", padding: "2px 8px", borderRadius: "12px", textTransform: "uppercase" }}>
                       ● ACTIVE GPS TRACKING
                     </span>
                     <span style={{ fontSize: "13px", color: "#C7D2FE", fontWeight: 600 }}>
@@ -1193,9 +1193,9 @@ const RescueAgentDashboard = () => {
               <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", fontWeight: 700 }}>
                 <span style={{ padding: "4px 8px", borderRadius: "6px", background: "rgba(255,255,255,0.15)", color: "#FFF" }}>Assigned</span>
                 <span>➔</span>
-                <span style={{ padding: "4px 8px", borderRadius: "6px", background: currentStage === "en_route" ? "#2563EB" : "rgba(255,255,255,0.15)", color: "#FFF" }}>Accepted / En Route</span>
+                <span style={{ padding: "4px 8px", borderRadius: "6px", background: currentStage === "en_route" ? "#1E3A8A" : "rgba(255,255,255,0.15)", color: "#FFF" }}>Accepted / En Route</span>
                 <span>➔</span>
-                <span style={{ padding: "4px 8px", borderRadius: "6px", background: currentStage === "located" ? "#0891B2" : "rgba(255,255,255,0.15)", color: "#FFF" }}>Arrived at Scene</span>
+                <span style={{ padding: "4px 8px", borderRadius: "6px", background: currentStage === "located" ? "#1E3A8A" : "rgba(255,255,255,0.15)", color: "#FFF" }}>Arrived at Scene</span>
                 <span>➔</span>
                 <span style={{ padding: "4px 8px", borderRadius: "6px", background: currentStage === "secured" ? "#F59E0B" : "rgba(255,255,255,0.15)", color: "#FFF" }}>Dog Secured</span>
                 <span>➔</span>
@@ -1260,7 +1260,7 @@ const RescueAgentDashboard = () => {
               />
             </div>
             {loading && (
-              <span style={{ color: "#2563EB", fontSize: "12px", fontWeight: 600 }}>
+              <span style={{ color: "#1E3A8A", fontSize: "12px", fontWeight: 600 }}>
                 Loading...
               </span>
             )}
@@ -1312,7 +1312,7 @@ const RescueAgentDashboard = () => {
                             // Do not update UI state if accepting fails
                           }
                         }}
-                        style={{ padding: "8px 16px", background: "#10B981", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                        style={{ padding: "8px 16px", background: "#16A34A", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
                       >
                         <FaCheckCircle size={12} /> Accept Dispatch
                       </button>
@@ -1335,7 +1335,7 @@ const RescueAgentDashboard = () => {
                     <button
                       disabled={isSubmitting}
                       onClick={() => handleMarkEnRoute(String(selectedCase.dispatch_id || ""), String(selectedCase.id || ""))}
-                      style={{ padding: "8px 16px", background: "#7C3AED", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      style={{ padding: "8px 16px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
                     >
                       <FaAmbulance size={12} /> Mark En Route
                     </button>
@@ -1348,7 +1348,7 @@ const RescueAgentDashboard = () => {
                 <button
                   disabled={isSubmitting}
                   onClick={() => handleMarkLocated(String(selectedCase.id || ""))}
-                  style={{ padding: "8px 16px", background: "#0891B2", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  style={{ padding: "8px 16px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
                 >
                   <FaMapMarkerAlt size={12} /> Mark Located
                 </button>
@@ -1368,7 +1368,7 @@ const RescueAgentDashboard = () => {
                 <button
                   disabled={isSubmitting}
                   onClick={() => handleMarkAdmitted(String(selectedCase.id || ""))}
-                  style={{ padding: "8px 16px", background: "#059669", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  style={{ padding: "8px 16px", background: "#15803D", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
                 >
                   <FaCheckCircle size={12} /> Confirm Delivery & Admit to Centre
                 </button>
@@ -1377,7 +1377,7 @@ const RescueAgentDashboard = () => {
               {String(selectedCase.status || "").toLowerCase() === "admitted" && (
                 <button
                   onClick={() => window.open(`/public-scan/${(selectedCase.raw as Record<string, unknown>)?.dog_profile_id || (selectedCase.raw as Record<string, unknown>)?.dog_id || selectedCase.id}`, "_blank")}
-                  style={{ padding: "8px 16px", background: "#2563EB", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  style={{ padding: "8px 16px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
                 >
                   <FaExternalLinkAlt size={12} /> View Shelter Profile
                 </button>
@@ -1442,7 +1442,7 @@ const RescueAgentDashboard = () => {
                 <strong style={{ color: "#475569" }}>Evidence Photos:</strong>
                 <div style={{ display: "flex", gap: "8px", marginTop: "6px", flexWrap: "wrap" }}>
                   {(selectedCase.media as string[]).map((url, i) => (
-                    <a key={i} href={url} target="_blank" rel="noreferrer" style={{ fontSize: "12px", color: "#2563EB", fontWeight: 600 }}>
+                    <a key={i} href={url} target="_blank" rel="noreferrer" style={{ fontSize: "12px", color: "#1E3A8A", fontWeight: 600 }}>
                       📷 Photo {i + 1}
                     </a>
                   ))}
@@ -1462,7 +1462,7 @@ const RescueAgentDashboard = () => {
         footer={
           <>
             <button type="button" onClick={() => setIsUploadModalOpen(false)} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF", fontSize: "13px", fontWeight: 600 }}>Cancel</button>
-            <button type="submit" form="upload-photo-form" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", background: "#2563EB", color: "#FFF", border: "none", fontWeight: 700, fontSize: "13px" }}>{isSubmitting ? "Uploading..." : "Upload Evidence"}</button>
+            <button type="submit" form="upload-photo-form" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", background: "#1E3A8A", color: "#FFF", border: "none", fontWeight: 700, fontSize: "13px" }}>{isSubmitting ? "Uploading..." : "Upload Evidence"}</button>
           </>
         }
       >
@@ -1513,7 +1513,7 @@ const RescueAgentDashboard = () => {
         footer={
           <>
             <button type="button" onClick={() => setIsStatusModalOpen(false)} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF", fontSize: "13px", fontWeight: 600 }}>Cancel</button>
-            <button type="submit" form="update-status-form" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", background: "#10B981", color: "#FFF", border: "none", fontWeight: 700, fontSize: "13px" }}>{isSubmitting ? "Updating..." : "Update Status"}</button>
+            <button type="submit" form="update-status-form" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", background: "#16A34A", color: "#FFF", border: "none", fontWeight: 700, fontSize: "13px" }}>{isSubmitting ? "Updating..." : "Update Status"}</button>
           </>
         }
       >
@@ -1551,7 +1551,7 @@ const RescueAgentDashboard = () => {
         footer={
           <>
             <button type="button" onClick={() => setIsDeliveryModalOpen(false)} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF", fontSize: "13px", fontWeight: 600 }}>Cancel</button>
-            <button type="submit" form="confirm-delivery-form" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", background: "#059669", color: "#FFF", border: "none", fontWeight: 700, fontSize: "13px" }}>{isSubmitting ? "Confirming..." : "Confirm Handover & Admit"}</button>
+            <button type="submit" form="confirm-delivery-form" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", background: "#15803D", color: "#FFF", border: "none", fontWeight: 700, fontSize: "13px" }}>{isSubmitting ? "Confirming..." : "Confirm Handover & Admit"}</button>
           </>
         }
       >
@@ -1582,7 +1582,7 @@ const RescueAgentDashboard = () => {
         footer={
           <>
             <button type="button" onClick={() => setIsDogModalOpen(false)} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF", fontSize: "13px", fontWeight: 600 }}>Cancel</button>
-            <button type="submit" form="register-rescued-dog-form" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", background: "#7C3AED", color: "#FFF", border: "none", fontWeight: 700, fontSize: "13px" }}>{isSubmitting ? "Registering..." : "Register Dog & Generate Tag"}</button>
+            <button type="submit" form="register-rescued-dog-form" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", background: "#1E3A8A", color: "#FFF", border: "none", fontWeight: 700, fontSize: "13px" }}>{isSubmitting ? "Registering..." : "Register Dog & Generate Tag"}</button>
           </>
         }
       >
@@ -1666,7 +1666,7 @@ const RescueAgentDashboard = () => {
             />
           </div>
 
-          <div style={{ background: "#EFF6FF", padding: "10px 12px", borderRadius: "8px", border: "1px solid #BFDBFE", fontSize: "12px", color: "#1D4ED8" }}>
+          <div style={{ background: "#EFF6FF", padding: "10px 12px", borderRadius: "8px", border: "1px solid #BFDBFE", fontSize: "12px", color: "#1E3A8A" }}>
             ℹ️ <strong>Backend Dog UUID & Safety Tag Provisioning:</strong> Submitting will invoke the existing <code>petService.createPet</code> API to generate a permanent Dog UUID and automatically provision a PawGuard Safety Tag / QR code.
           </div>
         </form>
@@ -1773,7 +1773,7 @@ const RescueAgentDashboard = () => {
             <button
               type="submit"
               disabled={isSubmitting}
-              style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
+              style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
             >
               {isSubmitting ? "Saving..." : "Save Field Observation"}
             </button>
@@ -1829,7 +1829,7 @@ const RescueAgentDashboard = () => {
             <button
               type="submit"
               disabled={isSubmitting}
-              style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: "#7C3AED", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
+              style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
             >
               {isSubmitting ? "Submitting..." : "Send Escalation"}
             </button>

@@ -27,6 +27,7 @@ import volunteerService from "../../services/volunteerService";
 import shelterService from "../../services/shelterService";
 import { notifyDataChanged } from "../../utils/dataSync";
 import { formatDateTime } from "../../utils/dateUtils";
+import { getCurrentUserRole } from "../../utils/roleUtils";
 
 type TabKey = "applications" | "active" | "shifts";
 
@@ -41,6 +42,7 @@ const STATUS_OPTIONS = [
 ];
 
 const VolunteerManagement = () => {
+  const isRescueCentreAdmin = getCurrentUserRole() === "rescue_centre_admin";
   const [activeTab, setActiveTab] = useState<TabKey>("applications");
 
   // Applications & Volunteer Profiles Roster State
@@ -1063,6 +1065,17 @@ const VolunteerManagement = () => {
       ),
     },
   ];
+
+  if (isRescueCentreAdmin) {
+    return (
+      <div style={{ padding: "40px 20px", textAlign: "center" }}>
+        <h2 style={{ color: "#DC2626", fontWeight: 800 }}>Access Restricted</h2>
+        <p style={{ color: "#64748B", maxWidth: "600px", margin: "12px auto" }}>
+          Volunteer Management is reserved for Volunteer Coordinators, Shelter Managers, and Super Administrators. Rescue Centre Admin access is restricted to centre rescue operations, dispatch, vehicle fleet, and dog master management.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: "16px", maxWidth: "1400px", margin: "0 auto", boxSizing: "border-box" }}>

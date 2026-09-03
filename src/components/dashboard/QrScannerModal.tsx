@@ -337,7 +337,7 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose, expect
                 justifyContent: "center",
                 flexShrink: 0,
                 overflow: "hidden",
-                border: "2px solid #3B82F6",
+                  border: "2px solid #1E3A8A",
               }}
             >
               {scannedPet.photo_url || scannedPet.avatar ? (
@@ -363,7 +363,7 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose, expect
                     padding: "2px 8px",
                     borderRadius: "999px",
                     background: scannedTagMeta?.is_active !== false ? "#D1FAE5" : "#FEE2E2",
-                    color: scannedTagMeta?.is_active !== false ? "#047857" : "#DC2626",
+                    color: scannedTagMeta?.is_active !== false ? "#15803D" : "#DC2626",
                     textTransform: "uppercase",
                   }}
                 >
@@ -388,7 +388,7 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose, expect
 
             <div style={{ background: "#F8FAFC", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
               <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Safety Tag Prefix</div>
-              <div style={{ fontSize: "14px", fontWeight: 700, color: "#2563EB", fontFamily: "monospace", marginTop: "2px" }}>
+              <div style={{ fontSize: "14px", fontWeight: 700, color: "#1E3A8A", fontFamily: "monospace", marginTop: "2px" }}>
                 {String(scannedTagMeta?.token_prefix || scannedPet.token_prefix || "PG-TAG")}
               </div>
             </div>
@@ -410,7 +410,7 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose, expect
 
           {/* Role-Based Permitted Actions & Information */}
           <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "10px", padding: "14px" }}>
-            <div style={{ fontSize: "12px", fontWeight: 700, color: "#1D4ED8", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+            <div style={{ fontSize: "12px", fontWeight: 700, color: "#1E3A8A", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
               <FaInfoCircle /> Permitted Actions ({String(currentRole).toUpperCase()})
             </div>
 
@@ -419,13 +419,13 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose, expect
                 <>
                   <button
                     onClick={() => { handleClose(); navigate("/pets"); }}
-                    style={{ padding: "8px 14px", borderRadius: "6px", background: "#2563EB", color: "#FFF", border: "none", fontWeight: 600, fontSize: "12px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    style={{ padding: "8px 14px", borderRadius: "6px", background: "#1E3A8A", color: "#FFF", border: "none", fontWeight: 600, fontSize: "12px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <FaPaw /> Dog Management
                   </button>
                   <button
                     onClick={() => { handleClose(); navigate("/medical-records"); }}
-                    style={{ padding: "8px 14px", borderRadius: "6px", background: "#6366F1", color: "#FFF", border: "none", fontWeight: 600, fontSize: "12px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    style={{ padding: "8px 14px", borderRadius: "6px", background: "#1E3A8A", color: "#FFF", border: "none", fontWeight: 600, fontSize: "12px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <FaStethoscope /> Medical Records
                   </button>
@@ -435,9 +435,9 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose, expect
               {normRole === "shelter_manager" && (
                 <button
                   onClick={() => { handleClose(); navigate("/shelter-dogs"); }}
-                  style={{ padding: "8px 14px", borderRadius: "6px", background: "#10B981", color: "#FFF", border: "none", fontWeight: 600, fontSize: "12px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
-                >
-                  <FaHome /> Shelter Dogs Directory
+                    style={{ padding: "8px 14px", borderRadius: "6px", background: "#16A34A", color: "#FFF", border: "none", fontWeight: 600, fontSize: "12px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  >
+                    <FaHome /> Shelter Dogs Directory
                 </button>
               )}
 
@@ -471,9 +471,9 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose, expect
               {normRole === "veterinarian" && (
                 <button
                   onClick={() => { handleClose(); navigate("/veterinarian-dashboard?tab=shelter_requests"); }}
-                  style={{ padding: "8px 14px", borderRadius: "6px", background: "#2563EB", color: "#FFF", border: "none", fontWeight: 600, fontSize: "12px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
-                >
-                  <FaStethoscope /> Veterinarian Workstation
+                    style={{ padding: "8px 14px", borderRadius: "6px", background: "#1E3A8A", color: "#FFF", border: "none", fontWeight: 600, fontSize: "12px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  >
+                    <FaStethoscope /> Veterinarian Workstation
                 </button>
               )}
 
@@ -535,7 +535,7 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose, expect
                 borderRadius: "6px",
                 border: "none",
                 background: activeTab === "camera" ? "#FFFFFF" : "transparent",
-                color: activeTab === "camera" ? "#2563EB" : "#64748B",
+                color: activeTab === "camera" ? "#1E3A8A" : "#64748B",
                 fontWeight: 700,
                 fontSize: "13px",
                 cursor: "pointer",
@@ -556,7 +556,7 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose, expect
                 borderRadius: "6px",
                 border: "none",
                 background: activeTab === "manual" ? "#FFFFFF" : "transparent",
-                color: activeTab === "manual" ? "#2563EB" : "#64748B",
+                color: activeTab === "manual" ? "#1E3A8A" : "#64748B",
                 fontWeight: 700,
                 fontSize: "13px",
                 cursor: "pointer",
@@ -591,7 +591,7 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose, expect
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  border: "2px solid #3B82F6",
+                border: "2px solid #1E3A8A",
                 }}
               >
                 <video
@@ -607,7 +607,7 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose, expect
                     position: "absolute",
                     width: "200px",
                     height: "200px",
-                    border: "2px dashed #3B82F6",
+                    border: "2px dashed #1E3A8A",
                     borderRadius: "12px",
                     boxShadow: "0 0 0 9999px rgba(15, 23, 42, 0.5)",
                     display: "flex",
@@ -619,8 +619,8 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose, expect
                     style={{
                       width: "100%",
                       height: "2px",
-                      background: "#3B82F6",
-                      boxShadow: "0 0 8px #3B82F6",
+                      background: "#1E3A8A",
+                      boxShadow: "0 0 8px #1E3A8A",
                       animation: "scanLine 2s linear infinite",
                     }}
                   />
@@ -688,7 +688,7 @@ const QrScannerModal: React.FC<QrScannerModalProps> = ({ isOpen, onClose, expect
                     padding: "10px 18px",
                     borderRadius: "8px",
                     border: "none",
-                    background: "#2563EB",
+                    background: "#1E3A8A",
                     color: "#FFFFFF",
                     fontWeight: 700,
                     cursor: loading ? "not-allowed" : "pointer",

@@ -87,7 +87,7 @@ const ResetPassword = () => {
     <AuthLayout>
       <LoginCard>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: "16px" }}>
-          <PawGuardLogo size={48} badgeBg="#2563EB" iconColor="#FFFFFF" />
+          <PawGuardLogo size={48} />
         </div>
 
         <h1 className="login-title">PawGuard</h1>

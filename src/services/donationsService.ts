@@ -99,7 +99,7 @@ export const normalizeDonationRow = (d: any): any => {
   const isAnon = Boolean(d.is_anonymous || d.anonymous);
   const rawStatus = String(d.status || d.payment_status || d.transaction_status || d.state || "").toLowerCase().trim();
 
-  let status: DonationStatus = "pending";
+  let status: DonationStatus;
   if (["success", "completed", "paid", "captured", "settled", "successful"].includes(rawStatus)) {
     status = "success";
   } else if (["failed", "rejected", "declined"].includes(rawStatus)) {

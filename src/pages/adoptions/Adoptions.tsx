@@ -25,6 +25,7 @@ import adoptionService, {
 import petService from "../../services/petService";
 import { notifyDataChanged } from "../../utils/dataSync";
 import { formatDateTime } from "../../utils/dateUtils";
+import { getCurrentUserRole } from "../../utils/roleUtils";
 
 const menuItemStyle: React.CSSProperties = {
   width: "100%",
@@ -135,6 +136,7 @@ const inputStyle: React.CSSProperties = {
 };
 
 const Adoptions = () => {
+  const isRescueCentreAdmin = getCurrentUserRole() === "rescue_centre_admin";
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<"queue" | "scoring" | "completed">("queue");
   const [adoptions, setAdoptions] = useState<Record<string, unknown>[]>([]);
@@ -143,6 +145,17 @@ const Adoptions = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const { addToast } = useToast();
+
+  if (isRescueCentreAdmin) {
+    return (
+      <div style={{ padding: "40px 20px", textAlign: "center" }}>
+        <h2 style={{ color: "#DC2626", fontWeight: 800 }}>Access Restricted</h2>
+        <p style={{ color: "#64748B", maxWidth: "600px", margin: "12px auto" }}>
+          Adoption Management is reserved for Adoption Coordinators, Shelter Managers, and Super Administrators. Rescue Centre Admin access is restricted to centre rescue operations, dispatch, vehicle fleet, and dog master management.
+        </p>
+      </div>
+    );
+  }
 
   // Search & Pagination & Filter
   const [searchQuery, setSearchQuery] = useState("");

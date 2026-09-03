@@ -152,7 +152,7 @@ const FinanceUserDashboard = () => {
       title: "Total Income",
       value: loading ? "..." : formatCurrency(summaryData?.totalIncome ?? 430565.0),
       trend: "Gross contributions received",
-      color: "#10B981",
+      color: "#1E3A8A",
       icon: <FaDollarSign />,
       onClick: () => navigate("/finance?tab=donations"),
     },
@@ -160,7 +160,7 @@ const FinanceUserDashboard = () => {
       title: "Total Expenses",
       value: loading ? "..." : formatCurrency(summaryData?.totalExpenses ?? 239090.0),
       trend: "Operating disbursements",
-      color: "#6366F1",
+      color: "#DC2626",
       icon: <FaFileInvoiceDollar />,
       onClick: () => navigate("/finance?tab=expenses"),
     },
@@ -168,7 +168,7 @@ const FinanceUserDashboard = () => {
       title: "Net Balance",
       value: loading ? "..." : formatCurrency(summaryData?.netBalance ?? 191475.0),
       trend: "Net operating reserve",
-      color: "#059669",
+      color: "#16A34A",
       icon: <FaBoxes />,
     },
     {
@@ -191,7 +191,7 @@ const FinanceUserDashboard = () => {
       title: "Donations Reconciled",
       value: loading ? "..." : formatCurrency(summaryData?.totalDonationsReconciled ?? 168700.0),
       trend: "Reconciled ledger value",
-      color: "#2563EB",
+      color: "#1E3A8A",
       icon: <FaReceipt />,
       onClick: () => navigate("/finance?tab=reconciliations"),
     },
@@ -211,12 +211,12 @@ const FinanceUserDashboard = () => {
     {
       key: "type",
       header: "Donation Type",
-      render: (v: string) => <span style={{ fontWeight: 700, color: "#2563EB", textTransform: "capitalize" }}>{v || "one_time"}</span>,
+      render: (v: string) => <span style={{ fontWeight: 700, color: "#1E3A8A", textTransform: "capitalize" }}>{v || "one_time"}</span>,
     },
     {
       key: "amount",
       header: "Amount (₹)",
-      render: (v: unknown) => <strong style={{ color: "#047857" }}>{formatCurrency(v)}</strong>,
+      render: (v: unknown) => <strong style={{ color: "#15803D" }}>{formatCurrency(v)}</strong>,
     },
     {
       key: "date",
@@ -228,7 +228,7 @@ const FinanceUserDashboard = () => {
       header: "Status",
       render: (v: string) => {
         const s = String(v || "completed").toLowerCase();
-        const color = isCompletedDonationStatus(s) ? "#047857" : isRefundedDonationStatus(s) ? "#7C3AED" : s === "pending" ? "#D97706" : "#DC2626";
+        const color = isCompletedDonationStatus(s) ? "#15803D" : isRefundedDonationStatus(s) ? "#1E3A8A" : s === "pending" ? "#D97706" : "#DC2626";
         const bg = isCompletedDonationStatus(s) ? "#ECFDF5" : isRefundedDonationStatus(s) ? "#F3E8FF" : s === "pending" ? "#FEF3C7" : "#FEE2E2";
         return (
           <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 10px", borderRadius: "999px", background: bg, color, textTransform: "uppercase" }}>
@@ -258,7 +258,7 @@ const FinanceUserDashboard = () => {
       {/* Audit Period Banner */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", background: "#F1F5F9", border: "1px solid #CBD5E1", borderRadius: "10px", padding: "10px 16px", fontSize: "13px", color: "#334155" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 700 }}>
-          <FaInfoCircle color="#2563EB" /> Reporting Audit Period: <span style={{ color: "#0F172A" }}>{summaryData?.periodStart || "2026-01-01"} &rarr; {summaryData?.periodEnd || "2026-09-03"}</span>
+          <FaInfoCircle color="#1E3A8A" /> Reporting Audit Period: <span style={{ color: "#0F172A" }}>{summaryData?.periodStart || "2026-01-01"} &rarr; {summaryData?.periodEnd || "2026-09-03"}</span>
         </div>
         <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>Authoritative Backend Financial Summary</div>
       </div>
@@ -290,7 +290,7 @@ const FinanceUserDashboard = () => {
           <h3 style={{ margin: 0, color: "#0F172A", fontSize: "18px", fontWeight: 800 }}>
             Real-Time Verified Donation Ledger
           </h3>
-          {loading && <span style={{ fontSize: "12px", color: "#2563EB", fontWeight: 600 }}>Syncing ledger...</span>}
+          {loading && <span style={{ fontSize: "12px", color: "#1E3A8A", fontWeight: 600 }}>Syncing ledger...</span>}
         </div>
 
         <DataTable
@@ -307,7 +307,7 @@ const FinanceUserDashboard = () => {
                 borderRadius: "6px",
                 border: "1px solid #CBD5E1",
                 background: "#FFFFFF",
-                color: "#2563EB",
+                color: "#1E3A8A",
                 fontSize: "12px",
                 fontWeight: 700,
                 cursor: "pointer",

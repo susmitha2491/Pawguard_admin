@@ -208,7 +208,7 @@ const Sidebar = ({
             flexShrink: 0,
           }}
         >
-          <PawGuardLogo size={34} badgeBg="#2563EB" iconColor="#FFFFFF" />
+          <PawGuardLogo size={34} />
           {!showCollapsed && (
             <span
               style={{
@@ -250,14 +250,15 @@ const Sidebar = ({
                   padding: showCollapsed ? "12px" : "10px 14px",
                   justifyContent: showCollapsed ? "center" : "flex-start",
                   marginBottom: "4px",
-                  borderRadius: "10px",
+                  borderRadius: "8px",
                   textDecoration: "none",
                   color: active ? "#FFFFFF" : "#94A3B8",
                   fontSize: "14px",
                   fontWeight: active ? 600 : 500,
-                  background: active ? "#2563EB" : "transparent",
-                  boxShadow: active ? "0 4px 12px rgba(37, 99, 235, 0.35)" : "none",
-                  transition: "all 0.15s ease",
+                  background: active ? "#1E3A8A" : "transparent",
+                  borderLeft: active ? "3px solid #FFFFFF" : "3px solid transparent",
+                  boxShadow: active ? "0 4px 12px rgba(30, 58, 138, 0.3)" : "none",
+                  transition: "background-color 0.15s ease, color 0.15s ease",
                 }}
               >
                 <span style={{ fontSize: "17px", display: "flex", alignItems: "center", flexShrink: 0 }}>
@@ -291,14 +292,14 @@ const Sidebar = ({
               gap: "12px",
               padding: showCollapsed ? "12px" : "10px 14px",
               justifyContent: showCollapsed ? "center" : "flex-start",
-              borderRadius: "10px",
+              borderRadius: "8px",
               textDecoration: "none",
-              color: "#F87171",
+              color: "#FCA5A5",
               fontSize: "14px",
               fontWeight: 600,
               cursor: "pointer",
-              background: "rgba(239, 68, 68, 0.08)",
-              transition: "all 0.15s ease",
+              background: "rgba(220, 38, 38, 0.12)",
+              transition: "background-color 0.15s ease",
             }}
           >
             <FaSignOutAlt size={16} style={{ flexShrink: 0 }} />

@@ -201,6 +201,17 @@ const MODULE_ALIASES: Record<string, string> = {
   safety_tags: "animals",
   safetytag: "animals",
   "safety-tag": "animals",
+  companion_pet: "animals",
+  companion_pets: "animals",
+  companionpet: "animals",
+  "companion-pet": "animals",
+  "companion-pets": "animals",
+  dog: "animals",
+  dogs: "animals",
+  dog_profile: "animals",
+  dog_profiles: "animals",
+  "dog-profile": "animals",
+  "dog-profiles": "animals",
 };
 
 /** Backend action keys → frontend `PERMISSION_ACTIONS` keys. */
@@ -488,13 +499,11 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   super_admin: matrixPermissionKeys(),
   rescue_centre_admin: [
     "view_dashboard",
-    ...perm("users", "view", "create", "edit"),
     ...perm("animals", "view", "create", "edit", "delete", "approve", "export", "manage"),
     ...perm("rescues", "view", "create", "edit", "delete", "approve", "export", "manage"),
     ...perm("rescue_requests", "view", "create", "edit", "approve", "manage"),
     ...perm("rescue_dispatch", "view", "create", "edit", "manage"),
-    ...perm("vehicles", "view", "edit", "delete", "manage"),
-    ...perm("medical", "view", "create", "edit"),
+    ...perm("vehicles", "view", "create", "edit", "delete", "manage"),
     ...perm("shelters", "view", "create", "edit", "manage"),
     ...perm("reports", "view", "export"),
     ...perm("notifications", "view"),

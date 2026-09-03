@@ -31,6 +31,7 @@ import medicalService, {
 import dogService from "../../services/dogService";
 import { notifyDataChanged } from "../../utils/dataSync";
 import { formatDateTime } from "../../utils/dateUtils";
+import { getCurrentUserRole } from "../../utils/roleUtils";
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
@@ -42,7 +43,19 @@ const inputStyle: React.CSSProperties = {
 };
 
 const MedicalRecords = () => {
+  const isRescueCentreAdmin = getCurrentUserRole() === "rescue_centre_admin";
   const [medicalRecords, setMedicalRecords] = useState<Record<string, unknown>[]>([]);
+
+  if (isRescueCentreAdmin) {
+    return (
+      <div style={{ padding: "40px 20px", textAlign: "center" }}>
+        <h2 style={{ color: "#DC2626", fontWeight: 800 }}>Access Restricted</h2>
+        <p style={{ color: "#64748B", maxWidth: "600px", margin: "12px auto" }}>
+          Medical Records &amp; Clinical Management is reserved for Veterinarians, Shelter Managers, and Super Administrators. Rescue Centre Admin access is restricted to centre rescue operations, dispatch, vehicle fleet, and dog master management.
+        </p>
+      </div>
+    );
+  }
   const [dogs, setDogs] = useState<Record<string, unknown>[]>([]);
   const [certificatesIssued, setCertificatesIssued] = useState(0);
   const [loading, setLoading] = useState<boolean>(true);

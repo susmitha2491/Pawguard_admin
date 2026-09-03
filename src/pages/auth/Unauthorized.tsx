@@ -95,7 +95,7 @@ const Unauthorized = () => {
           }}
         >
           You do not have permission to view this page. You are currently signed in as{" "}
-          <strong style={{ color: "#2563EB" }}>{roleTitle}</strong>.
+          <strong style={{ color: "#1E3A8A" }}>{roleTitle}</strong>.
         </p>
 
         <div
@@ -126,7 +126,7 @@ const Unauthorized = () => {
               display: "flex",
               alignItems: "center",
               gap: "8px",
-              background: "#2563EB",
+              background: "#1E3A8A",
               color: "#FFFFFF",
               border: "none",
               padding: "14px 28px",

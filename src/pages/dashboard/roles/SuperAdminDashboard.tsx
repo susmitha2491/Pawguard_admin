@@ -157,7 +157,7 @@ const SuperAdminDashboard = () => {
       value: totalUsers,
       subtitle: `${activeUsersCount} active accounts`,
       icon: <FaUsers />,
-      color: "#2563EB",
+      color: "#1E3A8A",
       path: "/users",
     },
     {
@@ -165,7 +165,7 @@ const SuperAdminDashboard = () => {
       value: totalDogs,
       subtitle: `${totalDogs} registered dogs${rescuedDogsCount > 0 ? ` · ${rescuedDogsCount} rescued` : ""}`,
       icon: <FaPaw />,
-      color: "#EF4444",
+      color: "#15803D",
       path: "/pets",
     },
     {
@@ -173,7 +173,7 @@ const SuperAdminDashboard = () => {
       value: totalShelters,
       subtitle: `${activeSheltersCount} active facilities`,
       icon: <FaBuilding />,
-      color: "#8B5CF6",
+      color: "#1E3A8A",
       path: "/shelters",
     },
     {
@@ -181,7 +181,7 @@ const SuperAdminDashboard = () => {
       value: activeRescuesCount,
       subtitle: activeRescuesCount > 0 ? `${awaitingDispatchCount} awaiting dispatch` : "No active rescue incidents",
       icon: <FaTruckMedical />,
-      color: "#F97316",
+      color: activeRescuesCount > 0 ? "#DC2626" : "#1E3A8A",
       path: "/rescues",
     },
     {
@@ -189,7 +189,7 @@ const SuperAdminDashboard = () => {
       value: pendingAdoptionsCount,
       subtitle: pendingAdoptionsCount > 0 ? `${newAdoptionAppsCount} new applications` : "No pending adoptions",
       icon: <FaHeart />,
-      color: "#EC4899",
+      color: "#15803D",
       path: "/adoptions",
     },
     {
@@ -197,7 +197,7 @@ const SuperAdminDashboard = () => {
       value: activeFostersCount,
       subtitle: activeFostersCount > 0 ? `${fosters.length} total placements` : "No active foster placements",
       icon: <FaHouse />,
-      color: "#10B981",
+      color: "#15803D",
       path: "/fosters",
     },
     {
@@ -205,7 +205,7 @@ const SuperAdminDashboard = () => {
       value: totalVolunteers,
       subtitle: totalVolunteers > 0 ? `${activeVolunteersCount} active volunteers` : "No volunteer records",
       icon: <FaHandsHolding />,
-      color: "#F59E0B",
+      color: "#1E3A8A",
       path: "/volunteers",
     },
     {
@@ -213,7 +213,7 @@ const SuperAdminDashboard = () => {
       value: formatINR(totalDonationAmount),
       subtitle: successfulCount > 0 ? `${successfulCount} successful donations` : "No donations recorded",
       icon: <FaIndianRupeeSign />,
-      color: "#06B6D4",
+      color: "#1E3A8A",
       path: "/finance",
     },
   ];

@@ -72,7 +72,7 @@ const VolunteerActivityChart = ({ data = [] }: VolunteerActivityChartProps) => {
 
         <div>
           <p style={{ margin: 0, color: "#64748B", fontSize: "13px", fontWeight: 600 }}>Last Month</p>
-          <h3 style={{ margin: "4px 0 0", color: "#2563EB", fontSize: "28px", fontWeight: 800 }}>
+          <h3 style={{ margin: "4px 0 0", color: "#1E3A8A", fontSize: "28px", fontWeight: 800 }}>
             {lastMonth} Hrs
           </h3>
         </div>
@@ -112,10 +112,10 @@ const VolunteerActivityChart = ({ data = [] }: VolunteerActivityChartProps) => {
             <Line
               type="monotone"
               dataKey="activity"
-              stroke="#6366F1"
+              stroke="#1E3A8A"
               strokeWidth={3}
-              dot={{ r: 5, fill: "#6366F1" }}
-              activeDot={{ r: 8, fill: "#4F46E5" }}
+              dot={{ r: 5, fill: "#1E3A8A" }}
+              activeDot={{ r: 8, fill: "#1E3A8A" }}
             />
           </LineChart>
         </ResponsiveContainer>

@@ -159,7 +159,6 @@ function App() {
                   permission="view_users"
                   allowedRoles={[
                     "super_admin",
-                    "rescue_centre_admin",
                     "shelter_manager",
                   ]}
                 />
@@ -243,7 +242,7 @@ function App() {
               element={
                 <ProtectedRoute
                   permission="view_adoptions"
-                  allowedRoles={["super_admin", "adoption_coordinator", "shelter_manager", "rescue_centre_admin"]}
+                  allowedRoles={["super_admin", "adoption_coordinator", "shelter_manager"]}
                 />
               }
             >
@@ -254,7 +253,7 @@ function App() {
               element={
                 <ProtectedRoute
                   permission="view_foster_placements"
-                  allowedRoles={["super_admin", "foster_coordinator", "rescue_centre_admin"]}
+                  allowedRoles={["super_admin", "foster_coordinator"]}
                 />
               }
             >
@@ -265,7 +264,7 @@ function App() {
               element={
                 <ProtectedRoute
                   permission="view_volunteers"
-                  allowedRoles={["super_admin", "volunteer_coordinator", "shelter_manager", "rescue_centre_admin"]}
+                  allowedRoles={["super_admin", "volunteer_coordinator", "shelter_manager"]}
                 />
               }
             >
@@ -292,7 +291,7 @@ function App() {
               element={
                 <ProtectedRoute
                   permission="view_medical"
-                  allowedRoles={["super_admin", "rescue_centre_admin", "veterinarian", "shelter_manager"]}
+                  allowedRoles={["super_admin", "veterinarian", "shelter_manager"]}
                 />
               }
             >

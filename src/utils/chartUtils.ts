@@ -92,13 +92,13 @@ export interface DistributionPoint {
 }
 
 const PALETTE = [
-  "#2563EB",
-  "#10B981",
+  "#1E3A8A",
+  "#16A34A",
   "#F59E0B",
-  "#EF4444",
-  "#8B5CF6",
-  "#06B6D4",
-  "#EC4899",
+  "#DC2626",
+  "#0F172A",
+  "#475569",
+  "#94A3B8",
   "#64748B",
 ];
 

@@ -26,13 +26,13 @@ export const dashboardService = {
   },
 
   // GET /dashboards/rescue (Exact OpenAPI endpoint)
-  getRescueCentreDashboard: async () => {
-    const response = await api.get("/dashboards/rescue");
+  getRescueCentreDashboard: async (params?: Record<string, unknown>) => {
+    const response = await api.get("/dashboards/rescue", { params });
     return response.data;
   },
 
-  getRescueDashboard: async () => {
-    const response = await api.get("/dashboards/rescue");
+  getRescueDashboard: async (params?: Record<string, unknown>) => {
+    const response = await api.get("/dashboards/rescue", { params });
     return response.data;
   },
 

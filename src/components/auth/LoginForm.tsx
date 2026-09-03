@@ -152,7 +152,11 @@ const LoginForm = () => {
       await processAuthenticatedSession(loginPayload, response);
     } catch (error: unknown) {
       if (axios.isAxiosError(error)) {
-        if (!error.response) {
+        if (error.code === "ECONNABORTED" || error.message.includes("timeout")) {
+          setErrorMsg(
+            "The PawGuard backend is waking up (cold start). Please wait a few seconds and try signing in again."
+          );
+        } else if (!error.response) {
           const origin = typeof window !== "undefined" ? window.location.origin : "this origin";
           setErrorMsg(
             `Unable to connect to PawGuard backend. Please verify your connection, or ensure backend CORS policy allows requests from '${origin}'.`

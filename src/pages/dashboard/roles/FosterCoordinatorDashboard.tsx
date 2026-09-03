@@ -31,7 +31,7 @@ const isApproved = (st?: string) => {
 const VolunteerStatusBadge = ({ status }: { status?: string }) => {
   const s = String(status || "applied").toLowerCase();
   const color =
-    isApproved(s) ? "#047857" :
+    isApproved(s) ? "#15803D" :
     isPending(s) ? "#D97706" :
     s === "rejected" ? "#DC2626" : "#64748B";
   const bg =
@@ -235,11 +235,11 @@ const FosterCoordinatorDashboard = () => {
   const approvedFosterVols = fosterVolunteers.filter((v) => isApproved(v.status));
 
   const stats = [
-    { title: "Active Foster Homes", value: loading ? "..." : String(activeHomesCount), trend: "Available Homes", color: "#2563EB", icon: <FaHome />, onClick: () => navigate("/fosters") },
-    { title: "Pets in Foster Care", value: loading ? "..." : String(petsInCareCount), trend: "Active Placements", color: "#10B981", icon: <FaPaw />, onClick: () => navigate("/pets") },
+    { title: "Active Foster Homes", value: loading ? "..." : String(activeHomesCount), trend: "Available Homes", color: "#1E3A8A", icon: <FaHome />, onClick: () => navigate("/fosters") },
+    { title: "Pets in Foster Care", value: loading ? "..." : String(petsInCareCount), trend: "Active Placements", color: "#16A34A", icon: <FaPaw />, onClick: () => navigate("/pets") },
     { title: "Pending Foster Applications", value: loading ? "..." : String(pendingRequestsCount), trend: "Requires Review", color: "#F59E0B", icon: <FaUserPlus />, onClick: () => navigate("/fosters") },
-    { title: "Total Care Capacity", value: loading ? "..." : String(availableCapacityCount), trend: "Available Slots", color: "#6366F1", icon: <FaCalendarCheck />, onClick: () => navigate("/fosters") },
-    { title: "Foster Volunteers", value: volLoading ? "..." : String(fosterVolunteers.length), trend: `${approvedFosterVols.length} Approved`, color: "#0891B2", icon: <FaUsers /> },
+    { title: "Total Care Capacity", value: loading ? "..." : String(availableCapacityCount), trend: "Available Slots", color: "#1E3A8A", icon: <FaCalendarCheck />, onClick: () => navigate("/fosters") },
+    { title: "Foster Volunteers", value: volLoading ? "..." : String(fosterVolunteers.length), trend: `${approvedFosterVols.length} Approved`, color: "#1E3A8A", icon: <FaUsers /> },
   ];
 
   const placementColumns: Column<any>[] = [
@@ -260,7 +260,7 @@ const FosterCoordinatorDashboard = () => {
     {
       key: "active_count",
       title: "Active Placements",
-      render: (v: number) => <span style={{ fontWeight: 700, color: "#2563EB" }}>{v ?? 0} Pets</span>,
+      render: (v: number) => <span style={{ fontWeight: 700, color: "#1E3A8A" }}>{v ?? 0} Pets</span>,
     },
     {
       key: "max_capacity",
@@ -289,7 +289,7 @@ const FosterCoordinatorDashboard = () => {
               fontSize: "11px",
               fontWeight: 800,
               background: isAvail ? "#D1FAE5" : "#EFF6FF",
-              color: isAvail ? "#065F46" : "#1E40AF",
+              color: isAvail ? "#15803D" : "#1E3A8A",
             }}
           >
             {statusStr}
@@ -370,9 +370,9 @@ const FosterCoordinatorDashboard = () => {
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", marginBottom: "20px" }}>
-        <QuickActionCard icon={<FaUserPlus />} title="Register Fosterer" subtitle="Onboard new caregiver" color="#2563EB" onClick={() => navigate("/fosters?action=apply")} />
-        <QuickActionCard icon={<FaPaw />} title="Place Dog in Foster" subtitle="Match dog with family" color="#10B981" onClick={() => navigate("/fosters?action=place")} />
-        <QuickActionCard icon={<FaSync />} title="Refresh Roster" subtitle="Sync latest foster data" color="#6366F1" onClick={fetchDashboard} />
+        <QuickActionCard icon={<FaUserPlus />} title="Register Fosterer" subtitle="Onboard new caregiver" color="#1E3A8A" onClick={() => navigate("/fosters?action=apply")} />
+        <QuickActionCard icon={<FaPaw />} title="Place Dog in Foster" subtitle="Match dog with family" color="#16A34A" onClick={() => navigate("/fosters?action=place")} />
+        <QuickActionCard icon={<FaSync />} title="Refresh Roster" subtitle="Sync latest foster data" color="#1E3A8A" onClick={fetchDashboard} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "20px" }}>
@@ -387,7 +387,7 @@ const FosterCoordinatorDashboard = () => {
           <h3 style={{ margin: 0, color: "#0F172A", fontSize: "16px", fontWeight: 700 }}>
             Active Foster Caregivers &amp; Placements (Newest First)
           </h3>
-          {loading && <span style={{ fontSize: "13px", color: "#2563EB", fontWeight: 600 }}>Loading foster data...</span>}
+          {loading && <span style={{ fontSize: "13px", color: "#1E3A8A", fontWeight: 600 }}>Loading foster data...</span>}
         </div>
         <DataTable
           columns={placementColumns}
@@ -407,7 +407,7 @@ const FosterCoordinatorDashboard = () => {
           <h3 style={{ margin: 0, color: "#0F172A", fontSize: "16px", fontWeight: 700 }}>
             Foster Volunteer Applications ({pendingFosterVols.length} Pending Review)
           </h3>
-          {volLoading && <span style={{ fontSize: "13px", color: "#2563EB", fontWeight: 600 }}>Loading volunteers...</span>}
+          {volLoading && <span style={{ fontSize: "13px", color: "#1E3A8A", fontWeight: 600 }}>Loading volunteers...</span>}
         </div>
         <DataTable columns={volunteerColumns} data={fosterVolunteers} loading={volLoading} emptyMessage="No foster volunteer applications found." onRowClick={(row: any) => { setSelectedVol(row); setIsViewModalOpen(true); }} />
       </div>
@@ -428,13 +428,13 @@ const FosterCoordinatorDashboard = () => {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", fontSize: "13px" }}>
               <div style={{ background: "#FFF", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
                 <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Caregiver Status &amp; Availability</div>
-                <div style={{ fontWeight: 700, color: selectedFosterProfile.is_available ? "#047857" : "#1E40AF", marginTop: "4px" }}>
+                <div style={{ fontWeight: 700, color: selectedFosterProfile.is_available ? "#15803D" : "#1E3A8A", marginTop: "4px" }}>
                   {selectedFosterProfile.is_available ? "✓ Available for Placement" : "Busy / Max Capacity Reached"}
                 </div>
               </div>
               <div style={{ background: "#FFF", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
                 <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Care Capacity &amp; Placements</div>
-                <div style={{ fontWeight: 700, color: "#2563EB", marginTop: "4px" }}>
+                <div style={{ fontWeight: 700, color: "#1E3A8A", marginTop: "4px" }}>
                   {selectedFosterProfile.active_count ?? 0} Active Placements / {selectedFosterProfile.max_capacity ?? 1} Max Capacity
                 </div>
               </div>
@@ -453,7 +453,7 @@ const FosterCoordinatorDashboard = () => {
                   setIsFosterInspectModalOpen(false);
                   navigate(`/fosters?action=place&profileId=${encodeURIComponent(selectedFosterProfile.id)}`);
                 }}
-                style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
               >
                 <FaPaw /> Place Dog in Home
               </button>
@@ -492,7 +492,7 @@ const FosterCoordinatorDashboard = () => {
                     type="button"
                     disabled={isSubmitting}
                     onClick={() => handleApprove(selectedVol)}
-                    style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <FaCheckCircle /> Approve Application
                   </button>

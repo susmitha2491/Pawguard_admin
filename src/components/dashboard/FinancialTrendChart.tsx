@@ -73,14 +73,14 @@ const FinancialTrendChart = ({ data = [] }: FinancialTrendChartProps) => {
       >
         <div>
           <p style={{ margin: 0, color: "#64748B", fontSize: "13px", fontWeight: 600 }}>Period Revenue</p>
-          <h3 style={{ margin: "4px 0 0", color: "#10B981", fontSize: "28px", fontWeight: 800 }}>
+          <h3 style={{ margin: "4px 0 0", color: "#16A34A", fontSize: "28px", fontWeight: 800 }}>
             ₹{totalRevenue.toLocaleString("en-IN")}
           </h3>
         </div>
 
         <div>
           <p style={{ margin: 0, color: "#64748B", fontSize: "13px", fontWeight: 600 }}>Period Expenses</p>
-          <h3 style={{ margin: "4px 0 0", color: "#EF4444", fontSize: "28px", fontWeight: 800 }}>
+          <h3 style={{ margin: "4px 0 0", color: "#DC2626", fontSize: "28px", fontWeight: 800 }}>
             ₹{totalExpenses.toLocaleString("en-IN")}
           </h3>
         </div>
@@ -94,7 +94,7 @@ const FinancialTrendChart = ({ data = [] }: FinancialTrendChartProps) => {
 
         <div>
           <p style={{ margin: 0, color: "#64748B", fontSize: "13px", fontWeight: 600 }}>Net Balance</p>
-          <h3 style={{ margin: "4px 0 0", color: "#2563EB", fontSize: "28px", fontWeight: 800 }}>
+          <h3 style={{ margin: "4px 0 0", color: "#1E3A8A", fontSize: "28px", fontWeight: 800 }}>
             ₹{netBalance.toLocaleString("en-IN")}
           </h3>
         </div>
@@ -106,12 +106,12 @@ const FinancialTrendChart = ({ data = [] }: FinancialTrendChartProps) => {
           <AreaChart data={data} margin={{ top: 10, right: 20, left: 10, bottom: 0 }}>
             <defs>
               <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#10B981" stopOpacity={0.4} />
-                <stop offset="95%" stopColor="#10B981" stopOpacity={0.0} />
+                <stop offset="5%" stopColor="#16A34A" stopOpacity={0.4} />
+                <stop offset="95%" stopColor="#16A34A" stopOpacity={0.0} />
               </linearGradient>
               <linearGradient id="colorExpenses" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#EF4444" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#EF4444" stopOpacity={0.0} />
+                <stop offset="5%" stopColor="#DC2626" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="#DC2626" stopOpacity={0.0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
@@ -133,7 +133,7 @@ const FinancialTrendChart = ({ data = [] }: FinancialTrendChartProps) => {
             <Area
               type="monotone"
               dataKey="revenue"
-              stroke="#10B981"
+              stroke="#16A34A"
               strokeWidth={3}
               fillOpacity={1}
               fill="url(#colorRevenue)"
@@ -141,7 +141,7 @@ const FinancialTrendChart = ({ data = [] }: FinancialTrendChartProps) => {
             <Area
               type="monotone"
               dataKey="expenses"
-              stroke="#EF4444"
+              stroke="#DC2626"
               strokeWidth={2}
               fillOpacity={1}
               fill="url(#colorExpenses)"

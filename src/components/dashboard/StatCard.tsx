@@ -21,7 +21,7 @@ const StatCard = ({
   trendUp = true,
   description,
   icon,
-  color = "#2563EB",
+  color = "#1E3A8A",
   compact = true,
   onClick,
   selected = false,
@@ -31,13 +31,13 @@ const StatCard = ({
       style={{
         background: "#FFFFFF",
         border: selected ? `2px solid ${color}` : "1px solid #E2E8F0",
-        borderRadius: compact ? "12px" : "16px",
+        borderRadius: compact ? "8px" : "12px",
         padding: compact ? "14px 16px" : "20px 22px",
         boxShadow: "0 1px 3px rgba(15, 23, 42, 0.05)",
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
-        transition: "all 0.2s ease-in-out",
+        transition: "border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out",
         height: "100%",
         boxSizing: "border-box",
         cursor: onClick ? "pointer" : "default",
@@ -58,7 +58,7 @@ const StatCard = ({
     >
       {/* Top Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: compact ? "10px" : "14px" }}>
-        <span style={{ fontSize: compact ? "12px" : "14px", fontWeight: 600, color: "#64748B" }}>
+        <span style={{ fontSize: compact ? "12px" : "14px", fontWeight: 600, color: "#475569" }}>
           {title}
         </span>
 
@@ -89,7 +89,7 @@ const StatCard = ({
             style={{
               margin: 0,
               fontSize: compact ? "22px" : "28px",
-              fontWeight: 800,
+              fontWeight: 700,
               color: "#0F172A",
               letterSpacing: "-0.02em",
               lineHeight: 1.1,
@@ -108,8 +108,8 @@ const StatCard = ({
                 fontWeight: 700,
                 padding: "2px 6px",
                 borderRadius: "999px",
-                background: trendUp ? "#ECFDF5" : "#FEF2F2",
-                color: trendUp ? "#10B981" : "#EF4444",
+                background: trendUp ? "#F0FDF4" : "#FEF2F2",
+                color: trendUp ? "#15803D" : "#DC2626",
               }}
             >
               {trendUp ? <FaArrowUp size={9} /> : <FaArrowDown size={9} />}
@@ -119,7 +119,7 @@ const StatCard = ({
         </div>
 
         {description && (
-          <p style={{ margin: "6px 0 0", fontSize: compact ? "12px" : "13px", color: "#94A3B8" }}>
+          <p style={{ margin: "6px 0 0", fontSize: compact ? "12px" : "13px", color: "#475569" }}>
             {description}
           </p>
         )}

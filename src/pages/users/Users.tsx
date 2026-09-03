@@ -1122,7 +1122,7 @@ const Users = () => {
           title: "Total Rescue Staff",
           value: loading ? "..." : `${staffUsers.length} Staff`,
           trend: "Rescue Centre Personnel",
-          color: "#2563EB",
+          color: "#1E3A8A",
           icon: <FaUsers />,
           onClick: () => {
             setActiveFilter("staff");
@@ -1137,7 +1137,7 @@ const Users = () => {
           title: "Active Rescue Staff",
           value: loading ? "..." : `${staffUsers.filter((u) => u.isActive).length} Active`,
           trend: "Operational Access Enabled",
-          color: "#059669",
+          color: "#15803D",
           icon: <FaCheckCircle />,
           onClick: () => {
             setActiveFilter("staff");
@@ -1152,7 +1152,7 @@ const Users = () => {
           title: "Inactive Rescue Staff",
           value: loading ? "..." : `${staffUsers.filter((u) => !u.isActive).length} Inactive`,
           trend: "Access Suspended",
-          color: "#EF4444",
+          color: "#DC2626",
           icon: <FaTimesCircle />,
           onClick: () => {
             setActiveFilter("staff");
@@ -1167,7 +1167,7 @@ const Users = () => {
           title: "Rescue Admins",
           value: loading ? "..." : `${staffUsers.filter((u) => u.roles.some((r) => normalizeRole(r) === "rescue_centre_admin")).length} Admins`,
           trend: "Centre Administrators",
-          color: "#7C3AED",
+          color: "#1E3A8A",
           icon: <FaUserShield />,
           onClick: () => {
             setActiveFilter("staff");
@@ -1187,7 +1187,7 @@ const Users = () => {
           title: "Total Shelter Staff",
           value: loading ? "..." : `${staffUsers.length} Staff`,
           trend: "Shelter Personnel",
-          color: "#2563EB",
+          color: "#1E3A8A",
           icon: <FaUsers />,
           onClick: () => {
             setActiveFilter("staff");
@@ -1202,7 +1202,7 @@ const Users = () => {
           title: "Active Shelter Staff",
           value: loading ? "..." : `${staffUsers.filter((u) => u.isActive).length} Active`,
           trend: "Operational Access Enabled",
-          color: "#059669",
+          color: "#15803D",
           icon: <FaCheckCircle />,
           onClick: () => {
             setActiveFilter("staff");
@@ -1217,7 +1217,7 @@ const Users = () => {
           title: "Inactive Shelter Staff",
           value: loading ? "..." : `${staffUsers.filter((u) => !u.isActive).length} Inactive`,
           trend: "Access Suspended",
-          color: "#EF4444",
+          color: "#DC2626",
           icon: <FaTimesCircle />,
           onClick: () => {
             setActiveFilter("staff");
@@ -1236,7 +1236,7 @@ const Users = () => {
         title: "Total Users",
         value: loading ? "..." : `${users.length} Total Users`,
         trend: "Master Identity Directory",
-        color: "#2563EB",
+        color: "#1E3A8A",
         icon: <FaUsers />,
         onClick: () => {
           setActiveFilter("all");
@@ -1251,7 +1251,7 @@ const Users = () => {
         title: "Admin Portal Users",
         value: loading ? "..." : `${staffUsers.length} Staff`,
         trend: "Authorized Internal Staff Roles",
-        color: "#0891B2",
+        color: "#1E3A8A",
         icon: <FaUserShield />,
         onClick: () => {
           setActiveFilter("staff");
@@ -1266,7 +1266,7 @@ const Users = () => {
         title: "Public Users",
         value: loading ? "..." : `${publicUsers.length} Users`,
         trend: "Community & External Accounts",
-        color: "#64748B",
+        color: "#475569",
         icon: <FaUsers />,
         onClick: () => {
           setActiveFilter("public");
@@ -1281,7 +1281,7 @@ const Users = () => {
         title: "Inactive Users",
         value: loading ? "..." : `${users.filter((u) => !u.isActive && !u.is_active).length} Inactive`,
         trend: "Deactivated Accounts",
-        color: "#EF4444",
+        color: "#DC2626",
         icon: <FaTimesCircle />,
         onClick: () => {
           setStatusFilter("inactive");
@@ -1425,6 +1425,19 @@ const Users = () => {
       },
     },
   ];
+
+  if (isRescueCentreAdmin) {
+    return (
+      <div style={{ padding: "40px 20px", textAlign: "center" }}>
+        <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", color: "#991B1B", padding: "24px", borderRadius: "12px", maxWidth: "600px", margin: "0 auto" }}>
+          <h3 style={{ margin: "0 0 8px", fontSize: "18px", fontWeight: 700 }}>Access Restricted</h3>
+          <p style={{ margin: 0, fontSize: "14px", color: "#7F1D1D" }}>
+            Rescue Centre Admin users are not authorized to access Staff & Users management. Contact a Super Administrator to manage user accounts.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

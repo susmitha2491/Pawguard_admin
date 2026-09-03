@@ -20,6 +20,7 @@ import ShelterDetailsModal from "../../components/shelters/ShelterDetailsModal";
 import KennelDetailsModal from "../../components/shelters/KennelDetailsModal";
 import KennelAssignmentModal from "../../components/shelters/KennelAssignmentModal";
 import { notifyDataChanged } from "../../utils/dataSync";
+import { getCurrentUser, normalizeRole, getRescueCentreId } from "../../utils/roleUtils";
 
 const FACILITY_TYPES = ["shelter", "clinic", "foster_home", "partner"];
 const FACILITY_STATUSES = ["active", "inactive", "maintenance"];
@@ -141,6 +142,13 @@ const RowActionMenu: React.FC<{ actions: RowActionItem[] }> = ({ actions }) => {
 };
 
 export const Shelters = () => {
+  const currentUser = getCurrentUser();
+  const currentRole = normalizeRole(currentUser);
+  const userRescueCentreId = getRescueCentreId(currentUser);
+  const userShelterId = (currentUser as any)?.shelter_id || (currentUser as any)?.shelter?.id || (currentUser as any)?.assigned_shelter_id;
+
+  const canManageKennels = currentRole === "super_admin" || currentRole === "shelter_manager";
+
   const [activeTab, setActiveTab] = useState<"facilities" | "kennels">("facilities");
   const [shelters, setShelters] = useState<any[]>([]);
   const [allShelters, setAllShelters] = useState<any[]>([]);
@@ -218,15 +226,43 @@ export const Shelters = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await shelterService.getShelters({
+
+      if (currentRole === "rescue_centre_admin" && !userRescueCentreId) {
+        setError("No Rescue Centre Assigned: Your account does not have an assigned Rescue Centre. Contact a Super Administrator.");
+        setShelters([]);
+        setLoading(false);
+        return;
+      }
+
+      const queryParams: Record<string, any> = {
         search: debouncedSearch.trim() || undefined,
         status: statusFilter || undefined,
         facility_type: typeFilter || undefined,
         page,
         page_size: pageSize,
-      });
+      };
 
-      const facilityList = unwrapList(response);
+      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
+        queryParams.rescue_centre_id = userRescueCentreId;
+      } else if (currentRole === "shelter_manager" && userShelterId) {
+        queryParams.shelter_id = userShelterId;
+      }
+
+      const response = await shelterService.getShelters(queryParams);
+      let facilityList = unwrapList(response);
+
+      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
+        facilityList = facilityList.filter((f: any) => {
+          const fCentreId = f.rescue_centre_id || f.rescue_center_id || f.organization_id || f.facility_id;
+          return !fCentreId || String(fCentreId) === String(userRescueCentreId);
+        });
+      } else if (currentRole === "shelter_manager" && userShelterId) {
+        facilityList = facilityList.filter((f: any) => {
+          const fShelterId = f.id || f.shelter_id || f.facility_id;
+          return !fShelterId || String(fShelterId).toLowerCase() === String(userShelterId).toLowerCase();
+        });
+      }
+
       const total = response?.meta?.total ?? response?.data?.meta?.total ?? facilityList.length;
       setTotalCount(total);
       setShelters(facilityList);
@@ -244,8 +280,21 @@ export const Shelters = () => {
   // Fetch All Facilities for dropdowns & aggregates
   const fetchAllShelters = async () => {
     try {
-      const response = await shelterService.getShelters({ page: 1, page_size: 50 });
-      const facs = unwrapList(response);
+      const queryParams: Record<string, any> = { page: 1, page_size: 50 };
+      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
+        queryParams.rescue_centre_id = userRescueCentreId;
+      } else if (currentRole === "shelter_manager" && userShelterId) {
+        queryParams.shelter_id = userShelterId;
+      }
+
+      const response = await shelterService.getShelters(queryParams);
+      let facs = unwrapList(response);
+      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
+        facs = facs.filter((f: any) => {
+          const fCentreId = f.rescue_centre_id || f.rescue_center_id || f.organization_id || f.facility_id;
+          return !fCentreId || String(fCentreId) === String(userRescueCentreId);
+        });
+      }
       setAllShelters(facs);
     } catch {
       setAllShelters([]);
@@ -268,8 +317,26 @@ export const Shelters = () => {
   const fetchAllKennelsWorkspace = async () => {
     setKennelsLoading(true);
     try {
-      const facsRes = await shelterService.getShelters({ page: 1, page_size: 50 });
-      const facList = unwrapList(facsRes);
+      const queryParams: Record<string, any> = { page: 1, page_size: 50 };
+      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
+        queryParams.rescue_centre_id = userRescueCentreId;
+      } else if (currentRole === "shelter_manager" && userShelterId) {
+        queryParams.shelter_id = userShelterId;
+      }
+      const facsRes = await shelterService.getShelters(queryParams);
+      let facList = unwrapList(facsRes);
+
+      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
+        facList = facList.filter((f: any) => {
+          const fCentreId = f.rescue_centre_id || f.rescue_center_id || f.organization_id || f.facility_id;
+          return !fCentreId || String(fCentreId) === String(userRescueCentreId);
+        });
+      } else if (currentRole === "shelter_manager" && userShelterId) {
+        facList = facList.filter((f: any) => {
+          const fShelterId = f.id || f.shelter_id || f.facility_id;
+          return !fShelterId || String(fShelterId).toLowerCase() === String(userShelterId).toLowerCase();
+        });
+      }
 
       const fetchedSections: any[] = [];
       let fetchedKennels: any[] = [];
@@ -686,7 +753,7 @@ export const Shelters = () => {
           },
         ];
 
-        if (!row.is_occupied) {
+        if (canManageKennels && !row.is_occupied) {
           actions.push({
             label: "Assign Animal",
             icon: <FaPaw style={{ color: "#EA580C" }} />,
@@ -697,7 +764,7 @@ export const Shelters = () => {
           });
         }
 
-        if (row.sanitation_state !== "clean") {
+        if (canManageKennels && row.sanitation_state !== "clean") {
           actions.push({
             label: "Mark Clean",
             icon: <FaBroom style={{ color: "#16A34A" }} />,
@@ -729,7 +796,7 @@ export const Shelters = () => {
               onClick={() => setIsRegisterModalOpen(true)}
               style={{
                 padding: "8px 14px",
-                background: "#2563EB",
+                background: "#1E3A8A",
                 color: "#FFFFFF",
                 border: "none",
                 borderRadius: "6px",
@@ -783,27 +850,29 @@ export const Shelters = () => {
             >
               <FaBed style={{ color: "#7C3AED" }} /> Add Kennel Unit
             </button>
-            <button
-              onClick={() => {
-                setPreselectedKennelForAssign(null);
-                setIsAssignModalOpen(true);
-              }}
-              style={{
-                padding: "8px 14px",
-                background: "#FFFFFF",
-                color: "#334155",
-                border: "1px solid #CBD5E1",
-                borderRadius: "6px",
-                fontSize: "13px",
-                fontWeight: 600,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-              }}
-            >
-              <FaPaw style={{ color: "#EA580C" }} /> Assign Animal
-            </button>
+            {canManageKennels && (
+              <button
+                onClick={() => {
+                  setPreselectedKennelForAssign(null);
+                  setIsAssignModalOpen(true);
+                }}
+                style={{
+                  padding: "8px 14px",
+                  background: "#FFFFFF",
+                  color: "#334155",
+                  border: "1px solid #CBD5E1",
+                  borderRadius: "6px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <FaPaw style={{ color: "#EA580C" }} /> Assign Animal
+              </button>
+            )}
           </Can>
         </div>
       </div>
@@ -897,7 +966,7 @@ export const Shelters = () => {
           <div style={{ fontSize: "11px", fontWeight: 600, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.03em" }}>
             Occupied Kennels
           </div>
-          <div style={{ fontSize: "22px", fontWeight: 700, color: "#2563EB", marginTop: "4px" }}>
+          <div style={{ fontSize: "22px", fontWeight: 700, color: "#1E3A8A", marginTop: "4px" }}>
             {computedStats.occupiedCount}
           </div>
         </div>

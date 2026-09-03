@@ -1,34 +1,59 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap");
 
 :root {
-  --primary: #2563EB;
-  --primary-hover: #1D4ED8;
-  --primary-light: #EFF6FF;
-  --secondary: #6366F1;
-  --success: #10B981;
-  --success-light: #ECFDF5;
-  --warning: #F59E0B;
+  /* Canonical PawGuard Admin Design System Tokens */
+  --pg-primary: #1E3A8A;
+  --pg-primary-hover: #172554;
+  --pg-primary-light: #EFF6FF;
+  --pg-background: #F8FAFC;
+  --pg-surface: #FFFFFF;
+  --pg-positive: #16A34A;
+  --pg-positive-text: #15803D;
+  --pg-positive-light: #F0FDF4;
+  --pg-critical: #DC2626;
+  --pg-critical-hover: #B91C1C;
+  --pg-critical-light: #FEF2F2;
+  --pg-border: #E2E8F0;
+  --pg-text-primary: #0F172A;
+  --pg-text-secondary: #475569;
+  --pg-text-muted: #64748B;
+  --pg-text-light: #94A3B8;
+
+  /* Backward Compatibility Aliases */
+  --primary: var(--pg-primary);
+  --primary-hover: var(--pg-primary-hover);
+  --primary-light: var(--pg-primary-light);
+  --secondary: #475569;
+  --success: var(--pg-positive);
+  --success-light: var(--pg-positive-light);
+  --warning: #D97706;
   --warning-light: #FFFBEB;
-  --danger: #EF4444;
-  --danger-light: #FEF2F2;
+  --danger: var(--pg-critical);
+  --danger-light: var(--pg-critical-light);
   --sidebar-bg: #0F172A;
   --sidebar-hover: #1E293B;
-  --bg-main: #F8FAFC;
-  --card-bg: #FFFFFF;
-  --text-main: #0F172A;
-  --text-muted: #64748B;
-  --text-light: #94A3B8;
-  --border-color: #E2E8F0;
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
+  --bg-main: var(--pg-background);
+  --card-bg: var(--pg-surface);
+  --text-main: var(--pg-text-primary);
+  --text-muted: var(--pg-text-secondary);
+  --text-light: var(--pg-text-light);
+  --border-color: var(--pg-border);
+
+  /* Shadows & Geometry */
+  --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -1px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.1), 0 4px 6px -2px rgba(15, 23, 42, 0.05);
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
   --radius-full: 9999px;
   --sidebar-width: 260px;
   --sidebar-width-collapsed: 70px;
   --header-height: 64px;
+
+  /* Typography Token */
+  --pg-font-family: Inter, Roboto, sans-serif;
 }
 
 *, *::before, *::after {
@@ -40,10 +65,10 @@
 html, body {
   width: 100%;
   height: 100%;
-  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--pg-font-family);
   font-size: 14px;
-  color: var(--text-main);
-  background-color: var(--bg-main);
+  color: var(--pg-text-primary);
+  background-color: var(--pg-background);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -57,39 +82,56 @@ html, body {
   text-align: left;
 }
 
-/* Typography Hierarchy */
+/* Canonical Typography Hierarchy (design.md Section 4) */
 .page-title {
-  font-size: 34px;
-  font-weight: 800;
-  color: var(--text-main);
-  letter-spacing: -0.025em;
-  line-height: 1.2;
-}
-
-.section-title {
-  font-size: 22px;
+  font-size: 24px;
+  line-height: 32px;
   font-weight: 700;
-  color: var(--text-main);
+  color: var(--pg-text-primary);
   letter-spacing: -0.015em;
 }
 
+.section-title {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 700;
+  color: var(--pg-text-primary);
+  letter-spacing: -0.01em;
+}
+
 .card-title {
-  font-size: 16px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 600;
-  color: var(--text-main);
+  color: var(--pg-text-primary);
 }
 
 .card-value {
-  font-size: 30px;
-  font-weight: 800;
-  color: var(--text-main);
+  font-size: 28px;
+  line-height: 36px;
+  font-weight: 700;
+  color: var(--pg-text-primary);
   letter-spacing: -0.02em;
 }
 
 .description-text {
   font-size: 14px;
-  color: var(--text-muted);
-  line-height: 1.5;
+  line-height: 20px;
+  color: var(--pg-text-secondary);
+}
+
+.metadata-text {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+  color: var(--pg-text-secondary);
+}
+
+.label-text {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--pg-text-secondary);
 }
 
 /* Custom Scrollbar */
@@ -130,13 +172,13 @@ html, body {
   animation: slideDown 0.2s ease-out forwards;
 }
 
-/* Glassmorphism & Soft Shadows */
+/* Restrained Elevation & Card Surfaces */
 .soft-card {
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
+  background: var(--pg-surface);
+  border: 1px solid var(--pg-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
-  transition: all 0.2s ease-in-out;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
 }
 
 .soft-card:hover {
@@ -144,10 +186,7 @@ html, body {
   border-color: #CBD5E1;
 }
 
-/* Super Admin master dashboard — equal-sized operational dashboard cards.
-   Fixed row height + equal fractional columns keep every card exactly the
-   same width and height regardless of its text content, and 8 cards always
-   fill complete rows (Finance never sits alone). */
+/* Super Admin Master Dashboard Grid Layout */
 .master-module-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -167,8 +206,7 @@ html, body {
   }
 }
 
-
-/* Interactive elements */
+/* Interactive Controls & Keyboard Focus Outlines (WCAG 2.2 AA) */
 button, input, select, textarea {
   font-family: inherit;
 }
@@ -176,15 +214,24 @@ button, input, select, textarea {
 button {
   cursor: pointer;
   border: none;
-  outline: none;
-  transition: all 0.15s ease-in-out;
+  transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--pg-primary);
+  outline-offset: 2px;
 }
 
 button:active {
   transform: scale(0.98);
 }
 
-/* Dashboard loading states */
+/* Dashboard Loading States */
 @keyframes dashShimmer {
   0% { background-position: -400px 0; }
   100% { background-position: 400px 0; }
@@ -227,7 +274,7 @@ img, video, canvas, svg {
   word-break: break-word;
 }
 
-/* Flex & Grid layout safety overrides to enforce 100% zoom viewport fit */
+/* Flex & Grid Layout Safety Overrides */
 main > div, main section, .page-container {
   width: 100%;
   max-width: 100%;
@@ -243,12 +290,26 @@ main > div, main section, .page-container {
 
 @media (max-width: 767px) {
   .page-title {
-    font-size: 22px;
+    font-size: 20px;
+    line-height: 28px;
   }
   .section-title {
-    font-size: 18px;
+    font-size: 16px;
+    line-height: 22px;
   }
   .card-value {
     font-size: 22px;
+    line-height: 28px;
   }
 }
+
+/* Reduced Motion Overrides (design.md Section 18) */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+

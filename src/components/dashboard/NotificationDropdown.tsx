@@ -69,17 +69,17 @@ const NotificationDropdown = () => {
   const getIcon = (type: NotificationItem["type"]) => {
     switch (type) {
       case "emergency":
-        return <FaExclamationTriangle style={{ color: "#EF4444" }} />;
+        return <FaExclamationTriangle style={{ color: "#DC2626" }} />;
       case "medical":
       case "medical_updated":
-        return <FaStethoscope style={{ color: "#2563EB" }} />;
+        return <FaStethoscope style={{ color: "#1E3A8A" }} />;
       case "adoption":
       case "adoption_submitted":
       case "adoption_approved":
       case "adoption_rejected":
         return <FaHeart style={{ color: "#F59E0B" }} />;
       case "volunteer":
-        return <FaUserCheck style={{ color: "#10B981" }} />;
+        return <FaUserCheck style={{ color: "#16A34A" }} />;
       case "system":
       case "user_created":
       case "user_updated":
@@ -91,9 +91,9 @@ const NotificationDropdown = () => {
       case "certificate_generated":
       case "finance_action":
       case "role_permission_changed":
-        return <FaBell style={{ color: "#6366F1" }} />;
+        return <FaBell style={{ color: "#1E3A8A" }} />;
       default:
-        return <FaBell style={{ color: "#6366F1" }} />;
+        return <FaBell style={{ color: "#1E3A8A" }} />;
     }
   };
 
@@ -133,7 +133,7 @@ const NotificationDropdown = () => {
                   position: "absolute",
                   top: "-4px",
                   right: "-4px",
-                  background: "#EF4444",
+                  background: "#DC2626",
                   color: "#FFFFFF",
                   fontSize: "11px",
                   fontWeight: 700,
@@ -186,7 +186,7 @@ const NotificationDropdown = () => {
                 Notifications
               </h4>
               {unreadCount > 0 && (
-                <span style={{ background: "#EFF6FF", color: "#2563EB", fontSize: "12px", fontWeight: 700, padding: "2px 8px", borderRadius: "999px" }}>
+                <span style={{ background: "#EFF6FF", color: "#1E3A8A", fontSize: "12px", fontWeight: 700, padding: "2px 8px", borderRadius: "999px" }}>
                   {unreadCount} new
                 </span>
               )}
@@ -197,7 +197,7 @@ const NotificationDropdown = () => {
                 onClick={handleMarkAllRead}
                 style={{
                   background: "transparent",
-                  color: "#2563EB",
+                  color: "#1E3A8A",
                   fontSize: "12px",
                   fontWeight: 600,
                   display: "flex",
@@ -210,10 +210,10 @@ const NotificationDropdown = () => {
                   transition: "color 0.2s ease",
                 }}
                 onMouseEnter={(e) => {
-                  (e.target as HTMLButtonElement).style.color = "#1d4ed8";
+                  (e.target as HTMLButtonElement).style.color = "#1E3A8A";
                 }}
                 onMouseLeave={(e) => {
-                  (e.target as HTMLButtonElement).style.color = "#2563EB";
+                  (e.target as HTMLButtonElement).style.color = "#1E3A8A";
                 }}
               >
                 <FaCheckDouble size={12} /> Mark all read
@@ -230,7 +230,7 @@ const NotificationDropdown = () => {
               </div>
             ) : error ? (
               <div style={{ padding: "20px", textAlign: "center" }}>
-                <FaTimesCircle size={24} style={{ color: "#EF4444", marginBottom: "12px" }} />
+                <FaTimesCircle size={24} style={{ color: "#DC2626", marginBottom: "12px" }} />
                 <p style={{ margin: "0 0 8px 0", fontSize: "14px", fontWeight: 600, color: "#0F172A" }}>
                   Failed to load
                 </p>
@@ -240,7 +240,7 @@ const NotificationDropdown = () => {
                 <button
                   onClick={refresh}
                   style={{
-                    background: "#2563EB",
+                    background: "#1E3A8A",
                     color: "#FFFFFF",
                     border: "none",
                     padding: "6px 12px",
@@ -251,10 +251,10 @@ const NotificationDropdown = () => {
                     transition: "background 0.2s ease",
                   }}
                   onMouseEnter={(e) => {
-                    (e.target as HTMLButtonElement).style.background = "#1d4ed8";
+                    (e.target as HTMLButtonElement).style.background = "#1E3A8A";
                   }}
                   onMouseLeave={(e) => {
-                    (e.target as HTMLButtonElement).style.background = "#2563EB";
+                    (e.target as HTMLButtonElement).style.background = "#1E3A8A";
                   }}
                 >
                   Retry
@@ -274,7 +274,7 @@ const NotificationDropdown = () => {
                   style={{
                     padding: "12px 16px",
                     borderBottom: "1px solid #F1F5F9",
-                    background: item.read ? "#FFFFFF" : "#F0F4FF",
+                    background: item.read ? "#FFFFFF" : "#EFF6FF",
                     display: "flex",
                     gap: "12px",
                     alignItems: "flex-start",
@@ -283,12 +283,12 @@ const NotificationDropdown = () => {
                   }}
                   onMouseEnter={(e) => {
                     if (!item.read) {
-                      (e.currentTarget as HTMLDivElement).style.background = "#E8EEFF";
+                      (e.currentTarget as HTMLDivElement).style.background = "#EFF6FF";
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (!item.read) {
-                      (e.currentTarget as HTMLDivElement).style.background = "#F0F4FF";
+                      (e.currentTarget as HTMLDivElement).style.background = "#EFF6FF";
                     }
                   }}
                 >
@@ -332,7 +332,7 @@ const NotificationDropdown = () => {
                       flexShrink: 0,
                     }}
                     onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.color = "#EF4444";
+                      (e.currentTarget as HTMLButtonElement).style.color = "#DC2626";
                     }}
                     onMouseLeave={(e) => {
                       (e.currentTarget as HTMLButtonElement).style.color = "#94A3B8";
@@ -363,7 +363,7 @@ const NotificationDropdown = () => {
                 onClick={refresh}
                 style={{
                   background: "transparent",
-                  color: "#2563EB",
+                  color: "#1E3A8A",
                   fontSize: "12px",
                   fontWeight: 600,
                   border: "none",
@@ -388,7 +388,7 @@ const NotificationDropdown = () => {
                 }}
                 style={{
                   background: "transparent",
-                  color: "#2563EB",
+                  color: "#1E3A8A",
                   fontSize: "12px",
                   fontWeight: 600,
                   border: "none",

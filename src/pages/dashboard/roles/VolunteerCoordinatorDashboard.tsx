@@ -171,7 +171,7 @@ const VolunteerCoordinatorDashboard = () => {
   const [issuedCertificates, setIssuedCertificates] = useState<Record<string, boolean>>({});
 
   // Custom Leaflet SVG Icon to prevent 404 marker image asset loading issues in Vite
-  const customMarkerIcon = (color: string = "#2563EB") => {
+  const customMarkerIcon = (color: string = "#1E3A8A") => {
     const L = (window as any).L;
     if (!L) return null;
     return L.divIcon({
@@ -227,7 +227,7 @@ const VolunteerCoordinatorDashboard = () => {
 
         const radius = parseFloat(shiftForm.allowed_radius_meters) || 500;
         const circle = L.circle([initialLat, initialLng], {
-          color: "#2563EB",
+          color: "#1E3A8A",
           fillColor: "#93C5FD",
           fillOpacity: 0.4,
           radius: radius,
@@ -260,7 +260,7 @@ const VolunteerCoordinatorDashboard = () => {
           createCircleRef.current.setRadius(radius);
         } else {
           createCircleRef.current = L.circle([roundedLat, roundedLng], {
-            color: "#2563EB",
+            color: "#1E3A8A",
             fillColor: "#93C5FD",
             fillOpacity: 0.4,
             radius: radius,
@@ -346,7 +346,7 @@ const VolunteerCoordinatorDashboard = () => {
 
         const radius = parseFloat(editShiftForm.allowed_radius_meters) || 500;
         const circle = L.circle([initialLat, initialLng], {
-          color: "#2563EB",
+          color: "#1E3A8A",
           fillColor: "#93C5FD",
           fillOpacity: 0.4,
           radius: radius,
@@ -379,7 +379,7 @@ const VolunteerCoordinatorDashboard = () => {
           editCircleRef.current.setRadius(radius);
         } else {
           editCircleRef.current = L.circle([roundedLat, roundedLng], {
-            color: "#2563EB",
+            color: "#1E3A8A",
             fillColor: "#93C5FD",
             fillOpacity: 0.4,
             radius: radius,
@@ -438,7 +438,7 @@ const VolunteerCoordinatorDashboard = () => {
         createCircleRef.current.setRadius(radius);
       } else {
         createCircleRef.current = L.circle([lat, lng], {
-          color: "#2563EB",
+          color: "#1E3A8A",
           fillColor: "#93C5FD",
           fillOpacity: 0.4,
           radius: radius,
@@ -483,7 +483,7 @@ const VolunteerCoordinatorDashboard = () => {
         editCircleRef.current.setRadius(radius);
       } else {
         editCircleRef.current = L.circle([lat, lng], {
-          color: "#2563EB",
+          color: "#1E3A8A",
           fillColor: "#93C5FD",
           fillOpacity: 0.4,
           radius: radius,
@@ -543,7 +543,7 @@ const VolunteerCoordinatorDashboard = () => {
           const L = (window as any).L;
           if (L) {
             // Use custom icon in distinct red color to separate from pinned location marker
-            const tempIcon = customMarkerIcon("#EF4444");
+            const tempIcon = customMarkerIcon("#DC2626");
             
             if (isEditMode) {
               if (editTempMarkerRef.current) {
@@ -1467,7 +1467,7 @@ const VolunteerCoordinatorDashboard = () => {
       render: (_: string, r: any) => {
         const role = r.preferred_role || r.skills || "Shelter Support";
         return (
-          <span style={{ padding: "4px 10px", borderRadius: "999px", background: "#EFF6FF", color: "#1D4ED8", fontSize: "11px", fontWeight: 800, textTransform: "uppercase" }}>
+          <span style={{ padding: "4px 10px", borderRadius: "999px", background: "#EFF6FF", color: "#1E3A8A", fontSize: "11px", fontWeight: 800, textTransform: "uppercase" }}>
             {role}
           </span>
         );
@@ -1521,7 +1521,7 @@ const VolunteerCoordinatorDashboard = () => {
       key: "preferred_role",
       header: "Preferred Role / Skill",
       render: (_: string, r: any) => (
-        <span style={{ fontWeight: 700, color: "#2563EB" }}>
+        <span style={{ fontWeight: 700, color: "#1E3A8A" }}>
           {r.preferred_role || r.skills || "General Support"}
         </span>
       ),
@@ -1541,7 +1541,7 @@ const VolunteerCoordinatorDashboard = () => {
       header: "Status",
       render: (v: string) => {
         const s = String(v || "applied").toLowerCase();
-        const color = s === "active" ? "#047857" : s === "onboarded" ? "#1D4ED8" : s === "applied" ? "#D97706" : "#DC2626";
+        const color = s === "active" ? "#15803D" : s === "onboarded" ? "#1E3A8A" : s === "applied" ? "#D97706" : "#DC2626";
         const bg = s === "active" ? "#ECFDF5" : s === "onboarded" ? "#EFF6FF" : s === "applied" ? "#FEF3C7" : "#FEE2E2";
         return (
           <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 10px", borderRadius: "999px", background: bg, color, textTransform: "uppercase" }}>
@@ -1574,7 +1574,7 @@ const VolunteerCoordinatorDashboard = () => {
         else if (titleLower.includes("shelter")) type = "Shelter Support";
         else if (titleLower.includes("event") || titleLower.includes("outreach")) type = "Events & Outreach";
         return (
-          <span style={{ fontSize: "12px", fontWeight: 600, color: "#4F46E5" }}>
+          <span style={{ fontSize: "12px", fontWeight: 600, color: "#1E3A8A" }}>
             {type}
           </span>
         );
@@ -1645,16 +1645,16 @@ const VolunteerCoordinatorDashboard = () => {
         const cap = Number(r.capacity ?? 5);
         
         let status = "Available";
-        let color = "#3B82F6";
+        let color = "#1E3A8A";
         let bg = "#EFF6FF";
 
         if (enrollments.every(e => e.check_out_at && e.check_in_at)) {
           status = "Completed";
-          color = "#10B981";
+          color = "#16A34A";
           bg = "#ECFDF5";
         } else if (enrollments.some(e => e.check_in_at && !e.check_out_at)) {
           status = "In Progress";
-          color = "#8B5CF6";
+          color = "#1E3A8A";
           bg = "#F5F3FF";
         } else if (enrolled >= cap) {
           status = "Claimed (Full)";
@@ -1662,13 +1662,13 @@ const VolunteerCoordinatorDashboard = () => {
           bg = "#FEF3C7";
         } else if (enrolled > 0) {
           status = "Claimed";
-          color = "#4F46E5";
+          color = "#1E3A8A";
           bg = "#EEF2FF";
         }
 
         if (r.status === "Cancelled") {
           status = "Cancelled";
-          color = "#EF4444";
+          color = "#DC2626";
           bg = "#FEF2F2";
         }
 
@@ -1740,11 +1740,11 @@ const VolunteerCoordinatorDashboard = () => {
 
         if (checkedOut) {
           status = "Completed";
-          color = "#047857";
+          color = "#15803D";
           bg = "#ECFDF5";
         } else if (checkedIn) {
           status = "In Progress";
-          color = "#1D4ED8";
+          color = "#1E3A8A";
           bg = "#EFF6FF";
         }
 
@@ -1758,7 +1758,7 @@ const VolunteerCoordinatorDashboard = () => {
     {
       key: "hours_served",
       header: "Hours Served",
-      render: (v: number) => <strong style={{ color: "#2563EB" }}>{v || 0} Hours</strong>,
+      render: (v: number) => <strong style={{ color: "#1E3A8A" }}>{v || 0} Hours</strong>,
     },
   ];
 
@@ -1784,7 +1784,7 @@ const VolunteerCoordinatorDashboard = () => {
         const vol = volunteers.find((x) => String(x.id) === String(r.volunteer_id));
         const type = vol?.preferred_role || vol?.skills || "General Support";
         return (
-          <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 8px", borderRadius: "999px", background: "#F5F3FF", color: "#7C3AED", textTransform: "uppercase" }}>
+          <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 8px", borderRadius: "999px", background: "#F5F3FF", color: "#1E3A8A", textTransform: "uppercase" }}>
             {type}
           </span>
         );
@@ -1809,7 +1809,7 @@ const VolunteerCoordinatorDashboard = () => {
       key: "status",
       header: "Completion Status",
       render: () => (
-        <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 8px", borderRadius: "999px", background: "#ECFDF5", color: "#047857", textTransform: "uppercase" }}>
+        <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 8px", borderRadius: "999px", background: "#ECFDF5", color: "#15803D", textTransform: "uppercase" }}>
           Completed
         </span>
       ),
@@ -1817,7 +1817,7 @@ const VolunteerCoordinatorDashboard = () => {
     {
       key: "hours_served",
       header: "Hours Contributed",
-      render: (v: number) => <strong style={{ color: "#10B981" }}>{v || 0} Hours</strong>,
+      render: (v: number) => <strong style={{ color: "#16A34A" }}>{v || 0} Hours</strong>,
     },
     {
       key: "notes",
@@ -1855,7 +1855,7 @@ const VolunteerCoordinatorDashboard = () => {
                 padding: "9px 16px",
                 borderRadius: "10px",
                 border: "none",
-                background: "#10B981",
+                background: "#16A34A",
                 color: "#FFF",
                 fontSize: "13px",
                 fontWeight: 700,
@@ -1908,9 +1908,9 @@ const VolunteerCoordinatorDashboard = () => {
               style={{
                 padding: "9px 14px",
                 borderRadius: "10px",
-                border: activeTab === "overview" ? "2px solid #3B82F6" : "1px solid #CBD5E1",
+                border: activeTab === "overview" ? "2px solid #1E3A8A" : "1px solid #CBD5E1",
                 background: activeTab === "overview" ? "#EFF6FF" : "#FFFFFF",
-                color: activeTab === "overview" ? "#1D4ED8" : "#475569",
+                color: activeTab === "overview" ? "#1E3A8A" : "#475569",
                 fontWeight: 700,
                 fontSize: "13px",
                 cursor: "pointer",
@@ -1948,9 +1948,9 @@ const VolunteerCoordinatorDashboard = () => {
               style={{
                 padding: "9px 14px",
                 borderRadius: "10px",
-                border: activeTab === "roster" ? "2px solid #2563EB" : "1px solid #CBD5E1",
+                border: activeTab === "roster" ? "2px solid #1E3A8A" : "1px solid #CBD5E1",
                 background: activeTab === "roster" ? "#EFF6FF" : "#FFFFFF",
-                color: activeTab === "roster" ? "#1D4ED8" : "#475569",
+                color: activeTab === "roster" ? "#1E3A8A" : "#475569",
                 fontWeight: 700,
                 fontSize: "13px",
                 cursor: "pointer",
@@ -1968,9 +1968,9 @@ const VolunteerCoordinatorDashboard = () => {
               style={{
                 padding: "9px 14px",
                 borderRadius: "10px",
-                border: activeTab === "schedules" ? "2px solid #10B981" : "1px solid #CBD5E1",
+                border: activeTab === "schedules" ? "2px solid #16A34A" : "1px solid #CBD5E1",
                 background: activeTab === "schedules" ? "#ECFDF5" : "#FFFFFF",
-                color: activeTab === "schedules" ? "#047857" : "#475569",
+                color: activeTab === "schedules" ? "#15803D" : "#475569",
                 fontWeight: 700,
                 fontSize: "13px",
                 cursor: "pointer",
@@ -1988,9 +1988,9 @@ const VolunteerCoordinatorDashboard = () => {
               style={{
                 padding: "9px 14px",
                 borderRadius: "10px",
-                border: activeTab === "attendance" ? "2px solid #6366F1" : "1px solid #CBD5E1",
+                border: activeTab === "attendance" ? "2px solid #1E3A8A" : "1px solid #CBD5E1",
                 background: activeTab === "attendance" ? "#EEF2FF" : "#FFFFFF",
-                color: activeTab === "attendance" ? "#4338CA" : "#475569",
+                color: activeTab === "attendance" ? "#1E3A8A" : "#475569",
                 fontWeight: 700,
                 fontSize: "13px",
                 cursor: "pointer",
@@ -2008,9 +2008,9 @@ const VolunteerCoordinatorDashboard = () => {
               style={{
                 padding: "9px 14px",
                 borderRadius: "10px",
-                border: activeTab === "completed" ? "2px solid #047857" : "1px solid #CBD5E1",
+                border: activeTab === "completed" ? "2px solid #15803D" : "1px solid #CBD5E1",
                 background: activeTab === "completed" ? "#D1FAE5" : "#FFFFFF",
-                color: activeTab === "completed" ? "#065F46" : "#475569",
+                color: activeTab === "completed" ? "#15803D" : "#475569",
                 fontWeight: 700,
                 fontSize: "13px",
                 cursor: "pointer",
@@ -2028,7 +2028,7 @@ const VolunteerCoordinatorDashboard = () => {
               style={{
                 padding: "9px 14px",
                 borderRadius: "10px",
-                border: activeTab === "performance_reports" ? "2px solid #EC4899" : "1px solid #CBD5E1",
+                border: activeTab === "performance_reports" ? "2px solid #1E3A8A" : "1px solid #CBD5E1",
                 background: activeTab === "performance_reports" ? "#FCE7F3" : "#FFFFFF",
                 color: activeTab === "performance_reports" ? "#BE185D" : "#475569",
                 fontWeight: 700,
@@ -2056,7 +2056,7 @@ const VolunteerCoordinatorDashboard = () => {
                 title="Total Volunteers"
                 value={loading ? "..." : String(volunteers.length)}
                 trend="All registered profiles"
-                color="#3B82F6"
+                color="#1E3A8A"
                 icon={<FaUsers />}
                 onClick={() => setActiveTab("roster")}
               />
@@ -2072,7 +2072,7 @@ const VolunteerCoordinatorDashboard = () => {
                 title="Active Volunteers"
                 value={loading ? "..." : String(approvedVolunteers.length)}
                 trend="Onboarded &amp; active"
-                color="#10B981"
+                color="#16A34A"
                 icon={<FaUserCheck />}
                 onClick={() => setActiveTab("roster")}
               />
@@ -2080,7 +2080,7 @@ const VolunteerCoordinatorDashboard = () => {
                 title="Scheduled Shifts"
                 value={loading ? "..." : String(shifts.length)}
                 trend="Total calendar shifts"
-                color="#8B5CF6"
+                color="#1E3A8A"
                 icon={<FaCalendarAlt />}
                 onClick={() => setActiveTab("schedules")}
               />
@@ -2088,7 +2088,7 @@ const VolunteerCoordinatorDashboard = () => {
                 title="Attendance Logs"
                 value={loading ? "..." : String(allAttendance.length)}
                 trend="Active stream logs"
-                color="#6366F1"
+                color="#1E3A8A"
                 icon={<FaClock />}
                 onClick={() => setActiveTab("attendance")}
               />
@@ -2096,7 +2096,7 @@ const VolunteerCoordinatorDashboard = () => {
                 title="Completed Work"
                 value={loading ? "..." : String(completedWorkList.length)}
                 trend="Successfully completed"
-                color="#EC4899"
+                color="#1E3A8A"
                 icon={<FaCheckDouble />}
                 onClick={() => setActiveTab("completed")}
               />
@@ -2108,13 +2108,13 @@ const VolunteerCoordinatorDashboard = () => {
                 <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                   <button
                     onClick={() => setIsApplyModalOpen(true)}
-                    style={{ padding: "8px 12px", background: "#2563EB", color: "#fff", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
+                    style={{ padding: "8px 12px", background: "#1E3A8A", color: "#fff", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
                   >
                     + New Application (Intake)
                   </button>
                   <button
                     onClick={() => setIsShiftModalOpen(true)}
-                    style={{ padding: "8px 12px", background: "#10B981", color: "#fff", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
+                    style={{ padding: "8px 12px", background: "#16A34A", color: "#fff", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
                   >
                     + Schedule New Shift
                   </button>
@@ -2168,7 +2168,7 @@ const VolunteerCoordinatorDashboard = () => {
                       borderRadius: "6px",
                       border: "1px solid #CBD5E1",
                       background: "#F8FAFC",
-                      color: "#2563EB",
+                      color: "#1E3A8A",
                       fontSize: "12px",
                       fontWeight: 700,
                       cursor: "pointer",
@@ -2191,7 +2191,7 @@ const VolunteerCoordinatorDashboard = () => {
                       padding: "6px 12px",
                       borderRadius: "6px",
                       border: "none",
-                      background: "#10B981",
+                      background: "#16A34A",
                       color: "#FFF",
                       fontSize: "12px",
                       fontWeight: 700,
@@ -2210,7 +2210,7 @@ const VolunteerCoordinatorDashboard = () => {
                       padding: "6px 12px",
                       borderRadius: "6px",
                       border: "none",
-                      background: "#EF4444",
+                      background: "#DC2626",
                       color: "#FFF",
                       fontSize: "12px",
                       fontWeight: 700,
@@ -2295,7 +2295,7 @@ const VolunteerCoordinatorDashboard = () => {
                         borderRadius: "6px",
                         border: "1px solid #CBD5E1",
                         background: "#F8FAFC",
-                        color: "#2563EB",
+                        color: "#1E3A8A",
                         fontSize: "11px",
                         fontWeight: 700,
                         cursor: "pointer",
@@ -2322,14 +2322,14 @@ const VolunteerCoordinatorDashboard = () => {
                               addToast(errorMsg, "error");
                             }
                           }}
-                          style={{ padding: "5px 10px", borderRadius: "6px", border: "none", background: "#10B981", color: "#FFF", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                          style={{ padding: "5px 10px", borderRadius: "6px", border: "none", background: "#16A34A", color: "#FFF", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
                         >
                           Activate
                         </button>
                         <button
                           type="button"
                           onClick={() => handleOpenAssignWorkModal(row)}
-                          style={{ padding: "5px 10px", borderRadius: "6px", border: "none", background: "#6366F1", color: "#FFF", fontSize: "11px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                          style={{ padding: "5px 10px", borderRadius: "6px", border: "none", background: "#1E3A8A", color: "#FFF", fontSize: "11px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
                         >
                           <FaClipboardList /> Assign Work
                         </button>
@@ -2341,7 +2341,7 @@ const VolunteerCoordinatorDashboard = () => {
                         <button
                           type="button"
                           onClick={() => handleOpenAssignWorkModal(row)}
-                          style={{ padding: "5px 10px", borderRadius: "6px", border: "none", background: "#6366F1", color: "#FFF", fontSize: "11px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                          style={{ padding: "5px 10px", borderRadius: "6px", border: "none", background: "#1E3A8A", color: "#FFF", fontSize: "11px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
                         >
                           <FaClipboardList /> Assign Work
                         </button>
@@ -2379,7 +2379,7 @@ const VolunteerCoordinatorDashboard = () => {
                             addToast(errorMsg, "error");
                           }
                         }}
-                        style={{ padding: "5px 10px", borderRadius: "6px", border: "none", background: "#10B981", color: "#FFF", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                        style={{ padding: "5px 10px", borderRadius: "6px", border: "none", background: "#16A34A", color: "#FFF", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
                       >
                         Re-Activate
                       </button>
@@ -2396,9 +2396,9 @@ const VolunteerCoordinatorDashboard = () => {
                           style={{
                             padding: "5px 10px",
                             borderRadius: "6px",
-                            border: isEligible ? "1px solid #6366F1" : "1px solid #CBD5E1",
+                            border: isEligible ? "1px solid #1E3A8A" : "1px solid #CBD5E1",
                             background: isEligible ? (isIssued ? "#EEF2FF" : "#FFFFFF") : "#F8FAFC",
-                            color: isEligible ? "#6366F1" : "#94A3B8",
+                            color: isEligible ? "#1E3A8A" : "#94A3B8",
                             fontSize: "11px",
                             fontWeight: 600,
                             cursor: isEligible ? "pointer" : "not-allowed",
@@ -2445,7 +2445,7 @@ const VolunteerCoordinatorDashboard = () => {
                         padding: "6px 12px",
                         borderRadius: "6px",
                         border: "none",
-                        background: isFull ? "#94A3B8" : "#10B981",
+                        background: isFull ? "#94A3B8" : "#16A34A",
                         color: "#FFF",
                         fontSize: "12px",
                         fontWeight: 700,
@@ -2466,7 +2466,7 @@ const VolunteerCoordinatorDashboard = () => {
                         borderRadius: "6px",
                         border: "1px solid #CBD5E1",
                         background: "#F8FAFC",
-                        color: "#2563EB",
+                        color: "#1E3A8A",
                         fontSize: "12px",
                         fontWeight: 700,
                         cursor: "pointer",
@@ -2523,7 +2523,7 @@ const VolunteerCoordinatorDashboard = () => {
                     <button
                       type="button"
                       onClick={() => void handleCheckIn(row.id)}
-                      style={{ padding: "5px 10px", borderRadius: "6px", border: "none", background: "#10B981", color: "#FFF", fontSize: "11px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      style={{ padding: "5px 10px", borderRadius: "6px", border: "none", background: "#16A34A", color: "#FFF", fontSize: "11px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
                     >
                       <FaSignInAlt /> Check In
                     </button>
@@ -2532,13 +2532,13 @@ const VolunteerCoordinatorDashboard = () => {
                     <button
                       type="button"
                       onClick={() => void handleCheckOut(row.id)}
-                      style={{ padding: "5px 10px", borderRadius: "6px", border: "none", background: "#2563EB", color: "#FFF", fontSize: "11px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      style={{ padding: "5px 10px", borderRadius: "6px", border: "none", background: "#1E3A8A", color: "#FFF", fontSize: "11px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
                     >
                       <FaSignOutAlt /> Check Out
                     </button>
                   )}
                   {row.check_out_at && (
-                    <span style={{ fontSize: "11px", fontWeight: 800, color: "#047857", background: "#D1FAE5", padding: "4px 8px", borderRadius: "999px" }}>
+                    <span style={{ fontSize: "11px", fontWeight: 800, color: "#15803D", background: "#D1FAE5", padding: "4px 8px", borderRadius: "999px" }}>
                       COMPLETED
                     </span>
                   )}
@@ -2584,14 +2584,14 @@ const VolunteerCoordinatorDashboard = () => {
                   <button
                     type="button"
                     onClick={() => void handleExportReports("csv")}
-                    style={{ padding: "8px 14px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    style={{ padding: "8px 14px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <FaFileDownload /> Export CSV Report
                   </button>
                   <button
                     type="button"
                     onClick={() => void handleExportReports("pdf")}
-                    style={{ padding: "8px 14px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    style={{ padding: "8px 14px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <FaFileDownload /> Export PDF Report
                   </button>
@@ -2602,7 +2602,7 @@ const VolunteerCoordinatorDashboard = () => {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px" }}>
                 <div style={{ background: "#FFF", padding: "14px", borderRadius: "10px", border: "1px solid #CBD5E1" }}>
                   <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Total Shifts Scheduled</div>
-                  <div style={{ fontSize: "22px", fontWeight: 800, color: "#2563EB", marginTop: "4px" }}>{totalShiftCount} Shifts</div>
+                  <div style={{ fontSize: "22px", fontWeight: 800, color: "#1E3A8A", marginTop: "4px" }}>{totalShiftCount} Shifts</div>
                 </div>
 
                 <div style={{ background: "#FFF", padding: "14px", borderRadius: "10px", border: "1px solid #CBD5E1" }}>
@@ -2612,17 +2612,17 @@ const VolunteerCoordinatorDashboard = () => {
 
                 <div style={{ background: "#FFF", padding: "14px", borderRadius: "10px", border: "1px solid #CBD5E1" }}>
                   <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Completed Assignments</div>
-                  <div style={{ fontSize: "22px", fontWeight: 800, color: "#10B981", marginTop: "4px" }}>{totalCompletedCount} Tasks</div>
+                  <div style={{ fontSize: "22px", fontWeight: 800, color: "#16A34A", marginTop: "4px" }}>{totalCompletedCount} Tasks</div>
                 </div>
 
                 <div style={{ background: "#FFF", padding: "14px", borderRadius: "10px", border: "1px solid #CBD5E1" }}>
                   <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Total Hours Contributed</div>
-                  <div style={{ fontSize: "22px", fontWeight: 800, color: "#6366F1", marginTop: "4px" }}>{totalHoursSum} Hours</div>
+                  <div style={{ fontSize: "22px", fontWeight: 800, color: "#1E3A8A", marginTop: "4px" }}>{totalHoursSum} Hours</div>
                 </div>
 
                 <div style={{ background: "#FFF", padding: "14px", borderRadius: "10px", border: "1px solid #CBD5E1" }}>
                   <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Completion Index</div>
-                  <div style={{ fontSize: "22px", fontWeight: 800, color: "#047857", marginTop: "4px" }}>{completionRate}%</div>
+                  <div style={{ fontSize: "22px", fontWeight: 800, color: "#15803D", marginTop: "4px" }}>{completionRate}%</div>
                 </div>
               </div>
             </div>
@@ -2698,7 +2698,7 @@ const VolunteerCoordinatorDashboard = () => {
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" }}>
             <button type="button" onClick={() => setIsApplyModalOpen(false)} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}>Cancel</button>
-            <button type="submit" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 700 }}>
+            <button type="submit" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700 }}>
               {isSubmitting ? "Submitting..." : "Submit Volunteer Application"}
             </button>
           </div>
@@ -2721,7 +2721,7 @@ const VolunteerCoordinatorDashboard = () => {
                 type="button"
                 disabled={isSubmitting}
                 onClick={() => void handleApproveApplication(selectedApplicant)}
-                style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
               >
                 <FaCheckCircle size={12} /> Approve Application
               </button>
@@ -2729,7 +2729,7 @@ const VolunteerCoordinatorDashboard = () => {
                 type="button"
                 disabled={isSubmitting}
                 onClick={() => void handleRejectApplication(selectedApplicant)}
-                style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#EF4444", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#DC2626", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
               >
                 <FaTimesCircle size={12} /> Reject Application
               </button>
@@ -2769,7 +2769,7 @@ const VolunteerCoordinatorDashboard = () => {
                 <select
                   value={reviewRole}
                   onChange={(e) => setReviewRole(e.target.value)}
-                  style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px", fontWeight: 700, color: "#2563EB", background: "#FFF", outline: "none" }}
+                  style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px", fontWeight: 700, color: "#1E3A8A", background: "#FFF", outline: "none" }}
                 >
                   {PREFERRED_ROLES.map((r) => (
                     <option key={r} value={r}>
@@ -2795,7 +2795,7 @@ const VolunteerCoordinatorDashboard = () => {
               <div style={{ fontSize: "12px", fontWeight: 700, color: "#1E40AF", display: "flex", alignItems: "center", gap: "6px" }}>
                 <FaPaperPlane /> Optional Personal Message to Applicant
               </div>
-              <div style={{ fontSize: "11px", color: "#3B82F6", marginTop: "2px", marginBottom: "6px" }}>
+              <div style={{ fontSize: "11px", color: "#1E3A8A", marginTop: "2px", marginBottom: "6px" }}>
                 Leave empty to send the standard PawGuard application approval/rejection message.
               </div>
               <textarea
@@ -2983,7 +2983,7 @@ const VolunteerCoordinatorDashboard = () => {
                     padding: "8px 16px",
                     borderRadius: "8px",
                     border: "none",
-                    background: "#2563EB",
+                    background: "#1E3A8A",
                     color: "#FFF",
                     fontSize: "13px",
                     fontWeight: 700,
@@ -3043,7 +3043,7 @@ const VolunteerCoordinatorDashboard = () => {
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" }}>
             <button type="button" onClick={() => setIsShiftModalOpen(false)} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}>Cancel</button>
-            <button type="submit" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700 }}>
+            <button type="submit" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700 }}>
               {isSubmitting ? "Saving..." : "Save Shift Schedule"}
             </button>
           </div>
@@ -3223,7 +3223,7 @@ const VolunteerCoordinatorDashboard = () => {
                     padding: "8px 16px",
                     borderRadius: "8px",
                     border: "none",
-                    background: "#2563EB",
+                    background: "#1E3A8A",
                     color: "#FFF",
                     fontSize: "13px",
                     fontWeight: 700,
@@ -3267,7 +3267,7 @@ const VolunteerCoordinatorDashboard = () => {
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" }}>
             <button type="button" onClick={() => { setIsEditShiftModalOpen(false); setSelectedShiftToEdit(null); }} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}>Cancel</button>
-            <button type="submit" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 700 }}>
+            <button type="submit" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700 }}>
               {isSubmitting ? "Saving..." : "Update Shift Details"}
             </button>
           </div>
@@ -3307,7 +3307,7 @@ const VolunteerCoordinatorDashboard = () => {
                         <button
                           type="button"
                           onClick={() => void handleCheckIn(att.id)}
-                          style={{ padding: "6px 12px", borderRadius: "6px", border: "none", background: "#10B981", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                          style={{ padding: "6px 12px", borderRadius: "6px", border: "none", background: "#16A34A", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
                         >
                           <FaSignInAlt /> Check In
                         </button>
@@ -3317,14 +3317,14 @@ const VolunteerCoordinatorDashboard = () => {
                         <button
                           type="button"
                           onClick={() => void handleCheckOut(att.id)}
-                          style={{ padding: "6px 12px", borderRadius: "6px", border: "none", background: "#2563EB", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                          style={{ padding: "6px 12px", borderRadius: "6px", border: "none", background: "#1E3A8A", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
                         >
                           <FaSignOutAlt /> Check Out
                         </button>
                       )}
 
                       {att.check_out_at && (
-                        <span style={{ fontSize: "11px", fontWeight: 800, color: "#047857", background: "#D1FAE5", padding: "4px 8px", borderRadius: "999px" }}>
+                        <span style={{ fontSize: "11px", fontWeight: 800, color: "#15803D", background: "#D1FAE5", padding: "4px 8px", borderRadius: "999px" }}>
                           COMPLETED ({att.hours_served || 0} hrs)
                         </span>
                       )}
@@ -3358,7 +3358,7 @@ const VolunteerCoordinatorDashboard = () => {
               </div>
               <div style={{ fontSize: "12px", color: "#64748B", marginTop: "4px" }}>
                 Capacity Status:{" "}
-                <strong style={{ color: "#2563EB" }}>
+                <strong style={{ color: "#1E3A8A" }}>
                   {allAttendance.filter((a) => a.shift_id === selectedShiftToAssign.id || a.shift?.id === selectedShiftToAssign.id).length} / {selectedShiftToAssign.capacity || 5} Enrolled
                 </strong>
               </div>
@@ -3450,7 +3450,7 @@ const VolunteerCoordinatorDashboard = () => {
                           String(a.volunteer?.id) === String(selectedAssignVolunteerId))
                     )
                       ? "#94A3B8"
-                      : "#10B981",
+                      : "#16A34A",
                   color: "#FFF",
                   fontWeight: 700,
                   cursor: "pointer",
@@ -3491,12 +3491,12 @@ const VolunteerCoordinatorDashboard = () => {
                   </div>
                   <div>
                     <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Volunteer Role</label>
-                    <div style={{ fontSize: "14px", fontWeight: 700, color: "#2563EB", marginTop: "2px" }}>{volRole}</div>
+                    <div style={{ fontSize: "14px", fontWeight: 700, color: "#1E3A8A", marginTop: "2px" }}>{volRole}</div>
                   </div>
                   <div>
                     <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Account Status</label>
                     <div style={{ marginTop: "4px" }}>
-                      <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 8px", borderRadius: "999px", background: isEligible ? "#ECFDF5" : "#FEF3C7", color: isEligible ? "#047857" : "#D97706" }}>
+                      <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 8px", borderRadius: "999px", background: isEligible ? "#ECFDF5" : "#FEF3C7", color: isEligible ? "#15803D" : "#D97706" }}>
                         {volStatus}
                       </span>
                     </div>
@@ -3629,7 +3629,7 @@ const VolunteerCoordinatorDashboard = () => {
             <button
               type="submit"
               disabled={isSubmitting}
-              style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#6366F1", color: "#FFF", fontWeight: 700, cursor: "pointer" }}
+              style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, cursor: "pointer" }}
             >
               {isSubmitting ? "Assigning..." : "Assign Work Task"}
             </button>
@@ -3663,7 +3663,7 @@ const VolunteerCoordinatorDashboard = () => {
 
               <div style={{ background: "#F8FAFC", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
                 <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Assigned / Preferred Role</div>
-                <div style={{ fontSize: "14px", fontWeight: 800, color: "#2563EB", marginTop: "2px" }}>
+                <div style={{ fontSize: "14px", fontWeight: 800, color: "#1E3A8A", marginTop: "2px" }}>
                   {selectedVolunteerRecord.preferred_role || selectedVolunteerRecord.skills || "Shelter Support"}
                 </div>
                 <div style={{ fontSize: "12px", color: "#64748B" }}>
@@ -3684,7 +3684,7 @@ const VolunteerCoordinatorDashboard = () => {
               <div style={{ background: "#F8FAFC", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
                 <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Background Check Status</div>
                 <div style={{ marginTop: "4px" }}>
-                  <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 8px", borderRadius: "999px", background: selectedVolunteerRecord.background_check_completed ? "#D1FAE5" : "#FEF3C7", color: selectedVolunteerRecord.background_check_completed ? "#047857" : "#D97706", textTransform: "uppercase" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 8px", borderRadius: "999px", background: selectedVolunteerRecord.background_check_completed ? "#D1FAE5" : "#FEF3C7", color: selectedVolunteerRecord.background_check_completed ? "#15803D" : "#D97706", textTransform: "uppercase" }}>
                     {selectedVolunteerRecord.background_check_completed ? "Completed & Verified" : "Pending"}
                   </span>
                   {selectedVolunteerRecord.background_check_notes && (
@@ -3705,7 +3705,7 @@ const VolunteerCoordinatorDashboard = () => {
               <div style={{ background: "#F8FAFC", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
                 <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Account Status</div>
                 <div style={{ marginTop: "4px" }}>
-                  <span style={{ fontSize: "11px", fontWeight: 800, padding: "4px 10px", borderRadius: "999px", background: selectedVolunteerRecord.status === "active" ? "#ECFDF5" : selectedVolunteerRecord.status === "onboarded" ? "#EFF6FF" : "#FEF3C7", color: selectedVolunteerRecord.status === "active" ? "#047857" : selectedVolunteerRecord.status === "onboarded" ? "#1D4ED8" : "#D97706", textTransform: "uppercase" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 800, padding: "4px 10px", borderRadius: "999px", background: selectedVolunteerRecord.status === "active" ? "#ECFDF5" : selectedVolunteerRecord.status === "onboarded" ? "#EFF6FF" : "#FEF3C7", color: selectedVolunteerRecord.status === "active" ? "#15803D" : selectedVolunteerRecord.status === "onboarded" ? "#1E3A8A" : "#D97706", textTransform: "uppercase" }}>
                     {selectedVolunteerRecord.status || "Applied"}
                   </span>
                 </div>
@@ -3740,19 +3740,19 @@ const VolunteerCoordinatorDashboard = () => {
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
                       <div style={{ background: "#FFF", padding: "12px", borderRadius: "8px", border: "1px solid #93C5FD" }}>
                         <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Hours Served</div>
-                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#2563EB", marginTop: "2px" }}>
+                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#1E3A8A", marginTop: "2px" }}>
                           {volunteerSummary?.total_hours || volunteerSummary?.hours_served || totalHours} Hrs
                         </div>
                       </div>
                       <div style={{ background: "#FFF", padding: "12px", borderRadius: "8px", border: "1px solid #93C5FD" }}>
                         <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Completed Shifts</div>
-                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#10B981", marginTop: "2px" }}>
+                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#16A34A", marginTop: "2px" }}>
                           {volunteerSummary?.completed_shifts || completedLogs.length} Shifts
                         </div>
                       </div>
                       <div style={{ background: "#FFF", padding: "10px", borderRadius: "8px", border: "1px solid #93C5FD" }}>
                         <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Joined Shifts</div>
-                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#6366F1", marginTop: "2px" }}>
+                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#1E3A8A", marginTop: "2px" }}>
                           {volunteerSummary?.total_shifts || volAttendance.length} Enrolled
                         </div>
                       </div>
@@ -3794,7 +3794,7 @@ const VolunteerCoordinatorDashboard = () => {
                                     <td style={{ padding: "8px 10px", color: "#475569" }}>
                                       {log.check_out_at ? formatDateTime(log.check_out_at) : "-"}
                                     </td>
-                                    <td style={{ padding: "8px 10px", fontWeight: 700, color: "#2563EB" }}>
+                                    <td style={{ padding: "8px 10px", fontWeight: 700, color: "#1E3A8A" }}>
                                       {log.hours_served || 0} Hrs
                                     </td>
                                     <td style={{ padding: "8px 10px" }}>
@@ -3805,7 +3805,7 @@ const VolunteerCoordinatorDashboard = () => {
                                           padding: "2px 6px",
                                           borderRadius: "4px",
                                           background: isDone ? "#D1FAE5" : isCheckedIn ? "#FEF3C7" : "#EFF6FF",
-                                          color: isDone ? "#047857" : isCheckedIn ? "#D97706" : "#1D4ED8",
+                                          color: isDone ? "#15803D" : isCheckedIn ? "#D97706" : "#1E3A8A",
                                           textTransform: "uppercase",
                                         }}
                                       >
@@ -3838,7 +3838,7 @@ const VolunteerCoordinatorDashboard = () => {
                       setCustomMessage("");
                       setIsReviewModalOpen(true);
                     }}
-                    style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <FaCheckCircle size={12} /> Approve / Onboard
                   </button>
@@ -3848,7 +3848,7 @@ const VolunteerCoordinatorDashboard = () => {
                       setIsProfileModalOpen(false);
                       void handleRejectApplication(selectedVolunteerRecord);
                     }}
-                    style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#EF4444", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#DC2626", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <FaTimesCircle size={12} /> Reject
                   </button>
@@ -3871,7 +3871,7 @@ const VolunteerCoordinatorDashboard = () => {
                         addToast(errorMsg, "error");
                       }
                     }}
-                    style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700, cursor: "pointer" }}
+                    style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, cursor: "pointer" }}
                   >
                     Activate Volunteer
                   </button>
@@ -3881,7 +3881,7 @@ const VolunteerCoordinatorDashboard = () => {
                       setIsProfileModalOpen(false);
                       handleOpenAssignWorkModal(selectedVolunteerRecord);
                     }}
-                    style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#6366F1", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <FaClipboardList size={12} /> Assign Work
                   </button>
@@ -3896,7 +3896,7 @@ const VolunteerCoordinatorDashboard = () => {
                       setIsProfileModalOpen(false);
                       handleOpenAssignWorkModal(selectedVolunteerRecord);
                     }}
-                    style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#6366F1", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <FaClipboardList size={12} /> Assign Work
                   </button>
@@ -3907,7 +3907,7 @@ const VolunteerCoordinatorDashboard = () => {
                       setShiftForm((prev) => ({ ...prev, assigned_volunteer_id: String(selectedVolunteerRecord.id) }));
                       setIsShiftModalOpen(true);
                     }}
-                    style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #10B981", background: "#ECFDF5", color: "#047857", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #16A34A", background: "#ECFDF5", color: "#15803D", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <FaCalendarAlt size={12} /> Schedule Shift
                   </button>
@@ -3929,7 +3929,7 @@ const VolunteerCoordinatorDashboard = () => {
                       addToast(errorMsg, "error");
                     }
                   }}
-                  style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700, cursor: "pointer" }}
+                  style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, cursor: "pointer" }}
                 >
                   Re-Activate
                 </button>
@@ -3946,9 +3946,9 @@ const VolunteerCoordinatorDashboard = () => {
                     style={{
                       padding: "8px 16px",
                       borderRadius: "8px",
-                      border: isEligible ? "1px solid #6366F1" : "1px solid #CBD5E1",
-                      background: isEligible ? (isIssued ? "#EEF2FF" : "#4F46E5") : "#F1F5F9",
-                      color: isEligible ? (isIssued ? "#4338CA" : "#FFFFFF") : "#94A3B8",
+                      border: isEligible ? "1px solid #1E3A8A" : "1px solid #CBD5E1",
+                      background: isEligible ? (isIssued ? "#EEF2FF" : "#1E3A8A") : "#F1F5F9",
+                      color: isEligible ? (isIssued ? "#1E3A8A" : "#FFFFFF") : "#94A3B8",
                       fontWeight: 700,
                       cursor: isEligible ? "pointer" : "not-allowed",
                       display: "inline-flex",

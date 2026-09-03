@@ -51,7 +51,7 @@ const DashboardSectionHeader = ({
             gap: "6px",
             border: "1px solid #E2E8F0",
             background: "#FFFFFF",
-            color: "#2563EB",
+            color: "#1E3A8A",
             fontWeight: 600,
             fontSize: "12.5px",
             padding: "8px 14px",

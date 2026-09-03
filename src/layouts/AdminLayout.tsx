@@ -138,7 +138,7 @@ const AdminLayout = () => {
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "6px",
-                background: "#2563EB",
+                background: "#1E3A8A",
                 color: "#FFFFFF",
                 border: "none",
                 padding: "6px 12px",

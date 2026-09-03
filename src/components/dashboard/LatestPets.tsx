@@ -51,7 +51,7 @@ const LatestPets = ({ pets = [] }: LatestPetsProps) => {
 
             <small
               style={{
-                color: "#2563EB",
+                color: "#1E3A8A",
               }}
             >
               {pet.status}

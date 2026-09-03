@@ -28,7 +28,7 @@ import vehicleService from "../../services/vehicleService";
 import type { VehiclePayload } from "../../services/vehicleService";
 import rescueService from "../../services/rescueService";
 import { notifyDataChanged } from "../../utils/dataSync";
-import { getCurrentUserRole, getCurrentUser } from "../../utils/roleUtils";
+import { getCurrentUserRole, getCurrentUser, getRescueCentreId } from "../../utils/roleUtils";
 
 // --- TYPE-SAFE STRING & NUMBER HELPERS ---
 const toSafeStr = (val: unknown): string => (val !== undefined && val !== null ? String(val) : "");
@@ -220,13 +220,7 @@ const VehicleManagement = () => {
   const isSuperAdmin = currentUserRole === "super_admin";
   const isAdmin = isSuperAdmin || isRescueCentreAdmin;
 
-  const currentRescueCentreId =
-    (currentUser as any)?.rescue_centre_id ||
-    (currentUser as any)?.rescue_center_id ||
-    (currentUser as any)?.rescue_facility_id ||
-    (currentUser as any)?.facility_id ||
-    (currentUser as any)?.organization_id ||
-    (currentUser as any)?.id;
+  const currentRescueCentreId = getRescueCentreId(currentUser);
 
   const [vehicles, setVehicles] = useState<FormattedVehicle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -302,6 +296,13 @@ const VehicleManagement = () => {
     try {
       setLoading(true);
       setError(null);
+
+      if (isRescueCentreAdmin && !currentRescueCentreId) {
+        setError("No Rescue Centre Assigned: Your account does not have an assigned Rescue Centre. Contact a Super Administrator.");
+        setVehicles([]);
+        setLoading(false);
+        return;
+      }
 
       const queryParams: Record<string, unknown> = { page_size: 500 };
       if (isRescueCentreAdmin && currentRescueCentreId) {
@@ -492,6 +493,10 @@ const VehicleManagement = () => {
     e.preventDefault();
     if (!addForm.vehicle_number) {
       addToast("Vehicle code or plate number is required", "error");
+      return;
+    }
+    if (isRescueCentreAdmin && !currentRescueCentreId) {
+      addToast("Cannot add vehicle: No Rescue Centre is assigned to your account.", "error");
       return;
     }
     try {

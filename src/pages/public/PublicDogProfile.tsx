@@ -171,7 +171,7 @@ const PublicDogProfile = () => {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <PawGuardLogo size={36} badgeBg="#2563EB" iconColor="#FFFFFF" />
+          <PawGuardLogo size={36} />
           <div>
             <h1 style={{ margin: 0, fontSize: "20px", fontWeight: 800, color: "#FFFFFF" }}>
               PawGuard

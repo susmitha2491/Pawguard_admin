@@ -9,13 +9,17 @@ const SearchInput = ({
     <input
       type="text"
       placeholder={placeholder}
+      aria-label={placeholder}
       style={{
         width: "320px",
-        padding: "12px",
+        padding: "9px 14px",
         borderRadius: "8px",
-        border: "1px solid #CBD5E1",
-        outline: "none",
-        fontSize: "15px",
+        border: "1px solid #E2E8F0",
+        color: "#0F172A",
+        fontSize: "14px",
+        lineHeight: "20px",
+        boxSizing: "border-box",
+        transition: "border-color 0.15s ease",
       }}
     />
   );

@@ -1,632 +1,156 @@
-# PAWGUARD Admin Portal --- Rescue Admin Role Documentation
+# PAWGUARD Admin Portal — Rescue Centre Admin Role Documentation
 
-**Document:** `RESCUE_ADMIN.md`\
-**Portal:** PAWGUARD Admin Portal\
-**Role:** Rescue Admin\
-**Purpose:** Complete role, access, workflow, module, and dashboard
-reference
+**Document:** `RESCUE_ADMIN.md`
+**Portal:** PAWGUARD Admin Portal
+**Role:** Rescue Centre Admin (`rescue_centre_admin`)
+**Purpose:** Complete role, access, workflow, module, and dashboard reference
 
-------------------------------------------------------------------------
+---
 
-## 1. About the Rescue Admin Role
+## 1. About the Rescue Centre Admin Role
 
-The **Rescue Admin** is an operational administrative role responsible
-for managing and monitoring the rescue side of PAWGUARD.
+The **Rescue Centre Admin** (`rescue_centre_admin`) is a centre/branch-level operational management role responsible for overseeing operations within an assigned Rescue Operations Centre (`rescue_centre_id`).
 
-The role focuses on the rescue workflow from receiving rescue requests
-through review, coordination, dispatch, and completion of rescue
-operations.
-
-The Rescue Admin works within the rescue-related modules of the PAWGUARD
-Admin Portal and uses the existing backend workflows and permissions.
+Unlike the Super Administrator, who manages global platform administration, the Rescue Centre Admin focuses on operational administration, facility oversight, fleet monitoring, and operational reporting for their assigned centre.
 
 ### Primary Responsibilities
 
-The Rescue Admin is responsible for:
+- **Centre Operational Oversight**: Monitor daily rescue operations, case volume, and response metrics for the assigned rescue centre.
+- **Shelter Operational Administration**: Maintain operational visibility of assigned shelter facilities, section layout, kennel occupancy, and capacity status.
+- **Vehicle Fleet Management**: Register, inspect, edit, and update the operational status (`Available`, `Maintenance`, `Out of Service`) of rescue vehicles assigned to the centre.
+- **Dog Master Profile Operational Access**: View dog profiles, rescue intake details, and lifecycle timelines for dogs belonging to the centre (companion pets are strictly excluded).
+- **Authorized Safety Tag Operations**: View Safety Tag status, provision initial tags, display/generate QR codes (`${VITE_PUBLIC_FRONTEND_URL}/scan?token=${raw_token}`), reissue/rotate tags, and revoke/deactivate tags for centre dogs.
+- **Operational Reports & Analytics**: Access centre-scoped rescue, dispatch, shelter, vehicle, and operational metrics.
 
--   Monitoring rescue activity.
--   Reviewing incoming rescue requests.
--   Reviewing rescue request details.
--   Processing rescue requests according to the available workflow.
--   Coordinating rescue operations.
--   Managing rescue dispatch information.
--   Assigning rescue personnel where supported.
--   Monitoring rescue status and progress.
--   Reviewing completed rescue operations.
--   Ensuring rescue records remain up to date.
--   Following the rescued animal into the next operational stage where
-    the existing workflow provides that connection.
+### Access Principles & Role Boundaries
 
-### Access Principle
+The Rescue Centre Admin receives access to **7 client-visible modules**:
 
-The Rescue Admin should receive access to the rescue-related
-functionality required for the role.
+1. **Dashboard** (`/rescue-centre-admin-dashboard`)
+2. **Rescue Management** (`/rescues`)
+3. **Dispatch Management** (`/dispatch-management`)
+4. **Dog Master Profile** (`/pets`)
+5. **Shelter Management** (`/shelters`, `/shelter-dogs`)
+6. **Vehicle Fleet Management** (`/vehicle-management`)
+7. **Reports & Analytics** (`/reports`)
+*(Notifications are accessible as a system utility)*
 
-The role should **not automatically receive Super Admin-only system
-administration capabilities** such as:
+#### Restricted & Out-of-Scope Modules
 
--   Global role and permission administration.
--   Centre/System Settings.
--   Unrelated financial administration.
--   Other restricted administrative modules.
+The Rescue Centre Admin is **STRICTLY BLOCKED** from accessing:
 
-Backend authorization remains the source of truth.
+- **Staff & Users / User Management** (`/users`) — Reserved for Super Administrator.
+- **Roles & Permissions / RBAC** — Reserved for Super Administrator.
+- **Audit Logs & System Settings** — Reserved for Super Administrator.
+- **Finance & Donations** (`/donations`) — Reserved for Finance User & Super Administrator.
+- **Inventory & Pharmacy** (`/inventory`) — Reserved for Inventory Manager & Super Administrator.
+- **Adoption Management** (`/adoptions`) — Reserved for Adoption Coordinator & Super Administrator.
+- **Foster Management** (`/fosters`) — Reserved for Foster Coordinator & Super Administrator.
+- **Volunteer Management** (`/volunteers`) — Reserved for Volunteer Coordinator & Super Administrator.
+- **Medical Records** (`/medical-records`) — Reserved for Veterinarian & Super Administrator.
 
-------------------------------------------------------------------------
+#### Explicit Action Boundaries
 
-# 2. Rescue Admin Dashboard
+The Rescue Centre Admin **DOES NOT** perform:
 
-The Rescue Admin Dashboard is the operational starting point for rescue
-management.
+- **Rescue Verification, Rejection, Agent/Vehicle Assignment, & Dispatch Decisions**: Rescue Coordinator is the operational owner of rescue verification, rejection, agent assignment, vehicle assignment, and dispatch decisions. Super Administrator retains global administrative authority.
+- **Field Rescue Execution or Field Status Updates**: Rescue Agent is the field operational owner.
+- **Day-to-Day Kennel Allocation & Sanitation**: Shelter Manager is the operational owner of kennel allocation and shelter operations.
+- **Medical & Clinical Clearances**: Veterinarian is the clinical operational owner.
 
-Its purpose is to provide a quick overview of rescue work and allow the
-Rescue Admin to move directly into pending and active rescue operations.
+---
 
-## Dashboard Responsibilities
+## 2. Rescue Centre Admin Dashboard
 
-The dashboard should help the Rescue Admin:
+The Rescue Centre Admin Dashboard provides an operational overview restricted strictly to the assigned rescue centre (`rescue_centre_id`).
 
-1.  See the current rescue workload.
-2.  Identify requests requiring attention.
-3.  Review active rescue operations.
-4.  Access dispatch-related work.
-5.  Monitor rescue progress.
-6.  Review completed operations.
-7.  Navigate to detailed rescue records.
+### Key Metrics & Cards
 
-### Dashboard Data Rule
+- **Total Rescue Calls**: Total rescue requests logged for the centre.
+- **Pending Calls**: Unverified/unassigned requests awaiting Rescue Coordinator review.
+- **Active Dispatches**: In-progress field rescue operations.
+- **Shelter Occupancy**: Current dogs in care vs total facility capacity.
+- **Fleet Status**: Available, assigned, and maintenance vehicles.
 
-All dashboard counts and records must come from the existing backend
-APIs.
+### Centre Scope & Security Rule
 
-The dashboard must not use:
+All dashboard queries pass `rescue_centre_id: currentCentreId`. If an account does not have an assigned rescue centre, data access is blocked with `"No Rescue Centre Assigned"`. Unscoped global system totals are never exposed.
 
--   Fake rescue requests.
--   Hard-coded rescue counts.
--   Mock rescue agents.
--   Invented statuses.
--   Fabricated dispatch records.
+---
 
-When an API fails, the UI should show an appropriate loading, empty, or
-error state.
+## 3. Module Breakdown
 
-------------------------------------------------------------------------
+### A. Rescue & Dispatch Management
 
-# 3. Rescue Management
+- Monitor rescue cases and active dispatches in real-time.
+- View field agent assignments, assigned vehicles, and GPS rescue progress.
+- Log incoming call reports (`Log Report`).
+- *Action Guard*: Cannot verify/reject requests or create/reassign dispatches (Coordinator responsibility).
 
-## Purpose
+### B. Dog Master Profile (`/pets`)
 
-Rescue Management is the main operational module for managing rescue
-activities.
+- Access operational profiles for rescued animals belonging to the centre.
+- View registration details, rescue case origin, shelter placement, and medical status.
+- Excludes companion pets (`is_companion_pet = false`).
 
-It provides the Rescue Admin with the central view of rescue operations
-and their current status.
+### C. Safety Tag Workflow
 
-## What Can Be Done
+- **Source of Truth**: Backend persistent state (SHA-256 hash & 8-char `token_prefix`). Plaintext `raw_token` is returned ONCE upon provisioning response.
+- **QR Encoding**: Encodes `${VITE_PUBLIC_FRONTEND_URL}/scan?token=${raw_token}` (default `https://pawguard-public-web.vercel.app/scan?token=<raw_token>`).
+- **Reissue / Rotate**: Invalidates old token, issues new raw token, generates new QR.
+- **Revoke / Deactivate**: Sets status to `INACTIVE`, invalidating public resolution.
 
-Where supported by the existing backend, the Rescue Admin can:
+### D. Shelter Management (`/shelters`, `/shelter-dogs`)
 
--   View rescue operations.
--   Search rescue records.
--   Filter rescue records.
--   Open rescue details.
--   Review rescue request information.
--   Review location information.
--   Review requester information.
--   Review rescue personnel information.
--   Monitor rescue status.
--   Update rescue information through supported actions.
--   Follow the rescue operation through completion.
+- Centre-level operational oversight of shelter facilities, section layout, capacity, and occupancy stats within `rescue_centre_id`.
+- View shelter dog records and facility metrics.
+- *Action Guard*: Cannot allocate kennels (`KennelAssignmentModal`) or update sanitation states (`Mark Clean`), which belong to Shelter Manager.
 
-------------------------------------------------------------------------
+### E. Vehicle Fleet Management (`/vehicle-management`)
 
-# 4. Rescue Request Management
+- Register new vehicles for the centre (`payload.rescue_centre_id = currentCentreId`).
+- Edit vehicle specifications and update operational status (`Available`, `Maintenance`, `Out of Service`).
+- Delete or deactivate centre fleet units.
+- *Action Guard*: Vehicle assignment to active rescue missions is handled by Rescue Coordinator during dispatch.
 
-## Purpose
+### F. Reports & Analytics (`/reports`)
 
-Rescue Requests contains incoming requests for animal rescue assistance.
+- Access centre-scoped operational reports for rescues, dispatches, shelter occupancy, and fleet utilization.
+- Restricts cross-centre data, financial reports, audit logs, and user metrics.
 
-This is the beginning of the rescue operational workflow.
+---
 
-## Request Information
+## 4. End-to-End Workflow & Role Handoffs
 
-A rescue request may contain information such as:
-
--   Requester details.
--   Contact information.
--   Rescue location.
--   Animal-related information.
--   Request description.
--   Request date/time.
--   Current request status.
--   Other backend-supported rescue information.
-
-## Rescue Admin Workflow
-
-``` text
-Rescue Request Received
+```text
+Public Rescue Request
         ↓
-Rescue Admin Reviews Request
+Rescue Coordinator (Verifies request, assigns Agent & Vehicle, creates Dispatch)
         ↓
-Review Request Details
+Rescue Agent (Accepts dispatch, field status updates: En Route → Arrived → Rescued)
         ↓
-Validate / Process Request
+Shelter Manager (Admits animal to shelter, assigns Kennel, manages care)
         ↓
-Prepare Rescue Operation
+Veterinarian (Conducts exam, administers treatment, issues Medical Clearance)
         ↓
-Dispatch / Assign Rescue Personnel
-        ↓
-Rescue Operation
-        ↓
-Update Completion
+Adoption / Foster Coordinator (Manages placement lifecycle)
 ```
 
-The exact status transitions must follow the backend implementation.
-
-------------------------------------------------------------------------
-
-# 5. Rescue Request Review
-
-## Purpose
-
-The review process allows the Rescue Admin to understand the rescue
-situation before an operational response is created.
-
-## Review Steps
-
-The Rescue Admin should review:
-
-1.  Who submitted the request.
-2.  Where the rescue is required.
-3.  What animal/rescue situation was reported.
-4.  The urgency or priority information available.
-5.  Current request status.
-6.  Any additional notes supplied through the backend.
-
-## Review Outcome
-
-Depending on the existing backend workflow, the Rescue Admin may:
-
--   Continue the request toward dispatch.
--   Update supported request information.
--   Assign/coordinate rescue personnel.
--   Complete the appropriate status transition.
--   Leave the request pending when further action is required.
-
-The UI must not introduce unsupported backend states.
-
-------------------------------------------------------------------------
-
-# 6. Rescue Dispatch
-
-## Purpose
-
-Rescue Dispatch manages the operational response to an
-approved/processable rescue request.
-
-## What Can Be Done
-
-Where supported by the backend, the Rescue Admin can:
-
--   Review dispatch records.
--   Create or process dispatch information.
--   Assign rescue personnel.
--   Review assigned personnel.
--   Review dispatch location.
--   Monitor dispatch status.
--   Track rescue progress.
--   Update dispatch information.
--   Complete the dispatch workflow.
-
-## Dispatch Workflow
-
-``` text
-Rescue Request
-      ↓
-Request Reviewed
-      ↓
-Rescue Operation Prepared
-      ↓
-Personnel Assigned
-      ↓
-Dispatch Created
-      ↓
-Rescue Team Dispatched
-      ↓
-Rescue Performed
-      ↓
-Operation Updated
-      ↓
-Rescue Completed
-```
-
-------------------------------------------------------------------------
-
-# 7. Rescue Personnel / Agent Coordination
-
-## Purpose
-
-The Rescue Admin coordinates the people responsible for executing rescue
-operations.
-
-The exact available actions depend on the backend APIs and permissions.
-
-## Possible Operational Actions
-
-Where supported:
-
--   View available rescue personnel.
--   Review personnel information.
--   Assign personnel to a rescue.
--   Review active assignments.
--   Monitor assignment status.
--   Reassign when the backend supports reassignment.
--   Review completed rescue work.
-
-The Rescue Admin should only assign personnel who are eligible according
-to backend rules.
-
-------------------------------------------------------------------------
-
-# 8. Rescue Operation Tracking
-
-## Purpose
-
-Once a rescue has been dispatched, the Rescue Admin monitors its
-progress.
-
-## Information to Monitor
-
--   Rescue request.
--   Assigned personnel.
--   Rescue location.
--   Dispatch information.
--   Current status.
--   Operational notes.
--   Completion information.
-
-## Tracking Workflow
-
-``` text
-Pending Request
-      ↓
-Reviewed
-      ↓
-Dispatched
-      ↓
-In Progress
-      ↓
-Completed
-```
-
-The exact status names must match the backend implementation.
-
-------------------------------------------------------------------------
-
-# 9. Rescue Completion
-
-## Purpose
-
-The Rescue Admin completes the operational rescue record after the
-rescue has been performed.
-
-## Completion Activities
-
-Where supported, the Rescue Admin can:
-
--   Review the rescue result.
--   Confirm completion.
--   Update supported completion information.
--   Review rescued animal information.
--   Ensure the rescue record is stored correctly.
--   Follow the animal into the next available PAWGUARD workflow.
-
-------------------------------------------------------------------------
-
-# 10. Dog / Animal Handover
-
-After a rescue operation is completed, the rescued animal may enter
-another operational workflow.
-
-The Rescue Admin should ensure the rescue information is correctly
-recorded so downstream teams can continue the animal's lifecycle.
-
-Typical operational progression:
-
-``` text
-Rescue Request
-      ↓
-Rescue Dispatch
-      ↓
-Animal Rescued
-      ↓
-Animal Record
-      ↓
-Veterinary / Medical Processing
-      ↓
-Shelter Placement
-      ↓
-Adoption / Foster
-```
-
-This document does not redefine the veterinary, shelter, adoption, or
-foster workflows. Those remain the responsibility of their respective
-modules and roles.
-
-------------------------------------------------------------------------
-
-# 11. Rescue Records
-
-## Purpose
-
-Rescue records provide the historical operational record of rescue
-activity.
-
-## Rescue Admin Can Review
-
-Where exposed by the existing portal:
-
--   Request details.
--   Rescue location.
--   Assigned personnel.
--   Dispatch information.
--   Rescue status.
--   Operational notes.
--   Completion information.
--   Related animal information.
-
-Records should remain connected to the original backend entities rather
-than creating duplicate local records.
-
-------------------------------------------------------------------------
-
-# 12. Search and Filtering
-
-The Rescue Admin should be able to use the existing search/filter
-controls available in the rescue modules.
-
-Typical filtering may include:
-
--   Rescue status.
--   Request status.
--   Location.
--   Date.
--   Assigned personnel.
--   Other backend-supported filters.
-
-Filtering is intended to help the Rescue Admin quickly identify:
-
--   New requests.
--   Pending work.
--   Active rescues.
--   Completed rescues.
-
-------------------------------------------------------------------------
-
-# 13. Notifications
-
-The Rescue Admin may receive notifications generated by the existing
-backend for rescue-related activity.
-
-Relevant notifications can include:
-
--   New rescue requests.
--   Request updates.
--   Dispatch updates.
--   Assignment changes.
--   Rescue completion updates.
--   Other rescue-related events supported by the system.
-
-Notifications should be based on actual backend events.
-
-------------------------------------------------------------------------
-
-# 14. Reports / Operational Monitoring
-
-Where the current Rescue Admin portal exposes reporting functionality,
-it can be used to review rescue operations.
-
-Useful operational information includes:
-
--   Number of rescue requests.
--   Pending requests.
--   Active rescues.
--   Completed rescues.
--   Rescue activity by period.
--   Personnel activity where supported.
-
-Reports must use actual backend data.
-
-------------------------------------------------------------------------
-
-# 15. Rescue Admin End-to-End Workflow
-
-The complete Rescue Admin workflow is:
-
-``` text
-LOGIN
-  ↓
-RESCUE ADMIN DASHBOARD
-  ↓
-Review Rescue Activity
-  ↓
-Open Rescue Requests
-  ↓
-Review Request
-  ↓
-Process Request
-  ↓
-Prepare Rescue Operation
-  ↓
-Assign / Coordinate Rescue Personnel
-  ↓
-Create / Process Dispatch
-  ↓
-Monitor Rescue
-  ↓
-Complete Rescue
-  ↓
-Verify Rescue Record
-  ↓
-Animal Continues to Next PAWGUARD Workflow
-```
-
-------------------------------------------------------------------------
-
-# 16. Rescue Request to Completion Workflow
-
-``` text
-┌─────────────────────────┐
-│ Rescue Request Received │
-└────────────┬────────────┘
-             ↓
-┌─────────────────────────┐
-│ Rescue Admin Review     │
-└────────────┬────────────┘
-             ↓
-┌─────────────────────────┐
-│ Validate / Process      │
-│ Request                 │
-└────────────┬────────────┘
-             ↓
-┌─────────────────────────┐
-│ Rescue Operation        │
-│ Prepared                │
-└────────────┬────────────┘
-             ↓
-┌─────────────────────────┐
-│ Personnel / Agent       │
-│ Assignment              │
-└────────────┬────────────┘
-             ↓
-┌─────────────────────────┐
-│ Rescue Dispatch         │
-└────────────┬────────────┘
-             ↓
-┌─────────────────────────┐
-│ Rescue In Progress      │
-└────────────┬────────────┘
-             ↓
-┌─────────────────────────┐
-│ Rescue Completed        │
-└────────────┬────────────┘
-             ↓
-┌─────────────────────────┐
-│ Animal Lifecycle        │
-│ Continues                │
-└─────────────────────────┘
-```
-
-------------------------------------------------------------------------
-
-# 17. Access Summary
-
-  Area                                          Rescue Admin
-  ------------------------------- -----------------------------------------
-  Rescue Dashboard                            Full role access
-  Rescue Management                           Full role access
-  Rescue Requests                             Full role access
-  Rescue Dispatch                             Full role access
-  Rescue Personnel Coordination         Backend/permission dependent
-  Rescue Tracking                             Full role access
-  Rescue Completion                     Backend/permission dependent
-  Rescue Reports                               Where available
-  Notifications                                Rescue-related
-  User Management                  Restricted / not primary responsibility
-  Roles & Permissions                                No
-  Centre/System Settings                             No
-  Financial Administration             No unless separately permitted
-  Volunteer Administration             No unless separately permitted
-  Adoption Administration              No unless separately permitted
-  Foster Administration                No unless separately permitted
-
-> "Full role access" means the complete set of actions exposed to and
-> authorized for the Rescue Admin by the existing backend. It does not
-> mean bypassing backend permissions.
-
-------------------------------------------------------------------------
-
-# 18. Authorization and Data Rules
-
-The Rescue Admin implementation must follow these rules:
-
-1.  Backend authorization is the source of truth.
-2.  Do not invent rescue APIs.
-3.  Do not invent rescue statuses.
-4.  Do not use mock rescue records.
-5.  Do not hard-code operational counts.
-6.  Do not bypass backend validation.
-7.  Do not expose Super Admin-only Settings.
-8.  Do not grant role-management permissions through frontend-only
-    changes.
-9.  Keep rescue requests and dispatch records connected to their backend
-    IDs.
-10. Preserve the existing rescue workflow rather than creating duplicate
-    modules.
-11. Show clear loading, empty, and error states.
-12. Keep downstream animal information synchronized with backend
-    records.
-
-------------------------------------------------------------------------
-
-# 19. Difference Between Rescue Admin and Super Admin
-
-  Responsibility                   Super Admin      Rescue Admin
-  ------------------------------- ------------- ---------------------
-  System-wide administration           Yes               No
-  User administration                  Yes         No / restricted
-  Role & permission management         Yes               No
-  Centre/System Settings               Yes               No
-  Rescue Requests                      Yes               Yes
-  Rescue Management                    Yes               Yes
-  Rescue Dispatch                      Yes               Yes
-  Rescue Operations                    Yes               Yes
-  Rescue Personnel Coordination        Yes       Yes where permitted
-  Volunteer Management                 Yes         No / restricted
-  Adoption                             Yes         No / restricted
-  Foster Care                          Yes         No / restricted
-
-The key distinction is that the **Super Admin manages the entire
-PAWGUARD platform**, while the **Rescue Admin concentrates on rescue
-operations**.
-
-------------------------------------------------------------------------
-
-# 20. Dashboard Conclusion
-
-The **Rescue Admin Dashboard is the operational control point for
-PAWGUARD rescue activities**.
-
-Its main responsibility is to ensure that rescue requests are reviewed,
-coordinated, dispatched, tracked, and completed correctly.
-
-The complete role workflow is:
-
-``` text
-Dashboard
-   ↓
-Rescue Requests
-   ↓
-Request Review
-   ↓
-Rescue Coordination
-   ↓
-Personnel Assignment
-   ↓
-Rescue Dispatch
-   ↓
-Rescue Tracking
-   ↓
-Rescue Completion
-   ↓
-Animal Lifecycle Handover
-```
-
-The Rescue Admin should have enough access to manage the complete rescue
-workflow but should not receive unrelated system-administration
-privileges.
-
-The role therefore sits between the platform-wide authority of the Super
-Admin and the operational execution performed by rescue personnel, while
-relying on the existing PAWGUARD backend for authorization, validation,
-status transitions, and data integrity.
+Throughout this workflow, the **Rescue Centre Admin** provides continuous operational oversight, resource management, fleet maintenance, and reporting for their assigned centre.
+
+---
+
+## 5. Summary Matrix
+
+| Capability | Rescue Centre Admin | Rescue Coordinator | Rescue Agent | Shelter Manager | Veterinarian | Super Admin |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Centre Fleet Management | **YES** | View | View | No | No | **YES** |
+| Centre Shelter Oversight | **YES** | View | No | **YES** | View | **YES** |
+| Dog Master Profile | **YES** | View | View | **YES** | **YES** | **YES** |
+| Safety Tag Ops | **YES** | **YES** | Provision | **YES** | No | **YES** |
+| Request Verification | No | **YES** | No | No | No | **YES** |
+| Agent/Vehicle Dispatch | No | **YES** | No | No | No | **YES** |
+| Field Rescue Execution | No | No | **YES** | No | No | **YES** |
+| Kennel Allocation | No | No | No | **YES** | No | **YES** |
+| Medical Clearance | No | No | No | No | **YES** | **YES** |
+| User & RBAC Admin | No | No | No | No | No | **YES** |

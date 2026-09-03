@@ -26,8 +26,8 @@ interface SystemAlertsProps {
 const severityColors: Record<AlertItem["severity"], { bg: string; border: string; text: string; label: string }> = {
   danger: { bg: "#FEF2F2", border: "#FECACA", text: "#B91C1C", label: "Critical" },
   warning: { bg: "#FFFBEB", border: "#FDE68A", text: "#B45309", label: "Warning" },
-  info: { bg: "#EFF6FF", border: "#BFDBFE", text: "#1D4ED8", label: "Info" },
-  success: { bg: "#ECFDF5", border: "#A7F3D0", text: "#047857", label: "Good" },
+  info: { bg: "#EFF6FF", border: "#BFDBFE", text: "#1E3A8A", label: "Info" },
+  success: { bg: "#ECFDF5", border: "#A7F3D0", text: "#15803D", label: "Good" },
 };
 
 const severityIcon: Record<AlertItem["severity"], React.ReactNode> = {
@@ -210,7 +210,7 @@ const SystemAlerts = ({
           display: "flex",
           alignItems: "center",
           gap: 12,
-          color: "#047857",
+          color: "#15803D",
         }}
       >
         <FaHeart size={20} />

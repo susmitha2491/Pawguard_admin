@@ -75,9 +75,9 @@ const ShelterOccupancyTable = ({ shelters, dogs = [], loading }: ShelterOccupanc
   }, [shelters, dogs]);
 
   const getProgressColor = (pct: number): string => {
-    if (pct >= 90) return "#EF4444"; // Red for high capacity / critical
+    if (pct >= 90) return "#DC2626"; // Red for high capacity / critical
     if (pct >= 75) return "#F59E0B"; // Amber for medium-high
-    return "#10B981"; // Emerald for normal capacity
+    return "#16A34A"; // Green for normal capacity
   };
 
   return (

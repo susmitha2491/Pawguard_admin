@@ -43,13 +43,13 @@ const typeIcon: Record<string, React.ReactNode> = {
 };
 
 const typeColor = (type: string): string => {
-  if (/emergency|rejected|deleted/.test(type)) return "#EF4444";
-  if (/rescue|located|dispatched|secured|admitted/.test(type)) return "#7C3AED";
-  if (/medical|animal/.test(type)) return "#06B6D4";
-  if (/adoption|approved|certificate/.test(type)) return "#EC4899";
+  if (/emergency|rejected|deleted/.test(type)) return "#DC2626";
+  if (/rescue|located|dispatched|secured|admitted/.test(type)) return "#1E3A8A";
+  if (/medical|animal/.test(type)) return "#1E3A8A";
+  if (/adoption|approved|certificate/.test(type)) return "#1E3A8A";
   if (/volunteer/.test(type)) return "#F59E0B";
-  if (/finance/.test(type)) return "#10B981";
-  if (/shelter|inventory|user|role|transfer|placement/.test(type)) return "#2563EB";
+  if (/finance/.test(type)) return "#16A34A";
+  if (/shelter|inventory|user|role|transfer|placement/.test(type)) return "#1E3A8A";
   if (/lost/.test(type)) return "#F59E0B";
   return "#64748B";
 };
@@ -109,7 +109,7 @@ const DashboardNotificationsPanel = () => {
             style={{
               border: "none",
               background: "#EFF6FF",
-              color: "#2563EB",
+              color: "#1E3A8A",
               fontSize: "11.5px",
               fontWeight: 600,
               padding: "6px 10px",
@@ -175,7 +175,7 @@ const DashboardNotificationsPanel = () => {
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
                       <span style={{ fontSize: "12.5px", fontWeight: 600, color: "#0F172A" }}>{n.title}</span>
                       {!n.read && (
-                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#2563EB", flexShrink: 0 }} />
+                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#1E3A8A", flexShrink: 0 }} />
                       )}
                     </div>
                     <p style={{ margin: "3px 0 0", fontSize: "11.5px", color: "#64748B", lineHeight: 1.4 }}>
@@ -201,7 +201,7 @@ const DashboardNotificationsPanel = () => {
             flex: 1,
             border: "1px solid #E2E8F0",
             background: "#FFFFFF",
-            color: "#2563EB",
+            color: "#1E3A8A",
             fontWeight: 600,
             fontSize: "12.5px",
             padding: "9px 12px",

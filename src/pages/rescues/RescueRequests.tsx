@@ -27,7 +27,7 @@ import storageService from "../../services/storageService";
 import userService from "../../services/userService";
 import { rescueStatusBadge, dispatchStage } from "../../utils/rescueStatus.tsx";
 import { notifyDataChanged } from "../../utils/dataSync";
-import { getCurrentUserRole, getCurrentUser, normalizeRole } from "../../utils/roleUtils";
+import { getCurrentUserRole, getCurrentUser, normalizeRole, getRescueCentreId } from "../../utils/roleUtils";
 import { formatDateTime } from "../../utils/dateUtils";
 
 export interface RescueRequestTableRow {
@@ -61,15 +61,12 @@ const RescueRequests = () => {
   const currentUserRole = getCurrentUserRole();
   const isRescueCentreAdmin = currentUserRole === "rescue_centre_admin";
   const isSuperAdmin = currentUserRole === "super_admin";
-  const isAdmin = isSuperAdmin || isRescueCentreAdmin;
+  const isRescueCoordinator = currentUserRole === "rescue_coordinator";
 
-  const currentRescueCentreId =
-    (currentUser as any)?.rescue_centre_id ||
-    (currentUser as any)?.rescue_center_id ||
-    (currentUser as any)?.rescue_facility_id ||
-    (currentUser as any)?.facility_id ||
-    (currentUser as any)?.organization_id ||
-    (currentUser as any)?.id;
+  const canVerifyOrReject = isSuperAdmin || isRescueCoordinator;
+  const canDispatch = isSuperAdmin || isRescueCoordinator;
+
+  const currentRescueCentreId = getRescueCentreId(currentUser);
 
   const [requests, setRequests] = useState<RescueRequestTableRow[]>([]);
   const [vehicles, setVehicles] = useState<Record<string, unknown>[]>([]);
@@ -173,6 +170,13 @@ const RescueRequests = () => {
     try {
       setLoading(true);
       setError(null);
+
+      if (isRescueCentreAdmin && !currentRescueCentreId) {
+        setError("No Rescue Centre Assigned: Your account does not have an assigned Rescue Centre. Contact a Super Administrator.");
+        setRequests([]);
+        setLoading(false);
+        return;
+      }
 
       const queryParams: Record<string, unknown> = {};
       if (isRescueCentreAdmin && currentRescueCentreId) {
@@ -402,6 +406,10 @@ const RescueRequests = () => {
       addToast("Please fill in required fields (Location, Reporter Name & Phone).", "error");
       return;
     }
+    if (isRescueCentreAdmin && !currentRescueCentreId) {
+      addToast("Cannot log rescue request: No Rescue Centre is assigned to your account.", "error");
+      return;
+    }
 
     try {
       setIsSubmitting(true);
@@ -462,6 +470,10 @@ const RescueRequests = () => {
 
   // Verify Action
   const handleVerify = async (id: string, reqObj?: RescueRequestTableRow) => {
+    if (isRescueCentreAdmin) {
+      addToast("Verification of rescue requests is reserved for Rescue Coordinators.", "error");
+      return;
+    }
     try {
       await rescueService.approveRescueRequest(id, {
         status: "verified",
@@ -490,6 +502,10 @@ const RescueRequests = () => {
   const handleRejectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetRejectId) return;
+    if (isRescueCentreAdmin) {
+      addToast("Rejection of rescue requests is reserved for Rescue Coordinators.", "error");
+      return;
+    }
     try {
       setIsSubmitting(true);
       await rescueService.rejectRescueRequest(targetRejectId, rejectionReason || undefined);
@@ -632,7 +648,7 @@ const RescueRequests = () => {
             >
               View Details
             </button>
-            {["reported", "pending", "new", "awaiting_triage"].includes(row.status) && isAdmin && (
+            {["reported", "pending", "new", "awaiting_triage"].includes(row.status) && canVerifyOrReject && (
               <>
                 <button
                   type="button"
@@ -659,7 +675,7 @@ const RescueRequests = () => {
                 Accept
               </button>
             )}
-            {row.status === "accepted" && (
+            {row.status === "accepted" && canDispatch && (
               <button
                 type="button"
                 onClick={() => handleOpenDispatchModal(row)}
@@ -1088,7 +1104,7 @@ const RescueRequests = () => {
         footer={
           selectedRequest ? (
             <>
-              {["reported", "pending", "new", "awaiting_triage"].includes(selectedRequest.status) && isAdmin && (
+              {["reported", "pending", "new", "awaiting_triage"].includes(selectedRequest.status) && canVerifyOrReject && (
                 <>
                   <button
                     onClick={() => {
@@ -1121,7 +1137,7 @@ const RescueRequests = () => {
                   Accept Request
                 </button>
               )}
-              {selectedRequest.status === "accepted" && (
+              {selectedRequest.status === "accepted" && canDispatch && (
                 <button
                   onClick={() => {
                     handleOpenDispatchModal(selectedRequest);
@@ -1129,7 +1145,7 @@ const RescueRequests = () => {
                   }}
                   style={{ padding: "8px 16px", background: "#7C3AED", color: "#FFF", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
                 >
-                  Select Vehicle & Dispatch
+                  Dispatch Rescue Team
                 </button>
               )}
             </>

@@ -228,7 +228,7 @@ const VolunteerDashboard = () => {
       title: "Available Shifts",
       value: loading ? "..." : String(availableShifts.length),
       trend: "Open Opportunities",
-      color: "#2563EB",
+      color: "#1E3A8A",
       icon: <FaClipboardList />,
       onClick: () => setActiveTab("available"),
     },
@@ -236,7 +236,7 @@ const VolunteerDashboard = () => {
       title: "My Joined Shifts",
       value: loading ? "..." : String(myAttendance.length),
       trend: `${completedCount} Completed`,
-      color: "#10B981",
+      color: "#16A34A",
       icon: <FaCalendarCheck />,
       onClick: () => setActiveTab("my_shifts"),
     },
@@ -244,7 +244,7 @@ const VolunteerDashboard = () => {
       title: "Volunteer Hours Served",
       value: loading ? "..." : `${totalHours} Hrs`,
       trend: "Verified Contributions",
-      color: "#6366F1",
+      color: "#1E3A8A",
       icon: <FaClock />,
       onClick: () => setActiveTab("summary"),
     },
@@ -252,7 +252,7 @@ const VolunteerDashboard = () => {
       title: "Service Certificate",
       value: "Verified",
       trend: "Official Recognition",
-      color: "#EC4899",
+      color: "#1E3A8A",
       icon: <FaAward />,
       onClick: () => void handleDownloadCertificate(),
     },
@@ -293,7 +293,7 @@ const VolunteerDashboard = () => {
         const isFull = enrolled >= cap;
         return (
           <div>
-            <strong style={{ color: isFull ? "#DC2626" : "#2563EB" }}>
+            <strong style={{ color: isFull ? "#DC2626" : "#1E3A8A" }}>
               {enrolled}/{cap} Enrolled
             </strong>
             {isFull && <span style={{ fontSize: "11px", color: "#DC2626", fontWeight: 700, marginLeft: "6px" }}>(FULL)</span>}
@@ -329,7 +329,7 @@ const VolunteerDashboard = () => {
           return <span style={{ fontWeight: 700, color: "#DC2626" }}>⚠️ No-Show (Missed Shift)</span>;
         }
         return (
-          <span style={{ fontWeight: 600, color: v ? "#047857" : "#D97706" }}>
+          <span style={{ fontWeight: 600, color: v ? "#15803D" : "#D97706" }}>
             {v ? `✓ Checked In (${formatDateTime(v)})` : "⏳ Pending Check-In"}
           </span>
         );
@@ -339,7 +339,7 @@ const VolunteerDashboard = () => {
       key: "check_out_at",
       header: "Check-Out Status",
       render: (v: string) => (
-        <span style={{ fontWeight: 600, color: v ? "#047857" : "#64748B" }}>
+        <span style={{ fontWeight: 600, color: v ? "#15803D" : "#64748B" }}>
           {v ? `✓ Completed (${formatDateTime(v)})` : "Not Checked Out"}
         </span>
       ),
@@ -347,7 +347,7 @@ const VolunteerDashboard = () => {
     {
       key: "hours_served",
       header: "Hours Logged",
-      render: (v: number) => <strong style={{ color: "#2563EB" }}>{v || 0} Hours</strong>,
+      render: (v: number) => <strong style={{ color: "#1E3A8A" }}>{v || 0} Hours</strong>,
     },
   ];
 
@@ -424,10 +424,10 @@ const VolunteerDashboard = () => {
 
       {/* Quick Action Navigation Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", marginBottom: "20px" }}>
-        <QuickActionCard icon={<FaClipboardList />} title="Browse Open Shifts" subtitle="Find volunteer opportunities" color="#2563EB" onClick={() => setActiveTab("available")} />
-        <QuickActionCard icon={<FaCalendarCheck />} title="My Shift Schedule" subtitle="Check-in & Check-out" color="#10B981" onClick={() => setActiveTab("my_shifts")} />
-        <QuickActionCard icon={<FaAward />} title="Service Certificate" subtitle="Download verified certificate" color="#EC4899" onClick={() => void handleDownloadCertificate()} />
-        <QuickActionCard icon={<FaBell />} title="Notifications" subtitle={`${notifications.length} Alerts`} color="#6366F1" onClick={() => setActiveTab("notifications")} />
+        <QuickActionCard icon={<FaClipboardList />} title="Browse Open Shifts" subtitle="Find volunteer opportunities" color="#1E3A8A" onClick={() => setActiveTab("available")} />
+        <QuickActionCard icon={<FaCalendarCheck />} title="My Shift Schedule" subtitle="Check-in & Check-out" color="#16A34A" onClick={() => setActiveTab("my_shifts")} />
+        <QuickActionCard icon={<FaAward />} title="Service Certificate" subtitle="Download verified certificate" color="#1E3A8A" onClick={() => void handleDownloadCertificate()} />
+        <QuickActionCard icon={<FaBell />} title="Notifications" subtitle={`${notifications.length} Alerts`} color="#1E3A8A" onClick={() => setActiveTab("notifications")} />
       </div>
 
       {/* Metric Cards */}
@@ -448,9 +448,9 @@ const VolunteerDashboard = () => {
               style={{
                 padding: "9px 16px",
                 borderRadius: "10px",
-                border: activeTab === "available" ? "2px solid #2563EB" : "1px solid #CBD5E1",
+                border: activeTab === "available" ? "2px solid #1E3A8A" : "1px solid #CBD5E1",
                 background: activeTab === "available" ? "#EFF6FF" : "#FFFFFF",
-                color: activeTab === "available" ? "#1D4ED8" : "#475569",
+                color: activeTab === "available" ? "#1E3A8A" : "#475569",
                 fontWeight: 700,
                 fontSize: "13px",
                 cursor: "pointer",
@@ -468,9 +468,9 @@ const VolunteerDashboard = () => {
               style={{
                 padding: "9px 16px",
                 borderRadius: "10px",
-                border: activeTab === "my_shifts" ? "2px solid #10B981" : "1px solid #CBD5E1",
+                border: activeTab === "my_shifts" ? "2px solid #16A34A" : "1px solid #CBD5E1",
                 background: activeTab === "my_shifts" ? "#ECFDF5" : "#FFFFFF",
-                color: activeTab === "my_shifts" ? "#047857" : "#475569",
+                color: activeTab === "my_shifts" ? "#15803D" : "#475569",
                 fontWeight: 700,
                 fontSize: "13px",
                 cursor: "pointer",
@@ -488,9 +488,9 @@ const VolunteerDashboard = () => {
               style={{
                 padding: "9px 16px",
                 borderRadius: "10px",
-                border: activeTab === "summary" ? "2px solid #6366F1" : "1px solid #CBD5E1",
+                border: activeTab === "summary" ? "2px solid #1E3A8A" : "1px solid #CBD5E1",
                 background: activeTab === "summary" ? "#EEF2FF" : "#FFFFFF",
-                color: activeTab === "summary" ? "#4338CA" : "#475569",
+                color: activeTab === "summary" ? "#1E3A8A" : "#475569",
                 fontWeight: 700,
                 fontSize: "13px",
                 cursor: "pointer",
@@ -508,9 +508,9 @@ const VolunteerDashboard = () => {
               style={{
                 padding: "9px 16px",
                 borderRadius: "10px",
-                border: activeTab === "notifications" ? "2px solid #EC4899" : "1px solid #CBD5E1",
+                border: activeTab === "notifications" ? "2px solid #1E3A8A" : "1px solid #CBD5E1",
                 background: activeTab === "notifications" ? "#FCE7F3" : "#FFFFFF",
-                color: activeTab === "notifications" ? "#BE185D" : "#475569",
+                color: activeTab === "notifications" ? "#1E3A8A" : "#475569",
                 fontWeight: 700,
                 fontSize: "13px",
                 cursor: "pointer",
@@ -592,7 +592,7 @@ const VolunteerDashboard = () => {
                       padding: "6px 14px",
                       borderRadius: "6px",
                       border: "none",
-                      background: "#2563EB",
+                      background: "#1E3A8A",
                       color: "#FFF",
                       fontSize: "12px",
                       fontWeight: 700,
@@ -648,7 +648,7 @@ const VolunteerDashboard = () => {
                           padding: "6px 12px",
                           borderRadius: "6px",
                           border: "none",
-                          background: "#10B981",
+                          background: "#16A34A",
                           color: "#FFF",
                           fontSize: "12px",
                           fontWeight: 700,
@@ -675,7 +675,7 @@ const VolunteerDashboard = () => {
                           padding: "6px 12px",
                           borderRadius: "6px",
                           border: "none",
-                          background: "#2563EB",
+                          background: "#1E3A8A",
                           color: "#FFF",
                           fontSize: "12px",
                           fontWeight: 700,
@@ -690,7 +690,7 @@ const VolunteerDashboard = () => {
                     )}
 
                     {row.check_out_at && (
-                      <span style={{ fontSize: "11px", fontWeight: 800, color: "#047857", background: "#D1FAE5", padding: "4px 10px", borderRadius: "999px" }}>
+                      <span style={{ fontSize: "11px", fontWeight: 800, color: "#15803D", background: "#D1FAE5", padding: "4px 10px", borderRadius: "999px" }}>
                         ✓ COMPLETED ({row.hours_served || 0} hrs)
                       </span>
                     )}
@@ -721,7 +721,7 @@ const VolunteerDashboard = () => {
                     padding: "10px 18px",
                     borderRadius: "8px",
                     border: "none",
-                    background: "#EC4899",
+                    background: "#1E3A8A",
                     color: "#FFF",
                     fontSize: "13px",
                     fontWeight: 700,
@@ -738,17 +738,17 @@ const VolunteerDashboard = () => {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "14px", marginTop: "16px" }}>
                 <div style={{ background: "#FFF", padding: "14px", borderRadius: "10px", border: "1px solid #CBD5E1" }}>
                   <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Total Hours Contributed</div>
-                  <div style={{ fontSize: "22px", fontWeight: 800, color: "#2563EB", marginTop: "4px" }}>{totalHours} Hours</div>
+                  <div style={{ fontSize: "22px", fontWeight: 800, color: "#1E3A8A", marginTop: "4px" }}>{totalHours} Hours</div>
                 </div>
 
                 <div style={{ background: "#FFF", padding: "14px", borderRadius: "10px", border: "1px solid #CBD5E1" }}>
                   <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Completed Shifts</div>
-                  <div style={{ fontSize: "22px", fontWeight: 800, color: "#10B981", marginTop: "4px" }}>{completedCount} Shifts</div>
+                  <div style={{ fontSize: "22px", fontWeight: 800, color: "#16A34A", marginTop: "4px" }}>{completedCount} Shifts</div>
                 </div>
 
                 <div style={{ background: "#FFF", padding: "14px", borderRadius: "10px", border: "1px solid #CBD5E1" }}>
                   <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Status / Recognition</div>
-                  <div style={{ fontSize: "14px", fontWeight: 800, color: "#047857", marginTop: "4px" }}>ACTIVE VOLUNTEER</div>
+                  <div style={{ fontSize: "14px", fontWeight: 800, color: "#15803D", marginTop: "4px" }}>ACTIVE VOLUNTEER</div>
                 </div>
               </div>
             </div>
@@ -798,7 +798,7 @@ const VolunteerDashboard = () => {
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" }}>
             <button type="button" onClick={() => setIsCheckOutModalOpen(false)} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}>Cancel</button>
-            <button type="submit" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 700 }}>
+            <button type="submit" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700 }}>
               {isSubmitting ? "Processing Check-Out..." : "Confirm Check-Out & Complete"}
             </button>
           </div>

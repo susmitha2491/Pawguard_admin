@@ -77,8 +77,8 @@ const DonorDashboard = () => {
   const donorTier = summaryData?.donor_tier || getDonorTier(totalContributions);
 
   const stats = [
-    { title: "Total Contributions", value: loading ? "..." : formatINR(totalContributions), trend: "Contributions", color: "#10B981", icon: <FaCoins /> },
-    { title: "Rescues Funded", value: loading ? "..." : String(rescuesFunded), trend: "Impact", color: "#2563EB", icon: <FaHeart /> },
+    { title: "Total Contributions", value: loading ? "..." : formatINR(totalContributions), trend: "Contributions", color: "#16A34A", icon: <FaCoins /> },
+    { title: "Rescues Funded", value: loading ? "..." : String(rescuesFunded), trend: "Impact", color: "#1E3A8A", icon: <FaHeart /> },
     { title: "Donor Tier", value: loading ? "..." : donorTier, trend: "Tier", color: "#F59E0B", icon: <FaAward /> },
   ];
 
@@ -125,8 +125,8 @@ const DonorDashboard = () => {
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", marginBottom: "20px" }}>
-        <QuickActionCard icon={<FaHeart />} title="Make New Donation" subtitle="Sponsor emergency rescue" color="#10B981" onClick={() => addToast("Open the Finance module to make a donation", "info")} />
-        <QuickActionCard icon={<FaFileInvoice />} title="Download Tax Receipts" subtitle="Export donation report" color="#2563EB" onClick={async () => {
+        <QuickActionCard icon={<FaHeart />} title="Make New Donation" subtitle="Sponsor emergency rescue" color="#16A34A" onClick={() => addToast("Open the Finance module to make a donation", "info")} />
+        <QuickActionCard icon={<FaFileInvoice />} title="Download Tax Receipts" subtitle="Export donation report" color="#1E3A8A" onClick={async () => {
           addToast("Generating donation report PDF...", "info");
           await reportsService.generateAndDownloadReport({ report_type: "donation", format: "pdf" });
           addToast("Donation report downloaded!", "success");
@@ -144,7 +144,7 @@ const DonorDashboard = () => {
           <h3 style={{ margin: 0, color: "#0F172A", fontSize: "16px", fontWeight: 700 }}>
             My Contribution History & Impact Record
           </h3>
-          {loading && <span style={{ fontSize: "13px", color: "#2563EB", fontWeight: 600 }}>Loading donor record...</span>}
+          {loading && <span style={{ fontSize: "13px", color: "#1E3A8A", fontWeight: 600 }}>Loading donor record...</span>}
         </div>
         <DataTable columns={columns} data={formattedData} />
       </div>

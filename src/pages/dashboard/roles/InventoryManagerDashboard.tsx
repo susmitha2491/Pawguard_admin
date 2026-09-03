@@ -177,7 +177,7 @@ const InventoryManagerDashboard = () => {
       title: "Total Catalog Items",
       value: loading ? "..." : `${totalItemsCount} Items`,
       trend: `${totalStockQuantitySum} Total Units`,
-      color: "#2563EB",
+      color: "#1E3A8A",
       icon: <FaBoxes />,
       onClick: () => navigate("/inventory"),
     },
@@ -185,7 +185,7 @@ const InventoryManagerDashboard = () => {
       title: "Medicines & Vaccines",
       value: loading ? "..." : `${medicineCount} Stock`,
       trend: "Pharmacy supply",
-      color: "#10B981",
+      color: "#16A34A",
       icon: <FaPills />,
       onClick: () => navigate("/inventory"),
     },
@@ -193,7 +193,7 @@ const InventoryManagerDashboard = () => {
       title: "Low Stock Alerts",
       value: loading ? "..." : `${lowStockCount} Items`,
       trend: "Action Required",
-      color: "#EF4444",
+      color: "#DC2626",
       icon: <FaExclamationTriangle />,
       onClick: () => navigate("/inventory?tab=low_stock"),
     },
@@ -315,9 +315,9 @@ const InventoryManagerDashboard = () => {
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", marginBottom: "20px" }}>
-        <QuickActionCard icon={<FaBoxes />} title="Add Inventory Item" subtitle="Register new item" color="#2563EB" onClick={() => navigate("/inventory?action=add")} />
-        <QuickActionCard icon={<FaTruck />} title="Issue Purchase Order" subtitle="Order from vendor" color="#10B981" onClick={() => navigate("/inventory")} />
-        <QuickActionCard icon={<FaExclamationTriangle />} title="Low Stock Audit" subtitle="Review depleted items" color="#EF4444" onClick={() => navigate("/inventory?tab=low_stock")} />
+        <QuickActionCard icon={<FaBoxes />} title="Add Inventory Item" subtitle="Register new item" color="#1E3A8A" onClick={() => navigate("/inventory?action=add")} />
+        <QuickActionCard icon={<FaTruck />} title="Issue Purchase Order" subtitle="Order from vendor" color="#16A34A" onClick={() => navigate("/inventory")} />
+        <QuickActionCard icon={<FaExclamationTriangle />} title="Low Stock Audit" subtitle="Review depleted items" color="#DC2626" onClick={() => navigate("/inventory?tab=low_stock")} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "20px" }}>
@@ -331,7 +331,7 @@ const InventoryManagerDashboard = () => {
           <h3 style={{ margin: 0, color: "#0F172A", fontSize: "16px", fontWeight: 700 }}>
             Pharmaceutical &amp; Supply Stock Catalog ({formattedInventory.length})
           </h3>
-          {loading && <span style={{ fontSize: "12px", color: "#2563EB", fontWeight: 600 }}>Syncing stock catalog...</span>}
+          {loading && <span style={{ fontSize: "12px", color: "#1E3A8A", fontWeight: 600 }}>Syncing stock catalog...</span>}
         </div>
         <DataTable columns={columns} data={formattedInventory} loading={loading} emptyMessage="No inventory items found." />
       </div>

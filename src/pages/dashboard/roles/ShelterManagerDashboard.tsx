@@ -18,7 +18,6 @@ import {
   FaPrint,
   FaSync,
   FaPlus,
-  FaExternalLinkAlt,
   FaExchangeAlt,
   FaExclamationTriangle,
   FaCheckCircle,
@@ -209,7 +208,7 @@ const DogRowActions = ({
               gap: "8px",
             }}
           >
-            <FaEye color="#2563EB" /> View Dog
+            <FaEye color="#1E3A8A" /> View Dog
           </button>
 
           {/* 2. Edit Dog */}
@@ -234,7 +233,7 @@ const DogRowActions = ({
               gap: "8px",
             }}
           >
-            <FaEdit color="#059669" /> Edit Dog
+            <FaEdit color="#15803D" /> Edit Dog
           </button>
 
           {/* 3. Cage / Kennel Allocation */}
@@ -260,7 +259,7 @@ const DogRowActions = ({
                 gap: "8px",
               }}
             >
-              <FaBed color="#2563EB" /> {hasCage ? "Reassign Cage" : "Allocate Cage"}
+              <FaBed color="#1E3A8A" /> {hasCage ? "Reassign Cage" : "Allocate Cage"}
             </button>
           )}
 
@@ -287,7 +286,7 @@ const DogRowActions = ({
                 gap: "8px",
               }}
             >
-              <FaQrcode color="#6D28D9" /> {hasActiveTag ? "View Safety Tag" : "Generate Safety Tag"}
+              <FaQrcode color="#1E3A8A" /> {hasActiveTag ? "View Safety Tag" : "Generate Safety Tag"}
             </button>
           )}
 
@@ -339,7 +338,7 @@ const DogRowActions = ({
                 gap: "8px",
               }}
             >
-              <FaExchangeAlt color="#2563EB" /> Facility Transfer
+              <FaExchangeAlt color="#1E3A8A" /> Facility Transfer
             </button>
           )}
 
@@ -366,7 +365,7 @@ const DogRowActions = ({
                 gap: "8px",
               }}
             >
-              <FaCheckCircle color="#059669" /> Ready for Adoption
+              <FaCheckCircle color="#15803D" /> Ready for Adoption
             </button>
           )}
         </div>
@@ -1113,8 +1112,8 @@ const ShelterManagerDashboard = () => {
           <title>PawGuard Safety Tag - ${name}</title>
           <style>
             body { font-family: Arial, sans-serif; margin: 0; padding: 24px; text-align: center; color: #0F172A; }
-            .card { border: 2px solid #6D28D9; border-radius: 16px; padding: 24px; background: #FFF; }
-            h1 { color: #6D28D9; margin: 0 0 4px; font-size: 24px; }
+            .card { border: 2px solid #1E3A8A; border-radius: 16px; padding: 24px; background: #FFF; }
+            h1 { color: #1E3A8A; margin: 0 0 4px; font-size: 24px; }
             .sub { font-size: 11px; color: #64748B; font-weight: bold; text-transform: uppercase; margin-bottom: 16px; }
             img.qr { width: 240px; height: 240px; margin: 14px auto; display: block; }
             .meta { font-size: 13px; color: #334155; margin: 4px 0; }
@@ -1340,11 +1339,11 @@ const ShelterManagerDashboard = () => {
   const occupancyText = total_capacity > 0 ? `${Math.round((in_shelter_dogs / total_capacity) * 100)}%` : "N/A";
 
   const stats = [
-    { title: "Total Shelter Dogs", value: loading ? "..." : dashboardData.total_dogs, trend: `${dashboardData.adoptable_dogs} Adoptable`, color: "#2563EB", icon: <FaHome /> },
-    { title: "Dogs in Shelter Care", value: loading ? "..." : dashboardData.in_shelter_dogs, trend: "Rescued & Shelter Care", color: "#10B981", icon: <FaPaw /> },
-    { title: "Adoptable Dogs", value: loading ? "..." : dashboardData.adoptable_dogs, trend: "Ready for Adoption", color: "#059669", icon: <FaPaw /> },
+    { title: "Total Shelter Dogs", value: loading ? "..." : dashboardData.total_dogs, trend: `${dashboardData.adoptable_dogs} Adoptable`, color: "#1E3A8A", icon: <FaHome /> },
+    { title: "Dogs in Shelter Care", value: loading ? "..." : dashboardData.in_shelter_dogs, trend: "Rescued & Shelter Care", color: "#16A34A", icon: <FaPaw /> },
+    { title: "Adoptable Dogs", value: loading ? "..." : dashboardData.adoptable_dogs, trend: "Ready for Adoption", color: "#15803D", icon: <FaPaw /> },
     { title: "Kennel Occupancy", value: loading ? "..." : occupancyText, trend: `${in_shelter_dogs} In Care / ${total_capacity || 20} Capacity`, color: "#F59E0B", icon: <FaBed /> },
-    { title: "Active Transfers", value: loading ? "..." : transfersList.length, trend: "Facility Placements", color: "#6366F1", icon: <FaExchangeAlt /> },
+    { title: "Active Transfers", value: loading ? "..." : transfersList.length, trend: "Facility Placements", color: "#1E3A8A", icon: <FaExchangeAlt /> },
   ];
 
   const dogColumns = [
@@ -1403,7 +1402,7 @@ const ShelterManagerDashboard = () => {
               fontSize: "11px",
               fontWeight: 800,
               background: isAssigned ? "#ECFDF5" : "#F1F5F9",
-              color: isAssigned ? "#047857" : "#64748B",
+              color: isAssigned ? "#15803D" : "#64748B",
               border: isAssigned ? "1px solid #6EE7B7" : "1px solid #CBD5E1",
             }}
           >
@@ -1423,7 +1422,7 @@ const ShelterManagerDashboard = () => {
             fontSize: "11px",
             fontWeight: 800,
             background: "#ECFDF5",
-            color: "#047857",
+            color: "#15803D",
             textTransform: "capitalize",
           }}
         >
@@ -1442,7 +1441,7 @@ const ShelterManagerDashboard = () => {
             fontSize: "11px",
             fontWeight: 800,
             background: row.is_adoptable ? "#EFF6FF" : "#F1F5F9",
-            color: row.is_adoptable ? "#1D4ED8" : "#475569",
+            color: row.is_adoptable ? "#1E3A8A" : "#475569",
           }}
         >
           {row.adoption_status}
@@ -1460,7 +1459,7 @@ const ShelterManagerDashboard = () => {
             fontSize: "11px",
             fontWeight: 800,
             background: row.has_active_tag ? "#F3E8FF" : "#FEE2E2",
-            color: row.has_active_tag ? "#6D28D9" : "#991B1B",
+            color: row.has_active_tag ? "#1E3A8A" : "#991B1B",
             border: row.has_active_tag ? "1px solid #C4B5FD" : "1px solid #FCA5A5",
           }}
         >
@@ -1522,9 +1521,9 @@ const ShelterManagerDashboard = () => {
 
       {/* Quick Action Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-        <QuickActionCard icon={<FaPlus />} title="Register Rescued Dog / Intake" subtitle="New intake entry" color="#10B981" onClick={() => { setPetForm({ ...emptyPetForm }); setIsRegisterModalOpen(true); }} />
-        <QuickActionCard icon={<FaBed />} title="Allocate Cage" subtitle="Assign dog to kennel" color="#2563EB" onClick={() => openCageModal()} />
-        <QuickActionCard icon={<FaExchangeAlt />} title="Facility Placement" subtitle="Request internal transfer" color="#6366F1" onClick={() => setIsTransferModalOpen(true)} />
+        <QuickActionCard icon={<FaPlus />} title="Register Rescued Dog / Intake" subtitle="New intake entry" color="#16A34A" onClick={() => { setPetForm({ ...emptyPetForm }); setIsRegisterModalOpen(true); }} />
+        <QuickActionCard icon={<FaBed />} title="Allocate Cage" subtitle="Assign dog to kennel" color="#1E3A8A" onClick={() => openCageModal()} />
+        <QuickActionCard icon={<FaExchangeAlt />} title="Facility Placement" subtitle="Request internal transfer" color="#1E3A8A" onClick={() => setIsTransferModalOpen(true)} />
         <QuickActionCard icon={<FaBoxes />} title="Request Supplies" subtitle="Food & Medicines" color="#F59E0B" onClick={() => setIsSupplyModalOpen(true)} />
       </div>
 
@@ -1565,7 +1564,7 @@ const ShelterManagerDashboard = () => {
               <div key={c.id} style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "16px", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "12px", boxShadow: "0 2px 8px rgba(15, 23, 42, 0.04)" }}>
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontWeight: 800, color: "#2563EB", fontFamily: "monospace", fontSize: "13px" }}>
+                    <span style={{ fontWeight: 800, color: "#1E3A8A", fontFamily: "monospace", fontSize: "13px" }}>
                       Ticket #{c.ticket_number || c.id}
                     </span>
                     <span style={{ padding: "2px 8px", borderRadius: "999px", background: "#FEF3C7", color: "#92400E", fontSize: "11px", fontWeight: 700, textTransform: "capitalize" }}>
@@ -1600,7 +1599,7 @@ const ShelterManagerDashboard = () => {
                   <button
                     type="button"
                     onClick={() => handleOpenReceiveRescue(c)}
-                    style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}
+                    style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}
                   >
                     <FaPaw /> Receive & Register Dog
                   </button>
@@ -1702,7 +1701,7 @@ const ShelterManagerDashboard = () => {
         {selectedRescueForDetails && (
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", fontSize: "13px", color: "#334155" }}>
-              <div><strong>Rescue Case ID:</strong><br /><span style={{ fontFamily: "monospace", color: "#2563EB" }}>{selectedRescueForDetails.ticket_number || selectedRescueForDetails.id}</span></div>
+              <div><strong>Rescue Case ID:</strong><br /><span style={{ fontFamily: "monospace", color: "#1E3A8A" }}>{selectedRescueForDetails.ticket_number || selectedRescueForDetails.id}</span></div>
               <div><strong>Status:</strong><br /><span style={{ textTransform: "capitalize", fontWeight: 600 }}>{selectedRescueForDetails.status || "-"}</span></div>
               <div><strong>Rescue Date:</strong><br />{formatDateOnly(selectedRescueForDetails.created_at)}</div>
               <div><strong>Priority / Severity:</strong><br /><span style={{ textTransform: "capitalize" }}>{selectedRescueForDetails.severity || "-"}</span></div>
@@ -1760,7 +1759,7 @@ const ShelterManagerDashboard = () => {
                 🐕 Rescue Details <span style={{ fontWeight: 400, color: "#64748B", fontSize: "11px" }}>(Read-Only)</span>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", fontSize: "12px", color: "#334155" }}>
-                <div><strong>Rescue Case:</strong> <span style={{ fontFamily: "monospace", color: "#2563EB" }}>{activeRescueForIntake.ticket_number || activeRescueForIntake.id}</span></div>
+                <div><strong>Rescue Case:</strong> <span style={{ fontFamily: "monospace", color: "#1E3A8A" }}>{activeRescueForIntake.ticket_number || activeRescueForIntake.id}</span></div>
                 <div><strong>Status:</strong> <span style={{ textTransform: "capitalize" }}>{activeRescueForIntake.status || "-"}</span></div>
                 <div><strong>Rescue Date:</strong> {formatDateOnly(activeRescueForIntake.created_at)}</div>
                 <div><strong>Priority:</strong> <span style={{ textTransform: "capitalize" }}>{activeRescueForIntake.severity || "-"}</span></div>
@@ -1772,7 +1771,7 @@ const ShelterManagerDashboard = () => {
                   <div>
                     <strong>Evidence:</strong>{" "}
                     {((activeRescueForIntake.media_evidence || activeRescueForIntake.media_urls) as string[]).map((url: string, idx: number) => (
-                      <a key={idx} href={url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563EB", textDecoration: "underline", marginRight: "6px", fontSize: "11px" }}>
+                      <a key={idx} href={url} target="_blank" rel="noopener noreferrer" style={{ color: "#1E3A8A", textDecoration: "underline", marginRight: "6px", fontSize: "11px" }}>
                         View Photo {idx + 1}
                       </a>
                     ))}
@@ -1807,7 +1806,7 @@ const ShelterManagerDashboard = () => {
                   onChange={(e) => setPetForm({ ...petForm, photo_url: e.target.value })}
                   style={{ flex: 1, padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px", boxSizing: "border-box" }}
                 />
-                <label style={{ cursor: "pointer", background: "#EFF6FF", color: "#2563EB", border: "1px solid #CBD5E1", padding: "10px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 700, whiteSpace: "nowrap" }}>
+                <label style={{ cursor: "pointer", background: "#EFF6FF", color: "#1E3A8A", border: "1px solid #CBD5E1", padding: "10px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 700, whiteSpace: "nowrap" }}>
                   {intakePhotoFile ? "Selected" : "Choose File"}
                   <input
                     type="file"
@@ -1946,7 +1945,7 @@ const ShelterManagerDashboard = () => {
             <button
               type="submit"
               disabled={isSubmitting}
-              style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700, cursor: "pointer" }}
+              style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, cursor: "pointer" }}
             >
               {isSubmitting ? "Registering..." : "Save & Register Dog"}
             </button>
@@ -1981,7 +1980,7 @@ const ShelterManagerDashboard = () => {
                 onChange={(e) => setPetForm({ ...petForm, photo_url: e.target.value })}
                 style={{ flex: 1, padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px", boxSizing: "border-box" }}
               />
-              <label style={{ cursor: "pointer", background: "#EFF6FF", color: "#2563EB", border: "1px solid #CBD5E1", padding: "10px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 700, whiteSpace: "nowrap" }}>
+              <label style={{ cursor: "pointer", background: "#EFF6FF", color: "#1E3A8A", border: "1px solid #CBD5E1", padding: "10px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 700, whiteSpace: "nowrap" }}>
                 {editPhotoFile ? "Selected" : "Choose File"}
                 <input
                   type="file"
@@ -2029,7 +2028,7 @@ const ShelterManagerDashboard = () => {
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
             <button type="button" onClick={() => setIsEditModalOpen(false)} style={{ padding: "9px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}>Cancel</button>
-            <button type="submit" disabled={isSubmitting} style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#059669", color: "#FFF", fontWeight: 700 }}>
+            <button type="submit" disabled={isSubmitting} style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#15803D", color: "#FFF", fontWeight: 700 }}>
               {isSubmitting ? "Saving..." : "Save Changes"}
             </button>
           </div>
@@ -2056,10 +2055,10 @@ const ShelterManagerDashboard = () => {
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: "18px", fontWeight: 800, color: "#0F172A" }}>{selectedDog.name}</div>
                 <div style={{ fontSize: "12px", color: "#64748B", fontFamily: "monospace" }}>Dog ID: {selectedDog.registration_number}</div>
-                <div style={{ fontSize: "12px", color: "#2563EB", fontWeight: 600, marginTop: "2px" }}>Rescue Reference: {selectedDog.rescue_id || "-"}</div>
+                <div style={{ fontSize: "12px", color: "#1E3A8A", fontWeight: 600, marginTop: "2px" }}>Rescue Reference: {selectedDog.rescue_id || "-"}</div>
               </div>
               <div>
-                <label style={{ cursor: "pointer", background: "#EFF6FF", color: "#2563EB", border: "1px solid #BAE6FD", padding: "6px 12px", borderRadius: "6px", fontSize: "12px", fontWeight: 700 }}>
+                <label style={{ cursor: "pointer", background: "#EFF6FF", color: "#1E3A8A", border: "1px solid #BAE6FD", padding: "6px 12px", borderRadius: "6px", fontSize: "12px", fontWeight: 700 }}>
                   {isUploadingPhoto ? "Uploading..." : "Upload Photo"}
                   <input
                     type="file"
@@ -2120,7 +2119,7 @@ const ShelterManagerDashboard = () => {
                 <span
                   style={{
                     fontWeight: 700,
-                    color: selectedDog.kennel_id ? "#047857" : "#64748B",
+                    color: selectedDog.kennel_id ? "#15803D" : "#64748B",
                   }}
                 >
                   {getKennelLabel(selectedDog.kennel_id)}
@@ -2140,7 +2139,7 @@ const ShelterManagerDashboard = () => {
                 <div style={{ background: "#F0F9FF", border: "1px solid #BAE6FD", borderRadius: "8px", padding: "10px" }}>
                   <div style={{ fontSize: "12px", fontWeight: 800, color: "#0369A1", marginBottom: "6px" }}>🐕 Rescue Origin</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", fontSize: "12px", color: "#334155" }}>
-                    <div><strong>Case:</strong> <span style={{ fontFamily: "monospace", color: "#2563EB" }}>{matchedCase.ticket_number || matchedCase.id}</span></div>
+                    <div><strong>Case:</strong> <span style={{ fontFamily: "monospace", color: "#1E3A8A" }}>{matchedCase.ticket_number || matchedCase.id}</span></div>
                     <div><strong>Rescue Date:</strong> {formatDateOnly(matchedCase.created_at)}</div>
                     <div><strong>Rescue Location:</strong> {matchedCase.location_address || "-"}</div>
                     {agentName && <div><strong>Rescue Agent:</strong> {agentName}</div>}
@@ -2153,7 +2152,7 @@ const ShelterManagerDashboard = () => {
               <button
                 type="button"
                 onClick={() => { setIsViewMasterModalOpen(false); openQrModal(selectedDog); }}
-                style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: "#6D28D9", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
               >
                 <FaQrcode /> Open Safety Tag / QR
               </button>
@@ -2232,7 +2231,7 @@ const ShelterManagerDashboard = () => {
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
             <button type="button" onClick={() => setIsCageModalOpen(false)} style={{ padding: "9px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}>Cancel</button>
-            <button type="submit" disabled={cageLoading} style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 700 }}>
+            <button type="submit" disabled={cageLoading} style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700 }}>
               {cageLoading ? "Assigning..." : "Confirm Cage Assignment"}
             </button>
           </div>
@@ -2314,7 +2313,7 @@ const ShelterManagerDashboard = () => {
             </select>
             <button
               type="submit"
-              style={{ padding: "10px", borderRadius: "8px", border: "none", background: "#8B5CF6", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
+              style={{ padding: "10px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
             >
               Generate Live Metrics Report
             </button>
@@ -2330,7 +2329,7 @@ const ShelterManagerDashboard = () => {
                   const url = URL.createObjectURL(blob);
                   triggerDownload(url, `Shelter_Report_${reportType}.txt`);
                 }}
-                style={{ marginTop: "10px", width: "100%", padding: "8px", borderRadius: "6px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
+                style={{ marginTop: "10px", width: "100%", padding: "8px", borderRadius: "6px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
               >
                 Download Report File
               </button>
@@ -2360,7 +2359,7 @@ const ShelterManagerDashboard = () => {
               </div>
               {qrDog.rescue_id && (
                 <div style={{ fontSize: "13px", color: "#475569" }}>
-                  <strong>Rescue Case ID:</strong> <span style={{ fontFamily: "monospace", fontWeight: 700, color: "#2563EB" }}>{qrDog.rescue_id}</span>
+                  <strong>Rescue Case ID:</strong> <span style={{ fontFamily: "monospace", fontWeight: 700, color: "#1E3A8A" }}>{qrDog.rescue_id}</span>
                 </div>
               )}
               <div style={{ fontSize: "13px", color: "#475569" }}>
@@ -2389,12 +2388,13 @@ const ShelterManagerDashboard = () => {
                   {isRefreshingScanData ? "Refreshing..." : "Refresh Scan Data"}
                 </button>
               </div>
+
             </div>
           )}
 
           {qrLoading && (
             <div style={{ textAlign: "center", padding: "40px 0" }}>
-              <div style={{ display: "inline-block", width: "32px", height: "32px", border: "3px solid #F3E8FF", borderTopColor: "#6D28D9", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+              <div style={{ display: "inline-block", width: "32px", height: "32px", border: "3px solid #F3E8FF", borderTopColor: "#1E3A8A", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
               <div style={{ marginTop: "12px", fontSize: "13px", color: "#64748B", fontWeight: 500 }}>Fetching unique Safety Tag metadata from backend...</div>
             </div>
           )}
@@ -2459,7 +2459,7 @@ const ShelterManagerDashboard = () => {
                           padding: "10px",
                           borderRadius: "8px",
                           border: "none",
-                          background: manualTokenInput.trim() ? "#10B981" : "#94A3B8",
+                          background: manualTokenInput.trim() ? "#16A34A" : "#94A3B8",
                           color: "#FFFFFF",
                           fontWeight: 700,
                           fontSize: "13px",
@@ -2478,7 +2478,7 @@ const ShelterManagerDashboard = () => {
                           borderRadius: "8px",
                           border: "1px solid #CBD5E1",
                           background: "#FFFFFF",
-                          color: "#6D28D9",
+                          color: "#1E3A8A",
                           fontWeight: 700,
                           fontSize: "12px",
                           cursor: isProvisioning ? "not-allowed" : "pointer",
@@ -2493,7 +2493,7 @@ const ShelterManagerDashboard = () => {
                 <>
                   <div style={{ color: "#991B1B", fontWeight: 700, fontSize: "14px" }}>This pet does not have an active Safety Tag yet.</div>
                   <div style={{ fontSize: "12px", color: "#64748B", maxWidth: "400px", lineHeight: 1.5 }}>Please provision a Safety Tag to generate an authoritative QR code and safety token for this pet.</div>
-                  <button type="button" onClick={() => handleProvisionTag()} disabled={isProvisioning} style={{ padding: "11px 24px", borderRadius: "8px", border: "none", background: "#6D28D9", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: isProvisioning ? "not-allowed" : "pointer" }}>
+                  <button type="button" onClick={() => handleProvisionTag()} disabled={isProvisioning} style={{ padding: "11px 24px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: isProvisioning ? "not-allowed" : "pointer" }}>
                     {isProvisioning ? "Provisioning..." : "Provision Safety Tag"}
                   </button>
                 </>
@@ -2510,15 +2510,12 @@ const ShelterManagerDashboard = () => {
 
               {tagStatus === "ACTIVE" ? (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", width: "100%" }}>
-                  <button type="button" onClick={handleDownloadQr} style={{ padding: "11px", borderRadius: "8px", border: "none", background: "#6D28D9", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}><FaDownload /> Download QR</button>
-                  <button type="button" onClick={handlePrintQr} style={{ padding: "11px", borderRadius: "8px", border: "1px solid #C4B5FD", background: "#FFF", color: "#6D28D9", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}><FaPrint /> Print Safety Tag</button>
-                  {Boolean(tagMetadata?.public_scan_url) && (
-                    <button type="button" onClick={() => window.open(String(tagMetadata?.public_scan_url).startsWith("http") ? String(tagMetadata?.public_scan_url) : `https://pawguard-public-web.vercel.app${tagMetadata?.public_scan_url}`, "_blank")} style={{ padding: "11px", borderRadius: "8px", border: "1px solid #2563EB", background: "#EFF6FF", color: "#2563EB", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}><FaExternalLinkAlt /> Public Scan</button>
-                  )}
+                  <button type="button" onClick={handleDownloadQr} style={{ padding: "11px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}><FaDownload /> Download QR</button>
+                  <button type="button" onClick={handlePrintQr} style={{ padding: "11px", borderRadius: "8px", border: "1px solid #C4B5FD", background: "#FFF", color: "#1E3A8A", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}><FaPrint /> Print Safety Tag</button>
                   <button type="button" onClick={() => setIsDeactivateConfirmOpen(true)} style={{ padding: "11px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#991B1B", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}>Deactivate Tag</button>
                 </div>
               ) : (
-                <button type="button" onClick={() => handleProvisionTag(true)} disabled={isProvisioning} style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "none", background: "#6D28D9", color: "#FFF", fontWeight: 700, fontSize: "13px" }}>
+                <button type="button" onClick={() => handleProvisionTag(true)} disabled={isProvisioning} style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, fontSize: "13px" }}>
                   {isProvisioning ? "Re-Provisioning..." : "Re-Provision Safety Tag"}
                 </button>
               )}
@@ -2535,7 +2532,7 @@ const ShelterManagerDashboard = () => {
           </div>
           <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
             <button type="button" onClick={() => setIsReProvisionConfirmOpen(false)} style={{ padding: "9px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF" }}>Cancel</button>
-            <button type="button" onClick={() => handleProvisionTag(true)} disabled={isProvisioning} style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#6D28D9", color: "#FFF", fontWeight: 700 }}>
+            <button type="button" onClick={() => handleProvisionTag(true)} disabled={isProvisioning} style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700 }}>
               {isProvisioning ? "Re-Provisioning..." : "Confirm Re-Provision"}
             </button>
           </div>
@@ -2627,7 +2624,7 @@ const ShelterManagerDashboard = () => {
             <button
               type="submit"
               disabled={isSubmitting}
-              style={{ padding: "10px 20px", borderRadius: "8px", border: "none", background: "#6366F1", color: "#FFF", fontWeight: 700, fontSize: "13px" }}
+              style={{ padding: "10px 20px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, fontSize: "13px" }}
             >
               {isSubmitting ? "Submitting..." : "Submit Placement Transfer"}
             </button>

@@ -24,8 +24,8 @@ const Login = () => {
   return (
     <AuthLayout>
       <LoginCard>
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: "12px" }}>
-          <PawGuardLogo size={42} badgeBg="#2563EB" iconColor="#FFFFFF" />
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: "16px" }}>
+          <PawGuardLogo size={64} />
         </div>
 
         <h1 className="login-title">PawGuard</h1>

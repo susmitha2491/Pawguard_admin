@@ -28,15 +28,15 @@ interface RecentActivitiesPanelProps {
 
 const moduleColor = (module: string): string => {
   const m = module.toLowerCase();
-  if (/user|admin|role|permission/.test(m)) return "#2563EB";
-  if (/rescue|dispatch/.test(m)) return "#EF4444";
-  if (/shelter|kennel|facility/.test(m)) return "#8B5CF6";
-  if (/medical|vet|vaccin|exam/.test(m)) return "#06B6D4";
-  if (/adoption/.test(m)) return "#EC4899";
-  if (/foster/.test(m)) return "#10B981";
+  if (/user|admin|role|permission/.test(m)) return "#1E3A8A";
+  if (/rescue|dispatch/.test(m)) return "#DC2626";
+  if (/shelter|kennel|facility/.test(m)) return "#1E3A8A";
+  if (/medical|vet|vaccin|exam/.test(m)) return "#1E3A8A";
+  if (/adoption/.test(m)) return "#1E3A8A";
+  if (/foster/.test(m)) return "#16A34A";
   if (/volunteer|shift/.test(m)) return "#F59E0B";
   if (/inventory|stock/.test(m)) return "#F97316";
-  if (/finance|donation|payment/.test(m)) return "#14B8A6";
+  if (/finance|donation|payment/.test(m)) return "#1E3A8A";
   if (/vehicle|car/.test(m)) return "#64748B";
   if (/certificate/.test(m)) return "#F59E0B";
   if (/audit|log/.test(m)) return "#64748B";
@@ -64,9 +64,9 @@ const moduleIcon = (module: string): React.ReactNode => {
 
 const statusColor = (status: string): string => {
   const s = status.toLowerCase();
-  if (/success|approved|completed|resolved|created/.test(s)) return "#10B981";
+  if (/success|approved|completed|resolved|created/.test(s)) return "#16A34A";
   if (/pending|in progress|assigned/.test(s)) return "#F59E0B";
-  if (/failed|rejected|deleted|cancelled/.test(s)) return "#EF4444";
+  if (/failed|rejected|deleted|cancelled/.test(s)) return "#DC2626";
   return "#64748B";
 };
 

@@ -73,7 +73,7 @@ const ForgotPasswordModal = ({ isOpen, onClose, initialEmail = "" }: ForgotPassw
     height: "48px",
     border: "none",
     borderRadius: "12px",
-    background: "#2563EB",
+    background: "#1E3A8A",
     color: "#FFFFFF",
     fontSize: "15px",
     fontWeight: 600,
@@ -90,7 +90,7 @@ const ForgotPasswordModal = ({ isOpen, onClose, initialEmail = "" }: ForgotPassw
       {sent ? (
         <div style={{ textAlign: "center", padding: "8px 4px" }}>
           <div style={{ display: "flex", justifyContent: "center", marginBottom: "14px" }}>
-            <FaCheckCircle size={46} color="#10B981" />
+            <FaCheckCircle size={46} color="#16A34A" />
           </div>
           <h3 style={{ margin: "0 0 10px", fontSize: "17px", fontWeight: 700, color: "#0F172A" }}>
             Check your inbox

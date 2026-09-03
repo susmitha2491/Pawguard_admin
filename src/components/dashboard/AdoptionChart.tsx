@@ -73,7 +73,7 @@ const AdoptionChart = ({ data = [] }: AdoptionChartProps) => {
           <p style={{ margin: 0, color: "#64748B", fontSize: "14px" }}>
             Last Month
           </p>
-          <h3 style={{ margin: "6px 0 0", color: "#2563EB", fontSize: "30px" }}>
+          <h3 style={{ margin: "6px 0 0", color: "#1E3A8A", fontSize: "30px" }}>
             {lastMonth}
           </h3>
         </div>
@@ -136,9 +136,9 @@ const AdoptionChart = ({ data = [] }: AdoptionChartProps) => {
               <Line
                 type="monotone"
                 dataKey="adoptions"
-                stroke="#2563EB"
+                stroke="#1E3A8A"
                 strokeWidth={4}
-                dot={{ r: 6, fill: "#2563EB" }}
+                dot={{ r: 6, fill: "#1E3A8A" }}
                 activeDot={{ r: 8 }}
               />
             </LineChart>

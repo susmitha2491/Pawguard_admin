@@ -82,8 +82,8 @@ const GeneralPublicDashboard = () => {
   );
 
   const stats = [
-    { title: "Adoptable Dogs", value: loading ? "..." : String(adoptableCount), trend: "Browsing Open", color: "#2563EB", icon: <FaPaw /> },
-    { title: "Rescue Facilities", value: loading ? "..." : String(rescueFacilitiesCount), trend: "Open Visitors", color: "#10B981", icon: <FaHome /> },
+    { title: "Adoptable Dogs", value: loading ? "..." : String(adoptableCount), trend: "Browsing Open", color: "#1E3A8A", icon: <FaPaw /> },
+    { title: "Rescue Facilities", value: loading ? "..." : String(rescueFacilitiesCount), trend: "Open Visitors", color: "#16A34A", icon: <FaHome /> },
     { title: "Total Rescued", value: loading ? "..." : String(totalRescuedCount), trend: "Saved", color: "#F59E0B", icon: <FaHeart /> },
   ];
 
@@ -132,8 +132,8 @@ const GeneralPublicDashboard = () => {
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", marginBottom: "20px" }}>
-        <QuickActionCard icon={<FaAmbulance />} title="Report Stray in Distress" subtitle="Submit emergency location" color="#EF4444" onClick={() => navigate("/requests")} />
-        <QuickActionCard icon={<FaHeart />} title="Submit Adoption Application" subtitle="Apply to adopt a pet" color="#2563EB" onClick={() => navigate("/adoptions")} />
+        <QuickActionCard icon={<FaAmbulance />} title="Report Stray in Distress" subtitle="Submit emergency location" color="#DC2626" onClick={() => navigate("/requests")} />
+        <QuickActionCard icon={<FaHeart />} title="Submit Adoption Application" subtitle="Apply to adopt a pet" color="#1E3A8A" onClick={() => navigate("/adoptions")} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "20px" }}>
@@ -147,7 +147,7 @@ const GeneralPublicDashboard = () => {
           <h3 style={{ margin: 0, color: "#0F172A", fontSize: "16px", fontWeight: 700 }}>
             Featured Adoptable Dogs Looking for a Home
           </h3>
-          {loading && <span style={{ fontSize: "13px", color: "#2563EB", fontWeight: 600 }}>Loading featured dogs...</span>}
+          {loading && <span style={{ fontSize: "13px", color: "#1E3A8A", fontWeight: 600 }}>Loading featured dogs...</span>}
         </div>
         <DataTable columns={columns} data={formattedDogs} />
       </div>

@@ -20,7 +20,7 @@ import vehicleService from "../../services/vehicleService";
 import petService from "../../services/petService";
 import { rescueStatusBadge, dispatchStage } from "../../utils/rescueStatus.tsx";
 import { notifyDataChanged, useDataSync } from "../../utils/dataSync";
-import { normalizeRole, getCurrentUserRole, getCurrentUser } from "../../utils/roleUtils";
+import { normalizeRole, getCurrentUserRole, getCurrentUser, getRescueCentreId } from "../../utils/roleUtils";
 import { formatDateTime } from "../../utils/dateUtils";
 
 const unwrapList = (body: unknown): Record<string, unknown>[] => {
@@ -59,14 +59,14 @@ const RescueDispatch = () => {
   const currentUser = getCurrentUser();
   const currentUserRole = getCurrentUserRole();
   const isRescueCentreAdmin = currentUserRole === "rescue_centre_admin";
+  const isSuperAdmin = currentUserRole === "super_admin";
+  const isRescueCoordinator = currentUserRole === "rescue_coordinator";
+  const isRescueAgent = currentUserRole === "rescue_agent";
 
-  const currentRescueCentreId =
-    (currentUser as any)?.rescue_centre_id ||
-    (currentUser as any)?.rescue_center_id ||
-    (currentUser as any)?.rescue_facility_id ||
-    (currentUser as any)?.facility_id ||
-    (currentUser as any)?.organization_id ||
-    (currentUser as any)?.id;
+  const canManageDispatch = isSuperAdmin || isRescueCoordinator;
+  const canUpdateStatus = isSuperAdmin || isRescueCoordinator || isRescueAgent;
+
+  const currentRescueCentreId = getRescueCentreId(currentUser);
 
   const [dispatches, setDispatches] = useState<EnrichedDispatch[]>([]);
   const [rescueCases, setRescueCases] = useState<Record<string, unknown>[]>([]);
@@ -121,6 +121,16 @@ const RescueDispatch = () => {
     try {
       setLoading(true);
       setError(null);
+
+      if (isRescueCentreAdmin && !currentRescueCentreId) {
+        setError("No Rescue Centre Assigned: Your account does not have an assigned Rescue Centre. Contact a Super Administrator.");
+        setDispatches([]);
+        setRescueCases([]);
+        setUsers([]);
+        setVehicles([]);
+        setLoading(false);
+        return;
+      }
 
       const queryParams: Record<string, unknown> = {};
       if (isRescueCentreAdmin && currentRescueCentreId) {
@@ -276,12 +286,20 @@ const RescueDispatch = () => {
   // Create New Dispatch Action
   const handleCreateDispatch = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isRescueCentreAdmin) {
+      addToast("Dispatch creation and team assignment are reserved for Rescue Coordinators.", "error");
+      return;
+    }
     if (!newDispatchForm.case_id) {
       addToast("Please select a verified rescue case to dispatch.", "error");
       return;
     }
     if (!newDispatchForm.vehicle_id) {
       addToast("Please select an available rescue vehicle.", "error");
+      return;
+    }
+    if (isRescueCentreAdmin && !currentRescueCentreId) {
+      addToast("Cannot create dispatch: No Rescue Centre is assigned to your account.", "error");
       return;
     }
 
@@ -317,6 +335,10 @@ const RescueDispatch = () => {
 
   // Status Change Action (Start, En Route, Arrived, Complete)
   const handleStatusChange = async (dispatchId: string, nextStatus: string, successMessage: string) => {
+    if (isRescueCentreAdmin) {
+      addToast("Field operation status updates are performed by Rescue Agents and Rescue Coordinators.", "error");
+      return;
+    }
     try {
       const res = await rescueService.updateDispatchStatus(dispatchId, nextStatus);
       const resObj = res?.data || res || {};
@@ -344,6 +366,10 @@ const RescueDispatch = () => {
   // Reassign Agent Action
   const handleReassignAgent = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isRescueCentreAdmin) {
+      addToast("Agent reassignment is reserved for Rescue Coordinators.", "error");
+      return;
+    }
     if (!selectedDispatch || !reassignAgentId) {
       addToast("Select an agent to assign.", "error");
       return;
@@ -370,6 +396,10 @@ const RescueDispatch = () => {
   // Reassign Vehicle Action
   const handleReassignVehicle = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isRescueCentreAdmin) {
+      addToast("Vehicle reassignment is reserved for Rescue Coordinators.", "error");
+      return;
+    }
     if (!selectedDispatch || !reassignVehicleId) {
       addToast("Select a vehicle to assign.", "error");
       return;
@@ -396,6 +426,10 @@ const RescueDispatch = () => {
   // Cancel Dispatch Action
   const handleCancelSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isRescueCentreAdmin) {
+      addToast("Cancelling a dispatch is reserved for Rescue Coordinators.", "error");
+      return;
+    }
     if (!selectedDispatch) return;
     try {
       setIsSubmitting(true);
@@ -526,7 +560,7 @@ const RescueDispatch = () => {
           </button>
 
           {/* Operational Status Actions */}
-          {["awaiting_dispatch", "pending", "created"].includes(row.dispatch_status) && (
+          {canUpdateStatus && ["awaiting_dispatch", "pending", "created"].includes(row.dispatch_status) && (
             <button
               type="button"
               onClick={() => handleStatusChange(row.id, "dispatched", "Dispatch started! Team notified.")}
@@ -536,7 +570,7 @@ const RescueDispatch = () => {
             </button>
           )}
 
-          {row.dispatch_status === "dispatched" && (
+          {canUpdateStatus && row.dispatch_status === "dispatched" && (
             <button
               type="button"
               onClick={() => handleStatusChange(row.id, "en_route", "Team marked as En Route.")}
@@ -546,7 +580,7 @@ const RescueDispatch = () => {
             </button>
           )}
 
-          {row.dispatch_status === "en_route" && (
+          {canUpdateStatus && row.dispatch_status === "en_route" && (
             <button
               type="button"
               onClick={() => handleStatusChange(row.id, "arrived", "Team marked as Arrived at Scene.")}
@@ -556,7 +590,7 @@ const RescueDispatch = () => {
             </button>
           )}
 
-          {["arrived", "located", "secured", "in_progress", "on_scene"].includes(row.dispatch_status) && (
+          {canUpdateStatus && ["arrived", "located", "secured", "in_progress", "on_scene"].includes(row.dispatch_status) && (
             <button
               type="button"
               onClick={() => handleStatusChange(row.id, "completed", "Rescue operation marked Completed!")}
@@ -567,7 +601,7 @@ const RescueDispatch = () => {
           )}
 
           {/* Reassign Agent / Vehicle */}
-          {row.dispatch_status !== "completed" && row.dispatch_status !== "cancelled" && (
+          {canManageDispatch && row.dispatch_status !== "completed" && row.dispatch_status !== "cancelled" && (
             <>
               <button
                 type="button"
@@ -621,25 +655,27 @@ const RescueDispatch = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          style={{
-            background: "#2563EB",
-            color: "#FFFFFF",
-            border: "none",
-            borderRadius: "10px",
-            padding: "10px 18px",
-            fontSize: "14px",
-            fontWeight: 700,
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            cursor: "pointer",
-          }}
-        >
-          <FaPlus size={14} />
-          <span>New Dispatch</span>
-        </button>
+        {canManageDispatch && (
+          <button
+            onClick={() => setIsAddModalOpen(true)}
+            style={{
+              background: "#2563EB",
+              color: "#FFFFFF",
+              border: "none",
+              borderRadius: "10px",
+              padding: "10px 18px",
+              fontSize: "14px",
+              fontWeight: 700,
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              cursor: "pointer",
+            }}
+          >
+            <FaPlus size={14} />
+            <span>New Dispatch</span>
+          </button>
+        )}
       </div>
 
       {/* Summary Cards (4 Cards ONLY) */}

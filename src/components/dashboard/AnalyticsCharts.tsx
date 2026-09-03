@@ -229,7 +229,7 @@ const AnalyticsCharts = ({
             <YAxis type="category" dataKey="name" width={115} tick={{ fill: "#334155", fontSize: 10, fontWeight: 600 }} axisLine={false} tickLine={false} />
             <Tooltip />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="occupied" name="Occupied" fill="#2563EB" radius={[0, 4, 4, 0]} maxBarSize={16} />
+            <Bar dataKey="occupied" name="Occupied" fill="#1E3A8A" radius={[0, 4, 4, 0]} maxBarSize={16} />
             <Bar dataKey="capacity" name="Capacity" fill="#CBD5E1" radius={[0, 4, 4, 0]} maxBarSize={16} />
           </BarChart>
         </ResponsiveContainer>
