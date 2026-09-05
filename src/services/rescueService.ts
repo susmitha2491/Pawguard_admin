@@ -1,5 +1,6 @@
 import api from "../api/axios";
 import { publishActionEvent } from "../utils/eventSystem";
+import { unwrapList } from "../utils/chartUtils";
 
 export interface RescueCasePayload {
   id?: string;
@@ -33,6 +34,35 @@ export const rescueService = {
   getRescueCases: async (params?: Record<string, unknown>) => {
     const response = await api.get("/rescue", { params });
     return response.data;
+  },
+
+  // GET /rescue — fetch all pages of rescue cases
+  getAllRescueCases: async (params?: Record<string, unknown>) => {
+    const pageSize = 50;
+    try {
+      const firstParams = { ...params, page: 1, page_size: pageSize };
+      const response = await api.get("/rescue", { params: firstParams });
+      const firstBody = response.data;
+      let collected = unwrapList(firstBody);
+      const totalPages = firstBody?.meta?.total_pages ?? firstBody?.total_pages ?? 1;
+      if (totalPages > 1 && Array.isArray(collected)) {
+        for (let p = 2; p <= totalPages; p++) {
+          try {
+            const pageRes = await api.get("/rescue", { params: { ...params, page: p, page_size: pageSize } });
+            const pageList = unwrapList(pageRes.data);
+            collected.push(...pageList);
+          } catch {
+            /* ignore page fetch error */
+          }
+        }
+      }
+      return { success: true, data: collected, meta: firstBody?.meta };
+    } catch (err) {
+      console.error("getAllRescueCases error:", err);
+      const fallback = await api.get("/rescue", { params: { ...params, page: 1, page_size: 50 } });
+      const list = unwrapList(fallback.data);
+      return { success: true, data: list, meta: fallback.data?.meta };
+    }
   },
 
   getRescueCaseById: async (requestId: string) => {
@@ -206,6 +236,34 @@ export const rescueService = {
   getDispatches: async (params?: Record<string, unknown>) => {
     const response = await api.get("/rescue/dispatches", { params });
     return response.data;
+  },
+
+  getAllDispatches: async (params?: Record<string, unknown>) => {
+    const pageSize = 50;
+    try {
+      const firstParams = { ...params, page: 1, page_size: pageSize };
+      const response = await api.get("/rescue/dispatches", { params: firstParams });
+      const firstBody = response.data;
+      let collected = unwrapList(firstBody);
+      const totalPages = firstBody?.meta?.total_pages ?? firstBody?.total_pages ?? 1;
+      if (totalPages > 1 && Array.isArray(collected)) {
+        for (let p = 2; p <= totalPages; p++) {
+          try {
+            const pageRes = await api.get("/rescue/dispatches", { params: { ...params, page: p, page_size: pageSize } });
+            const pageList = unwrapList(pageRes.data);
+            collected.push(...pageList);
+          } catch {
+            /* ignore page fetch error */
+          }
+        }
+      }
+      return { success: true, data: collected, meta: firstBody?.meta };
+    } catch (err) {
+      console.error("getAllDispatches error:", err);
+      const fallback = await api.get("/rescue/dispatches", { params: { ...params, page: 1, page_size: 50 } });
+      const list = unwrapList(fallback.data);
+      return { success: true, data: list, meta: fallback.data?.meta };
+    }
   },
 
   // GET /rescue/dispatches/{dispatch_id}

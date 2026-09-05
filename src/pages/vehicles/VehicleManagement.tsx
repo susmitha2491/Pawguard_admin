@@ -29,6 +29,7 @@ import type { VehiclePayload } from "../../services/vehicleService";
 import rescueService from "../../services/rescueService";
 import { notifyDataChanged } from "../../utils/dataSync";
 import { getCurrentUserRole, getCurrentUser, getRescueCentreId } from "../../utils/roleUtils";
+import { unwrapList } from "../../utils/chartUtils";
 
 // --- TYPE-SAFE STRING & NUMBER HELPERS ---
 const toSafeStr = (val: unknown): string => (val !== undefined && val !== null ? String(val) : "");
@@ -291,47 +292,39 @@ const VehicleManagement = () => {
     equipment_stretcher: true,
   });
 
-  // Fetch Vehicles & Live Rescues with Rescue Centre Scope
+  // Fetch Vehicles & Live Rescues
   const fetchFleetData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      if (isRescueCentreAdmin && !currentRescueCentreId) {
-        setError("No Rescue Centre Assigned: Your account does not have an assigned Rescue Centre. Contact a Super Administrator.");
-        setVehicles([]);
-        setLoading(false);
-        return;
-      }
-
-      const queryParams: Record<string, unknown> = { page_size: 500 };
-      if (isRescueCentreAdmin && currentRescueCentreId) {
+      // OpenAPI specification defines maximum page_size as 50
+      const queryParams: Record<string, unknown> = { page_size: 50 };
+      if (!isRescueCentreAdmin && !isSuperAdmin && currentRescueCentreId) {
         queryParams.rescue_centre_id = currentRescueCentreId;
       }
 
       // Fetch live rescues and vehicles concurrently
       const [vehiclesRes, rescuesRes] = await Promise.allSettled([
         vehicleService.getVehicles(queryParams),
-        rescueService.getRescueCases(queryParams),
+        rescueService.getRescueCases({ page_size: 50 }),
       ]);
 
       let rescuesList: Record<string, unknown>[] = [];
       if (rescuesRes.status === "fulfilled") {
-        const rawR = rescuesRes.value;
-        rescuesList = Array.isArray(rawR) ? rawR : Array.isArray(rawR?.data) ? rawR.data : [];
+        rescuesList = unwrapList(rescuesRes.value?.data ?? rescuesRes.value);
       }
 
       let rawVehicles: Record<string, unknown>[] = [];
       if (vehiclesRes.status === "fulfilled") {
-        const resVal = vehiclesRes.value;
-        rawVehicles = Array.isArray(resVal) ? resVal : Array.isArray(resVal?.data) ? resVal.data : [];
+        rawVehicles = unwrapList(vehiclesRes.value?.data ?? vehiclesRes.value);
       } else {
-        const errObj = vehiclesRes.reason as { response?: { data?: { detail?: string } } };
-        setError(errObj?.response?.data?.detail || "Failed to load vehicle fleet.");
+        const errObj = vehiclesRes.reason as { response?: { data?: { detail?: string; message?: string } } };
+        setError(errObj?.response?.data?.detail || errObj?.response?.data?.message || "Failed to load vehicle fleet.");
       }
 
-      // Filter by Rescue Centre Scope if applicable
-      if (isRescueCentreAdmin && currentRescueCentreId) {
+      // Filter by Rescue Centre Scope for location-restricted roles only
+      if (!isRescueCentreAdmin && !isSuperAdmin && currentRescueCentreId) {
         rawVehicles = rawVehicles.filter((item) => {
           const vCentreId = item.rescue_centre_id || (item as any).rescue_center_id || (item as any).facility_id || (item as any).organization_id;
           return !vCentreId || String(vCentreId) === String(currentRescueCentreId);
@@ -341,12 +334,12 @@ const VehicleManagement = () => {
       const formatted = rawVehicles.map((item) => formatVehicleRow(item, rescuesList));
       setVehicles(formatted);
     } catch (err: unknown) {
-      const errObj = err as { response?: { data?: { detail?: string } } };
-      setError(errObj?.response?.data?.detail || "Failed to load vehicle fleet.");
+      const errObj = err as { response?: { data?: { detail?: string; message?: string } } };
+      setError(errObj?.response?.data?.detail || errObj?.response?.data?.message || "Failed to load vehicle fleet.");
     } finally {
       setLoading(false);
     }
-  }, [isRescueCentreAdmin, currentRescueCentreId]);
+  }, [isRescueCentreAdmin, isSuperAdmin, currentRescueCentreId]);
 
   useEffect(() => {
     fetchFleetData();
@@ -515,7 +508,7 @@ const VehicleManagement = () => {
         capacity: Number(addForm.capacity),
         fuel_level: addForm.fuel_level,
         status: addForm.status,
-        rescue_centre_id: isRescueCentreAdmin && currentRescueCentreId ? currentRescueCentreId : undefined,
+        rescue_centre_id: currentRescueCentreId || undefined,
         equipment: {
           pet_carriers: addForm.equipment_pet_carriers,
           first_aid_kit: addForm.equipment_first_aid,
@@ -851,7 +844,7 @@ const VehicleManagement = () => {
   ];
 
   return (
-    <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
+    <div className="vehicle-management-page" style={{ padding: "4px 0", width: "100%" }}>
       {/* HEADER BAR */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", flexWrap: "wrap", gap: "16px" }}>
         <div>

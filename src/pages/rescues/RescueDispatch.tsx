@@ -20,7 +20,7 @@ import vehicleService from "../../services/vehicleService";
 import petService from "../../services/petService";
 import { rescueStatusBadge, dispatchStage } from "../../utils/rescueStatus.tsx";
 import { notifyDataChanged, useDataSync } from "../../utils/dataSync";
-import { normalizeRole, getCurrentUserRole, getCurrentUser, getRescueCentreId } from "../../utils/roleUtils";
+import { normalizeRole, getCurrentUserRole } from "../../utils/roleUtils";
 import { formatDateTime } from "../../utils/dateUtils";
 
 const unwrapList = (body: unknown): Record<string, unknown>[] => {
@@ -56,7 +56,6 @@ export interface EnrichedDispatch {
 }
 
 const RescueDispatch = () => {
-  const currentUser = getCurrentUser();
   const currentUserRole = getCurrentUserRole();
   const isRescueCentreAdmin = currentUserRole === "rescue_centre_admin";
   const isSuperAdmin = currentUserRole === "super_admin";
@@ -65,8 +64,6 @@ const RescueDispatch = () => {
 
   const canManageDispatch = isSuperAdmin || isRescueCoordinator;
   const canUpdateStatus = isSuperAdmin || isRescueCoordinator || isRescueAgent;
-
-  const currentRescueCentreId = getRescueCentreId(currentUser);
 
   const [dispatches, setDispatches] = useState<EnrichedDispatch[]>([]);
   const [rescueCases, setRescueCases] = useState<Record<string, unknown>[]>([]);
@@ -116,26 +113,13 @@ const RescueDispatch = () => {
   const [reassignVehicleId, setReassignVehicleId] = useState("");
   const [cancelNotes, setCancelNotes] = useState("");
 
-  // Main Data Fetcher with Scope Enforcement
+  // Main Data Fetcher
   const fetchAll = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      if (isRescueCentreAdmin && !currentRescueCentreId) {
-        setError("No Rescue Centre Assigned: Your account does not have an assigned Rescue Centre. Contact a Super Administrator.");
-        setDispatches([]);
-        setRescueCases([]);
-        setUsers([]);
-        setVehicles([]);
-        setLoading(false);
-        return;
-      }
-
       const queryParams: Record<string, unknown> = {};
-      if (isRescueCentreAdmin && currentRescueCentreId) {
-        queryParams.rescue_centre_id = currentRescueCentreId;
-      }
 
       const [dispatchRes, caseRes, userRes, vehicleRes] = await Promise.allSettled([
         rescueService.getDispatches(queryParams),
@@ -149,49 +133,20 @@ const RescueDispatch = () => {
       const userList = userRes.status === "fulfilled" ? unwrapList(userRes.value) : [];
       const vehicleList = vehicleRes.status === "fulfilled" ? unwrapList(vehicleRes.value) : [];
 
-      // Filter by Rescue Centre Scope if applicable
-      const scopedUserList = isRescueCentreAdmin && currentRescueCentreId
-        ? userList.filter((u) => {
-            const uId = u.rescue_centre_id || (u as any).rescue_center_id || (u as any).facility_id || (u as any).organization_id;
-            return !uId || String(uId) === String(currentRescueCentreId);
-          })
-        : userList;
+      setRescueCases(caseList);
+      setUsers(userList);
+      setVehicles(vehicleList);
 
-      const scopedVehicleList = isRescueCentreAdmin && currentRescueCentreId
-        ? vehicleList.filter((v) => {
-            const vId = v.rescue_centre_id || (v as any).rescue_center_id || (v as any).facility_id || (v as any).organization_id;
-            return !vId || String(vId) === String(currentRescueCentreId);
-          })
-        : vehicleList;
+      const caseById = new Map(caseList.map((c: Record<string, unknown>) => [String(c.id), c]));
 
-      const scopedCaseList = isRescueCentreAdmin && currentRescueCentreId
-        ? caseList.filter((c) => {
-            const cId = c.rescue_centre_id || (c as any).rescue_center_id || (c as any).facility_id || (c as any).organization_id;
-            return !cId || String(cId) === String(currentRescueCentreId);
-          })
-        : caseList;
-
-      const scopedDispatchList = isRescueCentreAdmin && currentRescueCentreId
-        ? dispatchList.filter((d) => {
-            const dId = d.rescue_centre_id || (d as any).rescue_center_id || (d as any).facility_id || (d as any).organization_id;
-            return !dId || String(dId) === String(currentRescueCentreId);
-          })
-        : dispatchList;
-
-      setRescueCases(scopedCaseList);
-      setUsers(scopedUserList);
-      setVehicles(scopedVehicleList);
-
-      const caseById = new Map(scopedCaseList.map((c: Record<string, unknown>) => [String(c.id), c]));
-
-      const formatted: EnrichedDispatch[] = scopedDispatchList.map((d: Record<string, unknown>) => {
+      const formatted: EnrichedDispatch[] = dispatchList.map((d: Record<string, unknown>) => {
         const req = d.rescue_request_id ? caseById.get(String(d.rescue_request_id)) : undefined;
         const stage = dispatchStage({ status: req?.status as string || d.status as string, dispatch: d });
         const agents = Array.isArray(d.agents) ? (d.agents as Record<string, unknown>[]) : [];
         const agentIds = agents.map((a: Record<string, unknown>) => String(a.agent_id || a.id || "")).filter(Boolean);
         const vehicleId = String(d.assigned_vehicle_id || d.vehicle_id || "");
         const vehicle = vehicleId
-          ? scopedVehicleList.find((v: Record<string, unknown>) => String(v.id) === vehicleId)
+          ? vehicleList.find((v: Record<string, unknown>) => String(v.id) === vehicleId)
           : undefined;
 
         const rawStatus = String(d.status || req?.status || "awaiting_dispatch").toLowerCase();
@@ -213,7 +168,7 @@ const RescueDispatch = () => {
           agent_names:
             agentIds.length > 0
               ? agentIds.map((id) => {
-                  const u = scopedUserList.find((x) => String(x.id) === id);
+                  const u = userList.find((x) => String(x.id) === id);
                   return u ? String(u.full_name || u.name || u.email || id) : id;
                 }).join(", ")
               : "-",
@@ -242,7 +197,7 @@ const RescueDispatch = () => {
     } finally {
       setLoading(false);
     }
-  }, [isRescueCentreAdmin, currentRescueCentreId]);
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -298,10 +253,6 @@ const RescueDispatch = () => {
       addToast("Please select an available rescue vehicle.", "error");
       return;
     }
-    if (isRescueCentreAdmin && !currentRescueCentreId) {
-      addToast("Cannot create dispatch: No Rescue Centre is assigned to your account.", "error");
-      return;
-    }
 
     try {
       setIsSubmitting(true);
@@ -315,9 +266,6 @@ const RescueDispatch = () => {
         agent_ids: newDispatchForm.agent_ids,
         notes: equipmentNotes || undefined,
       };
-      if (isRescueCentreAdmin && currentRescueCentreId) {
-        payload.rescue_centre_id = currentRescueCentreId;
-      }
       await rescueService.createDispatch(payload as any);
       addToast("Rescue team & equipment dispatched successfully!", "success");
       setIsAddModalOpen(false);
@@ -547,14 +495,14 @@ const RescueDispatch = () => {
       key: "actions",
       title: "Actions",
       render: (_val: unknown, row: EnrichedDispatch) => (
-        <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px", minWidth: "240px", padding: "4px 0" }} onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
             onClick={() => {
               setSelectedDispatch(row);
               setIsViewModalOpen(true);
             }}
-            style={{ padding: "5px 10px", borderRadius: "6px", border: "1px solid #93C5FD", background: "#EFF6FF", color: "#1D4ED8", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+            style={{ width: "100%", padding: "6px 12px", borderRadius: "6px", border: "1px solid #93C5FD", background: "#EFF6FF", color: "#1D4ED8", fontSize: "12px", fontWeight: 700, cursor: "pointer", textAlign: "center" }}
           >
             View Details
           </button>
@@ -564,7 +512,7 @@ const RescueDispatch = () => {
             <button
               type="button"
               onClick={() => handleStatusChange(row.id, "dispatched", "Dispatch started! Team notified.")}
-              style={{ padding: "5px 10px", borderRadius: "6px", border: "none", background: "#2563EB", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+              style={{ width: "100%", padding: "6px 12px", borderRadius: "6px", border: "none", background: "#2563EB", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", textAlign: "center" }}
             >
               Start Dispatch
             </button>
@@ -574,7 +522,7 @@ const RescueDispatch = () => {
             <button
               type="button"
               onClick={() => handleStatusChange(row.id, "en_route", "Team marked as En Route.")}
-              style={{ padding: "5px 10px", borderRadius: "6px", border: "none", background: "#7C3AED", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+              style={{ width: "100%", padding: "6px 12px", borderRadius: "6px", border: "none", background: "#7C3AED", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", textAlign: "center" }}
             >
               Mark En Route
             </button>
@@ -584,7 +532,7 @@ const RescueDispatch = () => {
             <button
               type="button"
               onClick={() => handleStatusChange(row.id, "arrived", "Team marked as Arrived at Scene.")}
-              style={{ padding: "5px 10px", borderRadius: "6px", border: "none", background: "#0891B2", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+              style={{ width: "100%", padding: "6px 12px", borderRadius: "6px", border: "none", background: "#0891B2", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", textAlign: "center" }}
             >
               Mark Arrived
             </button>
@@ -594,15 +542,15 @@ const RescueDispatch = () => {
             <button
               type="button"
               onClick={() => handleStatusChange(row.id, "completed", "Rescue operation marked Completed!")}
-              style={{ padding: "5px 10px", borderRadius: "6px", border: "none", background: "#10B981", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+              style={{ width: "100%", padding: "6px 12px", borderRadius: "6px", border: "none", background: "#10B981", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", textAlign: "center" }}
             >
               Mark Completed
             </button>
           )}
 
-          {/* Reassign Agent / Vehicle */}
+          {/* Reassign Agent / Vehicle / Cancel */}
           {canManageDispatch && row.dispatch_status !== "completed" && row.dispatch_status !== "cancelled" && (
-            <>
+            <div style={{ display: "flex", gap: "4px", width: "100%" }}>
               <button
                 type="button"
                 onClick={() => {
@@ -610,7 +558,7 @@ const RescueDispatch = () => {
                   setReassignAgentId(row.agent_ids[0] || "");
                   setIsAssignAgentModalOpen(true);
                 }}
-                style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFFFFF", color: "#475569", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}
+                style={{ flex: 1, padding: "5px 6px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFFFFF", color: "#475569", fontSize: "11px", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", textAlign: "center" }}
               >
                 Reassign Agent
               </button>
@@ -621,7 +569,7 @@ const RescueDispatch = () => {
                   setReassignVehicleId(row.vehicle_id || "");
                   setIsAssignVehicleModalOpen(true);
                 }}
-                style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFFFFF", color: "#475569", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}
+                style={{ flex: 1, padding: "5px 6px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFFFFF", color: "#475569", fontSize: "11px", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", textAlign: "center" }}
               >
                 Reassign Vehicle
               </button>
@@ -631,11 +579,11 @@ const RescueDispatch = () => {
                   setSelectedDispatch(row);
                   setIsCancelModalOpen(true);
                 }}
-                style={{ padding: "5px 8px", borderRadius: "6px", border: "none", background: "#FEF2F2", color: "#DC2626", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                style={{ flex: 1, padding: "5px 6px", borderRadius: "6px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", fontSize: "11px", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", textAlign: "center" }}
               >
                 Cancel
               </button>
-            </>
+            </div>
           )}
         </div>
       ),

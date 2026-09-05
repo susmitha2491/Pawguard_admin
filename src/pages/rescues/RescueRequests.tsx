@@ -20,6 +20,7 @@ import {
   FaTrash,
   FaLocationArrow,
   FaMapPin,
+  FaUserCheck,
 } from "react-icons/fa";
 import rescueService from "../../services/rescueService";
 import vehicleService from "../../services/vehicleService";
@@ -27,8 +28,11 @@ import storageService from "../../services/storageService";
 import userService from "../../services/userService";
 import { rescueStatusBadge, dispatchStage } from "../../utils/rescueStatus.tsx";
 import { notifyDataChanged } from "../../utils/dataSync";
-import { getCurrentUserRole, getCurrentUser, normalizeRole, getRescueCentreId } from "../../utils/roleUtils";
+import { getCurrentUserRole, getCurrentUser, getRescueCentreId } from "../../utils/roleUtils";
 import { formatDateTime } from "../../utils/dateUtils";
+import LocationMapPreview from "../../components/common/LocationMapPreview";
+import RescueDetailModal from "../../components/rescue/RescueDetailModal";
+import RescueAssignModal from "../../components/rescue/RescueAssignModal";
 
 export interface RescueRequestTableRow {
   id: string;
@@ -36,6 +40,9 @@ export interface RescueRequestTableRow {
   reporter: string;
   phone: string;
   location: string;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  location_landmark?: string | null;
   condition: string;
   severity: string;
   is_urgent: boolean;
@@ -63,14 +70,14 @@ const RescueRequests = () => {
   const isSuperAdmin = currentUserRole === "super_admin";
   const isRescueCoordinator = currentUserRole === "rescue_coordinator";
 
-  const canVerifyOrReject = isSuperAdmin || isRescueCoordinator;
-  const canDispatch = isSuperAdmin || isRescueCoordinator;
+  const canVerifyOrReject = isSuperAdmin || isRescueCoordinator || isRescueCentreAdmin;
+  const canDispatch = isSuperAdmin || isRescueCoordinator || isRescueCentreAdmin;
 
   const currentRescueCentreId = getRescueCentreId(currentUser);
 
   const [requests, setRequests] = useState<RescueRequestTableRow[]>([]);
   const [vehicles, setVehicles] = useState<Record<string, unknown>[]>([]);
-  const [agents, setAgents] = useState<any[]>([]);
+  const [users, setUsers] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { addToast } = useToast();
@@ -86,8 +93,6 @@ const RescueRequests = () => {
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [isDispatchModalOpen, setIsDispatchModalOpen] = useState(false);
   const [targetDispatchRequest, setTargetDispatchRequest] = useState<RescueRequestTableRow | null>(null);
-  const [selectedVehicleId, setSelectedVehicleId] = useState("");
-  const [selectedAgentId, setSelectedAgentId] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [targetRejectId, setTargetRejectId] = useState<string | null>(null);
   const [selectedRequest, setSelectedRequest] = useState<RescueRequestTableRow | null>(null);
@@ -171,23 +176,14 @@ const RescueRequests = () => {
       setLoading(true);
       setError(null);
 
-      if (isRescueCentreAdmin && !currentRescueCentreId) {
-        setError("No Rescue Centre Assigned: Your account does not have an assigned Rescue Centre. Contact a Super Administrator.");
-        setRequests([]);
-        setLoading(false);
-        return;
-      }
-
       const queryParams: Record<string, unknown> = {};
-      if (isRescueCentreAdmin && currentRescueCentreId) {
-        queryParams.rescue_centre_id = currentRescueCentreId;
-      }
-
       const response = await rescueService.getRescueRequests(queryParams);
       const list: Record<string, unknown>[] = Array.isArray(response)
         ? response
         : Array.isArray(response?.data)
         ? response.data
+        : Array.isArray(response?.data?.data)
+        ? response.data.data
         : [];
 
       // Collect reporter and assigned agent user UUIDs for resolution
@@ -238,12 +234,19 @@ const RescueRequests = () => {
           ? "Anonymous Reporter"
           : String(item.reporter_name || item.reporter || resolvedReporterName || "Unknown Reporter");
 
+        const latVal = item.latitude !== undefined && item.latitude !== null ? (item.latitude as number | string) : ((item.location as any)?.latitude);
+        const lngVal = item.longitude !== undefined && item.longitude !== null ? (item.longitude as number | string) : ((item.location as any)?.longitude);
+        const landmarkVal = item.location_landmark || item.landmark;
+
         return {
           id: String(item.id || item.request_id || ""),
           ticket_number: String(item.ticket_number || ""),
           reporter: reporterDisplayName,
           phone: String(item.reporter_phone || item.phone || "Not provided"),
           location: String(item.location_address || item.location || "Location not recorded"),
+          latitude: latVal !== undefined && latVal !== null ? latVal : undefined,
+          longitude: lngVal !== undefined && lngVal !== null ? lngVal : undefined,
+          location_landmark: landmarkVal ? String(landmarkVal) : undefined,
           condition: String(item.physical_condition || "-"),
           severity: String(item.severity || item.urgency_level || "medium").toLowerCase(),
           is_urgent: !!item.is_urgent,
@@ -264,17 +267,6 @@ const RescueRequests = () => {
         };
       });
 
-      // Filter by Rescue Centre Scope if applicable
-      if (isRescueCentreAdmin && currentRescueCentreId) {
-        formatted = formatted.filter((req) => {
-          const reqCentreId = req.raw?.rescue_centre_id || req.raw?.rescue_center_id || req.raw?.facility_id || req.raw?.organization_id;
-          if (reqCentreId && String(reqCentreId) !== String(currentRescueCentreId)) {
-            return false;
-          }
-          return true;
-        });
-      }
-
       const sortedFormatted = formatted.sort((a, b) => {
         const timeA = new Date(a.date).getTime();
         const timeB = new Date(b.date).getTime();
@@ -288,7 +280,7 @@ const RescueRequests = () => {
     } finally {
       setLoading(false);
     }
-  }, [isRescueCentreAdmin, currentRescueCentreId]);
+  }, []);
 
   // Fetch available vehicles
   useEffect(() => {
@@ -298,23 +290,13 @@ const RescueRequests = () => {
     }).catch(() => setVehicles([]));
   }, []);
 
-  // Fetch available agents
+  // Fetch available users / staff
   useEffect(() => {
     userService.getUsers().then((res: any) => {
       const list = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : Array.isArray(res?.items) ? res.items : [];
-      let filtered = list.filter((u: any) => {
-        const r = normalizeRole(u);
-        return r === "rescue_agent" || r === "rescue_coordinator" || String(u.role || "").toLowerCase().includes("agent");
-      });
-      if (isRescueCentreAdmin && currentRescueCentreId) {
-        filtered = filtered.filter((u: any) => {
-          const uCentreId = u.rescue_centre_id || u.rescue_center_id || u.facility_id || u.organization_id;
-          return !uCentreId || String(uCentreId) === String(currentRescueCentreId);
-        });
-      }
-      setAgents(filtered);
-    }).catch(() => setAgents([]));
-  }, [isRescueCentreAdmin, currentRescueCentreId]);
+      setUsers(list);
+    }).catch(() => setUsers([]));
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -354,50 +336,12 @@ const RescueRequests = () => {
     }
   };
 
-  // Open Dispatch Modal
   const handleOpenDispatchModal = (req: RescueRequestTableRow) => {
     setTargetDispatchRequest(req);
-    setSelectedVehicleId(req.assigned_vehicle_id || "");
-    setSelectedAgentId(req.assigned_agent_id || "");
     setIsDispatchModalOpen(true);
   };
 
-  // Submit Dispatch Action
-  const handleDispatchSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!targetDispatchRequest || !selectedVehicleId || !selectedAgentId) {
-      addToast("Please select both a rescue vehicle and an agent/team.", "error");
-      return;
-    }
-    try {
-      setIsSubmitting(true);
 
-      await rescueService.createDispatch({
-        case_id: targetDispatchRequest.id,
-        assigned_vehicle_id: selectedVehicleId,
-        agent_id: selectedAgentId,
-        agent_ids: [selectedAgentId],
-        driver_id: selectedAgentId,
-      });
-
-      // The createDispatch backend API already transitions the case status to 'dispatched'
-      // and records vehicle and agent assignments, making a separate /verify call redundant and causing a 409 conflict.
-
-      addToast("Rescue team and vehicle dispatched successfully!", "success");
-      setIsDispatchModalOpen(false);
-      setIsViewModalOpen(false);
-      setTargetDispatchRequest(null);
-      setSelectedVehicleId("");
-      setSelectedAgentId("");
-      fetchRequests();
-      notifyDataChanged();
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string; message?: string } } };
-      addToast(e?.response?.data?.detail || e?.response?.data?.message || "Failed to dispatch rescue.", "error");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   // Create Request Action
   const handleCreateRequest = async (e: React.FormEvent) => {
@@ -406,11 +350,6 @@ const RescueRequests = () => {
       addToast("Please fill in required fields (Location, Reporter Name & Phone).", "error");
       return;
     }
-    if (isRescueCentreAdmin && !currentRescueCentreId) {
-      addToast("Cannot log rescue request: No Rescue Centre is assigned to your account.", "error");
-      return;
-    }
-
     try {
       setIsSubmitting(true);
       const payload: Record<string, unknown> = { ...formData };
@@ -470,12 +409,11 @@ const RescueRequests = () => {
 
   // Verify Action
   const handleVerify = async (id: string, reqObj?: RescueRequestTableRow) => {
-    if (isRescueCentreAdmin) {
-      addToast("Verification of rescue requests is reserved for Rescue Coordinators.", "error");
-      return;
-    }
+    if (isSubmitting) return;
+    const reqId = String(reqObj?.raw?.id || reqObj?.raw?.request_id || id);
     try {
-      await rescueService.approveRescueRequest(id, {
+      setIsSubmitting(true);
+      await rescueService.approveRescueRequest(reqId, {
         status: "verified",
         severity: reqObj?.severity ? String(reqObj.severity) : undefined,
         is_urgent: typeof reqObj?.is_urgent === "boolean" ? reqObj.is_urgent : undefined,
@@ -487,12 +425,15 @@ const RescueRequests = () => {
       const e = err as { response?: { data?: { detail?: string; message?: string; error?: { message?: string } } }; message?: string };
       const errMsg = e?.response?.data?.error?.message || e?.response?.data?.detail || e?.response?.data?.message || e?.message || "Failed to verify request";
       addToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   // Open Reject Modal
   const openRejectModal = (req: RescueRequestTableRow) => {
-    setTargetRejectId(req.id);
+    const realId = String(req.raw?.id || req.raw?.request_id || req.id);
+    setTargetRejectId(realId);
     setSelectedRequest(req);
     setRejectionReason("");
     setIsRejectModalOpen(true);
@@ -501,11 +442,7 @@ const RescueRequests = () => {
   // Reject Submit Action
   const handleRejectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!targetRejectId) return;
-    if (isRescueCentreAdmin) {
-      addToast("Rejection of rescue requests is reserved for Rescue Coordinators.", "error");
-      return;
-    }
+    if (!targetRejectId || isSubmitting) return;
     try {
       setIsSubmitting(true);
       await rescueService.rejectRescueRequest(targetRejectId, rejectionReason || undefined);
@@ -634,6 +571,73 @@ const RescueRequests = () => {
       key: "actions",
       title: "Actions",
       render: (_val: unknown, row: RescueRequestTableRow) => {
+        if (isRescueCentreAdmin) {
+          const st = String(row.status || "").toLowerCase();
+          const isPendingRow = ["reported", "pending", "new", "submitted", "awaiting_triage"].includes(st);
+          const isVerifiedRow = st === "verified";
+          const hasAssignment = Boolean(
+            row.dispatch ||
+            row.coordinator_id ||
+            row.assigned_agent_id ||
+            row.assigned_vehicle_id ||
+            (row.assigned_agent_name && row.assigned_agent_name !== "Unassigned") ||
+            (row.assigned_vehicle_number && row.assigned_vehicle_number !== "Unassigned")
+          );
+          const isAwaitingAssignment = isVerifiedRow && !hasAssignment;
+
+          return (
+            <div style={{ display: "flex", gap: "6px", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
+              {isPendingRow && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleVerify(row.id, row)}
+                    disabled={isSubmitting}
+                    style={{ padding: "5px 11px", borderRadius: "6px", border: "none", background: "#10B981", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                  >
+                    Verify
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openRejectModal(row)}
+                    disabled={isSubmitting}
+                    style={{ padding: "5px 11px", borderRadius: "6px", border: "none", background: "#EF4444", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                  >
+                    Reject
+                  </button>
+                </>
+              )}
+              {isAwaitingAssignment && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedRequest(row);
+                    setIsDispatchModalOpen(true);
+                  }}
+                  style={{
+                    padding: "5px 11px",
+                    borderRadius: "6px",
+                    border: "none",
+                    background: "#2563EB",
+                    color: "#FFFFFF",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <FaUserCheck size={12} /> Assign
+                </button>
+              )}
+              {!isPendingRow && !isAwaitingAssignment && (
+                rescueStatusBadge(row.status)
+              )}
+            </div>
+          );
+        }
+
         const canAccept = row.status === "verified" && (!row.assigned_agent_id || row.assigned_agent_id === String(currentUser?.id ?? ""));
 
         return (
@@ -653,6 +657,7 @@ const RescueRequests = () => {
                 <button
                   type="button"
                   onClick={() => handleVerify(row.id, row)}
+                  disabled={isSubmitting}
                   style={{ padding: "5px 11px", borderRadius: "6px", border: "none", background: "#10B981", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
                 >
                   Verify
@@ -660,6 +665,7 @@ const RescueRequests = () => {
                 <button
                   type="button"
                   onClick={() => openRejectModal(row)}
+                  disabled={isSubmitting}
                   style={{ padding: "5px 11px", borderRadius: "6px", border: "none", background: "#EF4444", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
                 >
                   Reject
@@ -1096,293 +1102,268 @@ const RescueRequests = () => {
       </Modal>
 
       {/* View Request Details Modal */}
-      <Modal
-        isOpen={isViewModalOpen}
-        onClose={() => setIsViewModalOpen(false)}
-        title={`Rescue Request Details${selectedRequest?.ticket_number ? ` — ${selectedRequest.ticket_number}` : ""}`}
-        size="lg"
-        footer={
-          selectedRequest ? (
-            <>
-              {["reported", "pending", "new", "awaiting_triage"].includes(selectedRequest.status) && canVerifyOrReject && (
-                <>
-                  <button
-                    onClick={() => {
-                      handleVerify(selectedRequest.id, selectedRequest);
-                      setIsViewModalOpen(false);
-                    }}
-                    style={{ padding: "8px 16px", background: "#10B981", color: "#FFF", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
-                  >
-                    Verify
-                  </button>
-                  <button
-                    onClick={() => {
-                      openRejectModal(selectedRequest);
-                      setIsViewModalOpen(false);
-                    }}
-                    style={{ padding: "8px 16px", background: "#EF4444", color: "#FFF", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
-                  >
-                    Reject
-                  </button>
-                </>
-              )}
-              {selectedRequest.status === "verified" && (!selectedRequest.assigned_agent_id || selectedRequest.assigned_agent_id === String(currentUser?.id ?? "")) && (
-                <button
-                  onClick={() => {
-                    handleAccept(selectedRequest);
-                    setIsViewModalOpen(false);
-                  }}
-                  style={{ padding: "8px 16px", background: "#D97706", color: "#FFF", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
-                >
-                  Accept Request
-                </button>
-              )}
-              {selectedRequest.status === "accepted" && canDispatch && (
-                <button
-                  onClick={() => {
-                    handleOpenDispatchModal(selectedRequest);
-                    setIsViewModalOpen(false);
-                  }}
-                  style={{ padding: "8px 16px", background: "#7C3AED", color: "#FFF", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
-                >
-                  Dispatch Rescue Team
-                </button>
-              )}
-            </>
-          ) : null
-        }
-      >
-        {selectedRequest && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {/* Information Grid */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", background: "#F8FAFC", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Ticket Information</span>
-                <strong>{selectedRequest.ticket_number || selectedRequest.id}</strong>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}><FaUser size={10} style={{ marginRight: "4px" }} /> Reporter Information</span>
-                <strong>{selectedRequest.reporter}</strong>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}><FaPhoneAlt size={10} style={{ marginRight: "4px" }} /> Contact Phone</span>
-                <strong>{selectedRequest.phone}</strong>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}><FaMapMarkerAlt size={10} style={{ marginRight: "4px" }} /> Rescue Location</span>
-                <strong style={{ wordBreak: "break-word" }}>{selectedRequest.location}</strong>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Animal / Physical Condition</span>
-                <strong style={{ textTransform: "capitalize" }}>{String(selectedRequest.condition || "-").replace(/_/g, " ")}</strong>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Severity & Urgency</span>
-                <strong style={{ textTransform: "uppercase", color: selectedRequest.severity === "critical" ? "#DC2626" : selectedRequest.severity === "high" ? "#EA580C" : selectedRequest.severity === "medium" ? "#D97706" : "#16A34A" }}>
-                  {selectedRequest.severity || "-"}
-                </strong>
-                {selectedRequest.is_urgent && (
-                  <span style={{ marginLeft: "8px", background: "#FEF2F2", color: "#DC2626", padding: "2px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: 800 }}>
-                    URGENT
-                  </span>
+      {isRescueCentreAdmin ? (
+        <RescueDetailModal
+          isOpen={isViewModalOpen}
+          onClose={() => setIsViewModalOpen(false)}
+          rescue={
+            selectedRequest
+              ? {
+                  id: selectedRequest.id,
+                  ticket_number: selectedRequest.ticket_number || selectedRequest.id,
+                  reporter_name: selectedRequest.reporter,
+                  reporter_phone: selectedRequest.phone,
+                  reporter_alternate_phone: String(selectedRequest.raw?.reporter_alternate_phone || "-"),
+                  reporter_email: String(selectedRequest.raw?.reporter_email || "-"),
+                  is_anonymous: Boolean(selectedRequest.raw?.is_anonymous || selectedRequest.raw?.anonymous),
+                  location_address: selectedRequest.location,
+                  location_landmark: selectedRequest.location_landmark || undefined,
+                  latitude: selectedRequest.latitude ?? (selectedRequest.raw?.latitude as any),
+                  longitude: selectedRequest.longitude ?? (selectedRequest.raw?.longitude as any),
+                  animal_count: (selectedRequest.raw?.animal_count as any) || "1",
+                  physical_condition: selectedRequest.condition,
+                  behavioral_indicators: String(selectedRequest.raw?.behavioral_indicators || "-"),
+                  environmental_factors: String(selectedRequest.raw?.environmental_factors || "-"),
+                  severity: selectedRequest.severity,
+                  is_urgent: selectedRequest.is_urgent,
+                  status: selectedRequest.status,
+                  rejection_rationale: selectedRequest.rejection_rationale,
+                  coordinator_id: (selectedRequest.raw?.coordinator_id as string) || null,
+                  assigned_agent_id: selectedRequest.assigned_agent_id || null,
+                  assigned_agent_name: selectedRequest.assigned_agent_name,
+                  assigned_vehicle_id: selectedRequest.assigned_vehicle_id || null,
+                  assigned_vehicle_number: selectedRequest.assigned_vehicle_number,
+                  dispatch_driver: String(selectedRequest.dispatch?.assigned_driver_id || selectedRequest.dispatch?.driver_name || "-"),
+                  dispatch_agents: selectedRequest.assigned_agent_name || undefined,
+                  dispatch_vehicle: selectedRequest.assigned_vehicle_number || undefined,
+                  dispatch_equipment: String(selectedRequest.dispatch?.equipment_details || "-"),
+                  dispatched_at: selectedRequest.dispatch?.dispatched_at ? formatDateTime(String(selectedRequest.dispatch.dispatched_at)) : "-",
+                  located_at: selectedRequest.dispatch?.located_at ? formatDateTime(String(selectedRequest.dispatch.located_at)) : "-",
+                  rescued_at: selectedRequest.dispatch?.rescued_at ? formatDateTime(String(selectedRequest.dispatch.rescued_at)) : "-",
+                  admitted_at: selectedRequest.dispatch?.admitted_at ? formatDateTime(String(selectedRequest.dispatch.admitted_at)) : "-",
+                  created_at: selectedRequest.date ? formatDateTime(selectedRequest.date) : "-",
+                  updated_at: selectedRequest.raw?.updated_at ? formatDateTime(String(selectedRequest.raw.updated_at)) : "-",
+                  reporter_notes: String(selectedRequest.raw?.reporter_notes || selectedRequest.raw?.notes || "-"),
+                  media_evidence: selectedRequest.media_urls,
+                  dispatch: selectedRequest.dispatch,
+                  reports: selectedRequest.reports,
+                  rawItem: selectedRequest.raw,
+                }
+              : null
+          }
+          onRefresh={fetchRequests}
+          users={users}
+          vehicles={vehicles}
+        />
+      ) : (
+        <Modal
+          isOpen={isViewModalOpen}
+          onClose={() => setIsViewModalOpen(false)}
+          title={`Rescue Request Details${selectedRequest?.ticket_number ? ` — ${selectedRequest.ticket_number}` : ""}`}
+          size="lg"
+          footer={
+            selectedRequest ? (
+              <>
+                {["reported", "pending", "new", "awaiting_triage"].includes(selectedRequest.status) && canVerifyOrReject && (
+                  <>
+                    <button
+                      onClick={() => {
+                        handleVerify(selectedRequest.id, selectedRequest);
+                        setIsViewModalOpen(false);
+                      }}
+                      style={{ padding: "8px 16px", background: "#10B981", color: "#FFF", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
+                    >
+                      Verify
+                    </button>
+                    <button
+                      onClick={() => {
+                        openRejectModal(selectedRequest);
+                        setIsViewModalOpen(false);
+                      }}
+                      style={{ padding: "8px 16px", background: "#EF4444", color: "#FFF", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
+                    >
+                      Reject
+                    </button>
+                  </>
                 )}
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Current Status</span>
-                {rescueStatusBadge(selectedRequest.status)}
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Dispatch Status</span>
-                <span style={{ padding: "2px 8px", borderRadius: "12px", fontSize: "12px", fontWeight: 700, background: selectedRequest.dispatch_bg, color: selectedRequest.dispatch_color }}>
-                  {selectedRequest.dispatch_status}
-                </span>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Assigned Rescue Agent</span>
-                <strong>{selectedRequest.assigned_agent_name || selectedRequest.assigned_agent_id || "Unassigned"}</strong>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Assigned Vehicle</span>
-                <strong>{selectedRequest.assigned_vehicle_number || selectedRequest.assigned_vehicle_id || "Unassigned"}</strong>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}><FaClock size={10} style={{ marginRight: "4px" }} /> Created / Reported Time</span>
-                <strong>{selectedRequest.date ? formatDateTime(selectedRequest.date) : "-"}</strong>
-              </div>
-            </div>
-
-            {/* Reporter Notes / Description */}
-            {Boolean(selectedRequest.raw?.reporter_notes) && (
-              <div style={{ background: "#F1F5F9", padding: "12px 14px", borderRadius: "10px", border: "1px solid #CBD5E1" }}>
-                <strong style={{ color: "#334155", display: "block", marginBottom: "4px", fontSize: "13px" }}>
-                  <FaInfoCircle size={12} style={{ marginRight: "6px" }} /> Reporter Description / Notes:
-                </strong>
-                <span style={{ fontSize: "13px", color: "#475569" }}>{String(selectedRequest.raw.reporter_notes)}</span>
-              </div>
-            )}
-
-            {/* Rejection Rationale if present */}
-            {Boolean(selectedRequest.rejection_rationale) && (
-              <div style={{ background: "#FEF2F2", padding: "12px 14px", borderRadius: "10px", border: "1px solid #FCA5A5" }}>
-                <strong style={{ color: "#DC2626", display: "block", marginBottom: "4px", fontSize: "13px" }}>
-                  <FaExclamationTriangle size={12} style={{ marginRight: "6px" }} /> Rejection Rationale:
-                </strong>
-                <span style={{ fontSize: "13px", color: "#991B1B" }}>{selectedRequest.rejection_rationale}</span>
-              </div>
-            )}
-
-            {/* Dispatch & Team Information if available */}
-            {Boolean(selectedRequest.dispatch || selectedRequest.assigned_vehicle_number || selectedRequest.assigned_agent_name) && (
-              <div style={{ background: "#F5F3FF", padding: "14px 16px", borderRadius: "10px", border: "1px solid #DDD6FE" }}>
-                <strong style={{ color: "#7C3AED", fontSize: "14px", display: "block", marginBottom: "8px" }}>
-                  <FaTruck size={14} style={{ marginRight: "6px" }} /> Dispatch & Field Team Info
-                </strong>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px", fontSize: "13px" }}>
-                  <div><span style={{ color: "#6B21A8", fontWeight: 600 }}>Assigned Agent:</span> <strong>{selectedRequest.assigned_agent_name || selectedRequest.assigned_agent_id || "Unassigned"}</strong></div>
-                  <div><span style={{ color: "#6B21A8", fontWeight: 600 }}>Assigned Vehicle:</span> <strong>{selectedRequest.assigned_vehicle_number || selectedRequest.assigned_vehicle_id || "Unassigned"}</strong></div>
-                  {Boolean(selectedRequest.dispatch?.dispatched_at) && (
-                    <div><span style={{ color: "#6B21A8", fontWeight: 600 }}>Dispatched At:</span> <strong>{formatDateTime(String(selectedRequest.dispatch?.dispatched_at))}</strong></div>
+                {selectedRequest.status === "verified" && (!selectedRequest.assigned_agent_id || selectedRequest.assigned_agent_id === String(currentUser?.id ?? "")) && (
+                  <button
+                    onClick={() => {
+                      handleAccept(selectedRequest);
+                      setIsViewModalOpen(false);
+                    }}
+                    style={{ padding: "8px 16px", background: "#D97706", color: "#FFF", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
+                  >
+                    Accept Request
+                  </button>
+                )}
+                {selectedRequest.status === "accepted" && canDispatch && (
+                  <button
+                    onClick={() => {
+                      handleOpenDispatchModal(selectedRequest);
+                      setIsViewModalOpen(false);
+                    }}
+                    style={{ padding: "8px 16px", background: "#7C3AED", color: "#FFF", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
+                  >
+                    Dispatch Rescue Team
+                  </button>
+                )}
+              </>
+            ) : null
+          }
+        >
+          {selectedRequest && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              {/* Information Grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", background: "#F8FAFC", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Ticket Information</span>
+                  <strong>{selectedRequest.ticket_number || selectedRequest.id}</strong>
+                </div>
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}><FaUser size={10} style={{ marginRight: "4px" }} /> Reporter Information</span>
+                  <strong>{selectedRequest.reporter}</strong>
+                </div>
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}><FaPhoneAlt size={10} style={{ marginRight: "4px" }} /> Contact Phone</span>
+                  <strong>{selectedRequest.phone}</strong>
+                </div>
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}><FaMapMarkerAlt size={10} style={{ marginRight: "4px" }} /> Rescue Location</span>
+                  <strong style={{ wordBreak: "break-word" }}>{selectedRequest.location}</strong>
+                </div>
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Animal / Physical Condition</span>
+                  <strong style={{ textTransform: "capitalize" }}>{String(selectedRequest.condition || "-").replace(/_/g, " ")}</strong>
+                </div>
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Severity & Urgency</span>
+                  <strong style={{ textTransform: "uppercase", color: selectedRequest.severity === "critical" ? "#DC2626" : selectedRequest.severity === "high" ? "#EA580C" : selectedRequest.severity === "medium" ? "#D97706" : "#16A34A" }}>
+                    {selectedRequest.severity || "-"}
+                  </strong>
+                  {selectedRequest.is_urgent && (
+                    <span style={{ marginLeft: "8px", background: "#FEF2F2", color: "#DC2626", padding: "2px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: 800 }}>
+                      URGENT
+                    </span>
                   )}
                 </div>
-              </div>
-            )}
-
-            {/* Rescue Image (uploaded via Log Emergency form) */}
-            {Boolean(selectedRequest.raw?.rescue_image_url) && (
-              <div style={{ background: "#F0F9FF", padding: "14px", borderRadius: "10px", border: "1px solid #BAE6FD" }}>
-                <strong style={{ display: "block", marginBottom: "8px", fontSize: "13px", color: "#0369A1" }}>
-                  <FaCamera size={12} style={{ marginRight: "6px" }} />
-                  Dog / Rescue Image:
-                </strong>
-                <img
-                  src={String(selectedRequest.raw.rescue_image_url)}
-                  alt="Rescue evidence"
-                  style={{ maxWidth: "100%", maxHeight: "260px", objectFit: "contain", borderRadius: "8px", border: "1px solid #BAE6FD", display: "block" }}
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                />
-              </div>
-            )}
-
-            {/* Photos / Evidence (legacy media_urls) */}
-            {Boolean(selectedRequest.media_urls && selectedRequest.media_urls.length > 0) && (
-              <div>
-                <strong style={{ display: "block", marginBottom: "6px", fontSize: "13px" }}>Photos / Media Evidence:</strong>
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                  {selectedRequest.media_urls.map((u: string, i: number) => (
-                    <a key={i} href={u} target="_blank" rel="noreferrer" style={{ padding: "6px 12px", background: "#EFF6FF", color: "#2563EB", borderRadius: "6px", border: "1px solid #BFDBFE", fontSize: "12px", fontWeight: 700, textDecoration: "none" }}>
-                      Photo Evidence {i + 1} ↗
-                    </a>
-                  ))}
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Current Status</span>
+                  {rescueStatusBadge(selectedRequest.status)}
+                </div>
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Dispatch Status</span>
+                  <span style={{ padding: "2px 8px", borderRadius: "12px", fontSize: "12px", fontWeight: 700, background: selectedRequest.dispatch_bg, color: selectedRequest.dispatch_color }}>
+                    {selectedRequest.dispatch_status}
+                  </span>
+                </div>
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Assigned Rescue Agent</span>
+                  <strong>{selectedRequest.assigned_agent_name || selectedRequest.assigned_agent_id || "Unassigned"}</strong>
+                </div>
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Assigned Vehicle</span>
+                  <strong>{selectedRequest.assigned_vehicle_number || selectedRequest.assigned_vehicle_id || "Unassigned"}</strong>
+                </div>
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}><FaClock size={10} style={{ marginRight: "4px" }} /> Created / Reported Time</span>
+                  <strong>{selectedRequest.date ? formatDateTime(selectedRequest.date) : "-"}</strong>
                 </div>
               </div>
-            )}
 
-            {/* GPS Coordinates + Map (if latitude/longitude were captured at report time) */}
-            {Boolean(selectedRequest.raw?.latitude && selectedRequest.raw?.longitude) && (() => {
-              const lat = Number(selectedRequest.raw.latitude);
-              const lng = Number(selectedRequest.raw.longitude);
-              return (
-                <div style={{ background: "#F0FDF4", padding: "14px", borderRadius: "10px", border: "1px solid #A7F3D0" }}>
-                  <strong style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px", fontSize: "13px", color: "#065F46" }}>
-                    <FaMapPin size={12} />
-                    GPS Coordinates (captured at report time):
+              {/* Reporter Notes / Description */}
+              {Boolean(selectedRequest.raw?.reporter_notes) && (
+                <div style={{ background: "#F1F5F9", padding: "12px 14px", borderRadius: "10px", border: "1px solid #CBD5E1" }}>
+                  <strong style={{ color: "#334155", display: "block", marginBottom: "4px", fontSize: "13px" }}>
+                    <FaInfoCircle size={12} style={{ marginRight: "6px" }} /> Reporter Description / Notes:
                   </strong>
-                  <div style={{ fontSize: "13px", color: "#047857", fontWeight: 600, marginBottom: "8px" }}>
-                    Lat: {lat} &nbsp;|&nbsp; Lng: {lng}
-                    &nbsp;
-                    <a
-                      href={`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}&zoom=17`}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ color: "#2563EB", fontWeight: 700, fontSize: "12px" }}
-                    >
-                      Open in Maps ↗
-                    </a>
+                  <span style={{ fontSize: "13px", color: "#475569" }}>{String(selectedRequest.raw.reporter_notes)}</span>
+                </div>
+              )}
+
+              {/* Rejection Rationale if present */}
+              {Boolean(selectedRequest.rejection_rationale) && (
+                <div style={{ background: "#FEF2F2", padding: "12px 14px", borderRadius: "10px", border: "1px solid #FCA5A5" }}>
+                  <strong style={{ color: "#DC2626", display: "block", marginBottom: "4px", fontSize: "13px" }}>
+                    <FaExclamationTriangle size={12} style={{ marginRight: "6px" }} /> Rejection Rationale:
+                  </strong>
+                  <span style={{ fontSize: "13px", color: "#991B1B" }}>{selectedRequest.rejection_rationale}</span>
+                </div>
+              )}
+
+              {/* Dispatch & Team Information if available */}
+              {Boolean(selectedRequest.dispatch || selectedRequest.assigned_vehicle_number || selectedRequest.assigned_agent_name) && (
+                <div style={{ background: "#F5F3FF", padding: "14px 16px", borderRadius: "10px", border: "1px solid #DDD6FE" }}>
+                  <strong style={{ color: "#7C3AED", fontSize: "14px", display: "block", marginBottom: "8px" }}>
+                    <FaTruck size={14} style={{ marginRight: "6px" }} /> Dispatch & Field Team Info
+                  </strong>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px", fontSize: "13px" }}>
+                    <div><span style={{ color: "#6B21A8", fontWeight: 600 }}>Assigned Agent:</span> <strong>{selectedRequest.assigned_agent_name || selectedRequest.assigned_agent_id || "Unassigned"}</strong></div>
+                    <div><span style={{ color: "#6B21A8", fontWeight: 600 }}>Assigned Vehicle:</span> <strong>{selectedRequest.assigned_vehicle_number || selectedRequest.assigned_vehicle_id || "Unassigned"}</strong></div>
+                    {Boolean(selectedRequest.dispatch?.dispatched_at) && (
+                      <div><span style={{ color: "#6B21A8", fontWeight: 600 }}>Dispatched At:</span> <strong>{formatDateTime(String(selectedRequest.dispatch?.dispatched_at))}</strong></div>
+                    )}
                   </div>
-                  <iframe
-                    title="Reported GPS Location"
-                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.005},${lat - 0.005},${lng + 0.005},${lat + 0.005}&layer=mapnik&marker=${lat},${lng}`}
-                    style={{ width: "100%", height: "200px", border: "1px solid #6EE7B7", borderRadius: "8px", display: "block" }}
-                    loading="lazy"
+                </div>
+              )}
+
+              {/* Rescue Image (uploaded via Log Emergency form) */}
+              {Boolean(selectedRequest.raw?.rescue_image_url) && (
+                <div style={{ background: "#F0F9FF", padding: "14px", borderRadius: "10px", border: "1px solid #BAE6FD" }}>
+                  <strong style={{ display: "block", marginBottom: "8px", fontSize: "13px", color: "#0369A1" }}>
+                    <FaCamera size={12} style={{ marginRight: "6px" }} />
+                    Dog / Rescue Image:
+                  </strong>
+                  <img
+                    src={String(selectedRequest.raw.rescue_image_url)}
+                    alt="Rescue evidence"
+                    style={{ maxWidth: "100%", maxHeight: "260px", objectFit: "contain", borderRadius: "8px", border: "1px solid #BAE6FD", display: "block" }}
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                   />
                 </div>
-              );
-            })()}
-          </div>
-        )}
-      </Modal>
+              )}
 
-      {/* Select Vehicle & Dispatch Modal */}
-      <Modal
+              {/* Photos / Media Evidence (legacy media_urls) */}
+              {Boolean(selectedRequest.media_urls && selectedRequest.media_urls.length > 0) && (
+                <div>
+                  <strong style={{ display: "block", marginBottom: "6px", fontSize: "13px" }}>Photos / Media Evidence:</strong>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                    {selectedRequest.media_urls.map((u: string, i: number) => (
+                      <a key={i} href={u} target="_blank" rel="noreferrer" style={{ padding: "6px 12px", background: "#EFF6FF", color: "#2563EB", borderRadius: "6px", border: "1px solid #BFDBFE", fontSize: "12px", fontWeight: 700, textDecoration: "none" }}>
+                        Photo Evidence {i + 1} ↗
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Rescue Location & Map Section */}
+              <div>
+                <strong style={{ display: "block", marginBottom: "8px", fontSize: "14px", color: "#0F172A" }}>
+                  <FaMapMarkerAlt size={14} style={{ marginRight: "6px", color: "#EF4444" }} /> Rescue Location &amp; Map
+                </strong>
+                <LocationMapPreview
+                  latitude={selectedRequest.latitude ?? (selectedRequest.raw?.latitude as any)}
+                  longitude={selectedRequest.longitude ?? (selectedRequest.raw?.longitude as any)}
+                  locationAddress={selectedRequest.location}
+                  locationLandmark={selectedRequest.location_landmark ?? (selectedRequest.raw?.location_landmark as any) ?? (selectedRequest.raw?.landmark as any)}
+                  height="220px"
+                />
+              </div>
+            </div>
+          )}
+        </Modal>
+      )}
+
+      {/* Unified Assignment Modal */}
+      <RescueAssignModal
         isOpen={isDispatchModalOpen}
-        onClose={() => {
-          setIsDispatchModalOpen(false);
-          setSelectedVehicleId("");
-          setSelectedAgentId("");
-        }}
-        title={`Dispatch Rescue Vehicle & Team${targetDispatchRequest?.ticket_number ? ` — ${targetDispatchRequest.ticket_number}` : ""}`}
-      >
-        <form onSubmit={handleDispatchSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <div>
-            <label style={{ fontSize: "13px", fontWeight: 600, color: "#334155" }}>Select Available Rescue Agent/Team *</label>
-            <select
-              required
-              value={selectedAgentId}
-              onChange={(e) => setSelectedAgentId(e.target.value)}
-              style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px", marginTop: "6px", background: "#FFF" }}
-            >
-              <option value="">-- Choose an Agent/Team --</option>
-              {agents.map((a: any) => {
-                const aId = String(a.id || "");
-                const name = String(a.full_name || a.name || a.email || aId);
-                const roleTitle = String(a.role || "Rescue Agent");
-                return (
-                  <option key={aId} value={aId}>
-                    {name} ({roleTitle})
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-          <div>
-            <label style={{ fontSize: "13px", fontWeight: 600, color: "#334155" }}>Select Available Rescue Vehicle *</label>
-            <select
-              required
-              value={selectedVehicleId}
-              onChange={(e) => setSelectedVehicleId(e.target.value)}
-              style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px", marginTop: "6px", background: "#FFF" }}
-            >
-              <option value="">-- Choose a Vehicle --</option>
-              {vehicles.map((v: any) => {
-                const vId = String(v.id || v.vehicle_id || "");
-                const vNum = String(v.registration_number || v.vehicle_number || v.model || vId);
-                const vType = String(v.type || v.vehicle_type || "Ambulance");
-                return (
-                  <option key={vId} value={vId}>
-                    {vNum} ({vType}) — {v.status || "available"}
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" }}>
-            <button
-              type="button"
-              onClick={() => {
-                setIsDispatchModalOpen(false);
-                setSelectedVehicleId("");
-                setSelectedAgentId("");
-              }}
-              style={{ padding: "9px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF", color: "#475569", fontWeight: 600 }}
-            >
-              Cancel
-            </button>
-            <button type="submit" disabled={isSubmitting || !selectedVehicleId || !selectedAgentId} style={{ padding: "9px 16px", borderRadius: "8px", background: "#7C3AED", color: "#FFF", border: "none", fontWeight: 700, cursor: "pointer" }}>
-              {isSubmitting ? "Dispatching..." : "Confirm Dispatch"}
-            </button>
-          </div>
-        </form>
-      </Modal>
+        onClose={() => setIsDispatchModalOpen(false)}
+        rescue={targetDispatchRequest || selectedRequest}
+        onRefresh={fetchRequests}
+        users={users}
+        vehicles={vehicles}
+      />
 
       {/* Reject Request Confirmation Modal */}
       <Modal

@@ -23,13 +23,14 @@ import {
   FaCheckCircle,
   FaSync,
   FaHistory,
+  FaCopy,
 } from "react-icons/fa";
 
 import petService from "../../services/petService";
 import rescueService from "../../services/rescueService";
 import medicalService from "../../services/medicalService";
 import storageService from "../../services/storageService";
-import { getCurrentUser, getCurrentUserRole, normalizeRole, getRescueCentreId } from "../../utils/roleUtils";
+import { getCurrentUser, getCurrentUserRole, normalizeRole } from "../../utils/roleUtils";
 import { hasPermission } from "../../utils/rbac";
 import { notifyDataChanged } from "../../utils/dataSync";
 import { publishActionEvent } from "../../utils/eventSystem";
@@ -243,6 +244,15 @@ const Pets = () => {
   const [isDeactivateConfirmOpen, setIsDeactivateConfirmOpen] = useState(false);
   const [isReProvisionConfirmOpen, setIsReProvisionConfirmOpen] = useState(false);
   const [isRefreshingScanData, setIsRefreshingScanData] = useState(false);
+  const [copiedToken, setCopiedToken] = useState(false);
+
+  const handleCopyToken = (text: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedToken(true);
+    addToast("Safety Tag token copied to clipboard!", "success");
+    setTimeout(() => setCopiedToken(false), 2000);
+  };
 
   // Manual Token Lookup modal state
   const [isTokenLookupModalOpen, setIsTokenLookupModalOpen] = useState(false);
@@ -436,14 +446,6 @@ const Pets = () => {
       const currentRole = normalizeRole(currentUser);
       const isRescueAdmin = currentRole === "rescue_centre_admin" || currentRole === "rescue_coordinator" || currentRole === "rescue_agent" || String(currentRole || "").includes("rescue");
       const userShelterId = (currentUser as any)?.shelter_id || (currentUser as any)?.shelter?.id || (currentUser as any)?.assigned_shelter_id;
-      const userRescueCentreId = getRescueCentreId(currentUser);
-
-      if (currentRole === "rescue_centre_admin" && !userRescueCentreId) {
-        setError("No Rescue Centre Assigned: Your account does not have an assigned Rescue Centre. Contact a Super Administrator.");
-        setDogs([]);
-        setLoading(false);
-        return;
-      }
 
       const effectiveTab = (isRescueAdmin && registryTab === "companion") ? "master" : registryTab;
 
@@ -460,10 +462,6 @@ const Pets = () => {
         queryParams.shelter_id = userShelterId;
       }
 
-      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
-        queryParams.rescue_centre_id = userRescueCentreId;
-      }
-
       const response = await petService.getPets(queryParams);
 
       let dogList = unwrapList(response).map(formatDog);
@@ -472,13 +470,6 @@ const Pets = () => {
         dogList = dogList.filter((d: any) => {
           const dShelterId = d.shelter_id || d.shelter?.id || d.shelter_location_id;
           return !dShelterId || String(dShelterId).toLowerCase() === String(userShelterId).toLowerCase();
-        });
-      }
-
-      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
-        dogList = dogList.filter((d: any) => {
-          const dCentreId = d.rescue_centre_id || d.rescue_center_id || d.facility_id || d.organization_id || d.rescue_centre?.id;
-          return !dCentreId || String(dCentreId) === String(userRescueCentreId);
         });
       }
 
@@ -551,21 +542,10 @@ const Pets = () => {
       const currentUser = getCurrentUser();
       const currentRole = normalizeRole(currentUser);
       const userShelterId = (currentUser as any)?.shelter_id || (currentUser as any)?.shelter?.id || (currentUser as any)?.assigned_shelter_id;
-      const userRescueCentreId = getRescueCentreId(currentUser);
-
-      if (currentRole === "rescue_centre_admin" && !userRescueCentreId) {
-        setAllDogs([]);
-        setLoadingAll(false);
-        return;
-      }
 
       const params: Record<string, any> = {};
       if (currentRole === "shelter_manager" && userShelterId) {
         params.shelter_id = userShelterId;
-      }
-
-      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
-        params.rescue_centre_id = userRescueCentreId;
       }
 
       const response = await petService.getAllDogs(params);
@@ -576,13 +556,6 @@ const Pets = () => {
         formatted = formatted.filter((d: any) => {
           const dShelterId = d.shelter_id || d.shelter?.id || d.shelter_location_id;
           return !dShelterId || String(dShelterId).toLowerCase() === String(userShelterId).toLowerCase();
-        });
-      }
-
-      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
-        formatted = formatted.filter((d: any) => {
-          const dCentreId = d.rescue_centre_id || d.rescue_center_id || d.facility_id || d.organization_id;
-          return String(dCentreId) === String(userRescueCentreId);
         });
       }
 
@@ -896,6 +869,42 @@ const extractTagData = (res: any) => {
             return;
           }
           setTagStatus("ACTIVE");
+
+          // Extract complete token from backend response fields, vault storage, or public scan URL
+          const foundToken =
+            metaData.raw_token ||
+            metaData.token ||
+            metaData.full_token ||
+            metaData.tag_token ||
+            metaData.safety_token ||
+            metaData.value ||
+            metaData.rawToken ||
+            (dog as any)?.raw_token ||
+            (dog as any)?.token ||
+            (dog as any)?.full_token ||
+            (dog as any)?.tag_token ||
+            (dog as any)?.safety_token ||
+            (dog as any)?.rawToken;
+
+          const vaultToken = petService.getStoredTagToken(id);
+          const effectiveToken = foundToken ? String(foundToken) : vaultToken;
+
+          if (effectiveToken) {
+            setRawToken(effectiveToken);
+            petService.storeTagToken(id, effectiveToken);
+          } else if (metaData.public_scan_url || metaData.public_scan_path) {
+            try {
+              const rawScanUrl = String(metaData.public_scan_url || metaData.public_scan_path);
+              const parsed = new URL(rawScanUrl.startsWith("http") ? rawScanUrl : `https://placeholder.local${rawScanUrl.startsWith("/") ? "" : "/"}${rawScanUrl}`);
+              const urlToken = parsed.searchParams.get("token") || parsed.searchParams.get("raw_token") || parsed.searchParams.get("t");
+              if (urlToken) {
+                setRawToken(urlToken);
+                petService.storeTagToken(id, urlToken);
+              }
+            } catch {
+              /* ignore URL parse error */
+            }
+          }
 
           // Extract authoritative public_scan_url from backend metadata
           const rawScanUrl = metaData.public_scan_url || metaData.public_scan_path;
@@ -1575,9 +1584,9 @@ const extractTagData = (res: any) => {
           <div>
             <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
               {registryTab === "companion"
-                ? "Companion Pets Registry (GET /api/v1/companion-pets)"
+                ? "Companion Pets Registry"
                 : registryTab === "master"
-                ? "Dog Master Registry (GET /api/v1/dogs)"
+                ? "Dog Master Registry"
                 : "All Registered Animals"}
             </h3>
             <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#64748B" }}>
@@ -2395,10 +2404,99 @@ const extractTagData = (res: any) => {
                 <strong>Gender:</strong> {qrDog.gender ? qrDog.gender.charAt(0).toUpperCase() + qrDog.gender.slice(1) : "-"}
               </div>
 
+              {/* COMPLETE TOKEN SECTION */}
+              {(() => {
+                const fullToken =
+                  rawToken ||
+                  (tagMetadata && typeof tagMetadata === "object"
+                    ? (tagMetadata.raw_token as string) ||
+                      (tagMetadata.token as string) ||
+                      (tagMetadata.full_token as string) ||
+                      (tagMetadata.tag_token as string) ||
+                      (tagMetadata.safety_token as string) ||
+                      (tagMetadata.value as string) ||
+                      (tagMetadata.rawToken as string)
+                    : null) ||
+                  (qrDog
+                    ? ((qrDog as any).raw_token as string) ||
+                      ((qrDog as any).token as string) ||
+                      ((qrDog as any).full_token as string) ||
+                      ((qrDog as any).tag_token as string) ||
+                      ((qrDog as any).safety_token as string) ||
+                      ((qrDog as any).rawToken as string)
+                    : null) ||
+                  (qrDog ? petService.getStoredTagToken(dogId(qrDog)) : null) ||
+                  (() => {
+                    const scanUrl = (tagMetadata as any)?.public_scan_url || (tagMetadata as any)?.public_scan_path;
+                    if (typeof scanUrl === "string") {
+                      try {
+                        const parsed = new URL(scanUrl.startsWith("http") ? scanUrl : `https://placeholder.local${scanUrl.startsWith("/") ? "" : "/"}${scanUrl}`);
+                        return parsed.searchParams.get("token") || parsed.searchParams.get("raw_token") || parsed.searchParams.get("t");
+                      } catch {
+                        return null;
+                      }
+                    }
+                    return null;
+                  })();
+
+                return (
+                  <div
+                    style={{
+                      marginTop: "6px",
+                      padding: "10px 12px",
+                      background: "#FFFFFF",
+                      border: "1px solid #CBD5E1",
+                      borderRadius: "8px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "6px",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                        Safety Tag Token (Complete)
+                      </span>
+                    </div>
+
+                    {fullToken ? (
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", background: "#F1F5F9", padding: "8px 12px", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                        <code style={{ fontFamily: "monospace", fontSize: "13px", fontWeight: 700, color: "#0F172A", wordBreak: "break-all" }}>
+                          {fullToken}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyToken(fullToken)}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                            padding: "4px 10px",
+                            borderRadius: "4px",
+                            border: "1px solid #94A3B8",
+                            background: "#FFFFFF",
+                            color: "#334155",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <FaCopy style={{ fontSize: "12px" }} />
+                          {copiedToken ? "Copied!" : "Copy"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: "12px", color: "#64748B", fontStyle: "italic", padding: "4px 0" }}>
+                        Complete token unavailable. Re-Provision Tag to generate a new token.
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {tagMetadata && typeof tagMetadata === "object" && (
                 <div style={{ marginTop: "4px", paddingTop: "8px", borderTop: "1px dashed #CBD5E1", fontSize: "12px", color: "#64748B", display: "flex", justifyContent: "space-between" }}>
                   <span>Created: {String(tagMetadata.created_at || tagMetadata.created_date || "Active").slice(0, 10)}</span>
-                  {Boolean(tagMetadata.token_prefix) && <span>Prefix: {String(tagMetadata.token_prefix)}</span>}
                 </div>
               )}
 

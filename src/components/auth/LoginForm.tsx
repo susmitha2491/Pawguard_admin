@@ -5,6 +5,7 @@ import axios from "axios";
 import PasswordInput from "./PasswordInput";
 import ForgotPasswordModal from "./ForgotPasswordModal";
 import authService from "../../services/auth/authService";
+import userService from "../../services/userService";
 import { getDashboardPathForRole, normalizeRole } from "../../utils/roleUtils";
 import { notifyAuthChanged } from "../../utils/dataSync";
 import { getRememberMe, getRememberedEmail, setAuthData, setRememberedEmail, updateLastActivity } from "../../utils/authStorage";
@@ -110,6 +111,27 @@ const LoginForm = () => {
             rememberMe
           );
         }
+      }
+
+      // Fetch user summary for complete profile including rescue_centre_id
+      try {
+        const userId = userObj.id || userObj.user_id || userObj.userId;
+        if (userId) {
+          const summary = await userService.getUserSummary(String(userId));
+          if (summary && typeof summary === "object") {
+            userObj = { ...userObj, ...summary, role: userRole };
+            setAuthData(
+              {
+                user: userObj,
+                access_token: accessToken,
+                refresh_token: refreshToken,
+              },
+              rememberMe
+            );
+          }
+        }
+      } catch {
+        // Ignore summary fetch failure, use me response
       }
     } catch {
       // Fallback to authenticated login user object

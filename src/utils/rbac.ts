@@ -97,17 +97,15 @@ const NOTIFICATION_TYPE_ACCESS: Record<string, UserRole[]> = {
   finance_action: ["super_admin", "finance_user"],
 
   // Shelter/Animal notifications
-  shelter_added: ["super_admin", "rescue_centre_admin", "shelter_manager"],
+  shelter_added: ["super_admin", "shelter_manager"],
   animal_registered: [
     "super_admin",
-    "rescue_centre_admin",
     "shelter_manager",
     "rescue_coordinator",
     "veterinarian",
   ],
   animal_updated: [
     "super_admin",
-    "rescue_centre_admin",
     "shelter_manager",
     "rescue_coordinator",
     "veterinarian",
@@ -117,7 +115,6 @@ const NOTIFICATION_TYPE_ACCESS: Record<string, UserRole[]> = {
   medical_updated: [
     "super_admin",
     "veterinarian",
-    "rescue_centre_admin",
     "shelter_manager",
   ],
 
@@ -125,19 +122,16 @@ const NOTIFICATION_TYPE_ACCESS: Record<string, UserRole[]> = {
   adoption_submitted: [
     "super_admin",
     "adoption_coordinator",
-    "rescue_centre_admin",
     "shelter_manager",
   ],
   adoption_approved: [
     "super_admin",
     "adoption_coordinator",
-    "rescue_centre_admin",
     "shelter_manager",
   ],
   adoption_rejected: [
     "super_admin",
     "adoption_coordinator",
-    "rescue_centre_admin",
     "shelter_manager",
   ],
 
@@ -145,42 +139,84 @@ const NOTIFICATION_TYPE_ACCESS: Record<string, UserRole[]> = {
   inventory_changed: [
     "super_admin",
     "inventory_manager",
-    "rescue_centre_admin",
     "shelter_manager",
   ],
 
-  // Rescue notifications
+  // Rescue notifications & sub-types
   emergency: [
     "super_admin",
     "rescue_coordinator",
     "rescue_agent",
     "rescue_centre_admin",
   ],
-
-  // Rescue operations (module-level "rescue" type used by publishActionEvent)
   rescue: [
     "super_admin",
     "rescue_centre_admin",
     "rescue_coordinator",
     "rescue_agent",
   ],
+  dispatch: [
+    "super_admin",
+    "rescue_centre_admin",
+    "rescue_coordinator",
+    "rescue_agent",
+  ],
+  rescue_request: [
+    "super_admin",
+    "rescue_centre_admin",
+    "rescue_coordinator",
+    "rescue_agent",
+  ],
+  rescue_verification: [
+    "super_admin",
+    "rescue_centre_admin",
+    "rescue_coordinator",
+    "rescue_agent",
+  ],
+  rescue_assignment: [
+    "super_admin",
+    "rescue_centre_admin",
+    "rescue_coordinator",
+    "rescue_agent",
+  ],
+  rescue_completion: [
+    "super_admin",
+    "rescue_centre_admin",
+    "rescue_coordinator",
+    "rescue_agent",
+  ],
+  rescue_escalation: [
+    "super_admin",
+    "rescue_centre_admin",
+    "rescue_coordinator",
+    "rescue_agent",
+  ],
+  rescue_failure: [
+    "super_admin",
+    "rescue_centre_admin",
+    "rescue_coordinator",
+    "rescue_agent",
+  ],
+  shelter_handover: [
+    "super_admin",
+    "rescue_centre_admin",
+    "shelter_manager",
+  ],
 
   // Shelter / placement notifications (module-level "shelter" type + transfer events)
-  shelter: ["super_admin", "rescue_centre_admin", "shelter_manager"],
-  shelter_transfer: ["super_admin", "rescue_centre_admin", "shelter_manager"],
-  transfer_requested: ["super_admin", "rescue_centre_admin", "shelter_manager"],
-  placement_requested: ["super_admin", "rescue_centre_admin", "shelter_manager"],
+  shelter: ["super_admin", "shelter_manager"],
+  shelter_transfer: ["super_admin", "shelter_manager"],
+  transfer_requested: ["super_admin", "shelter_manager"],
+  placement_requested: ["super_admin", "shelter_manager"],
 
   // Lost & Found alerts
   lost_found: [
     "super_admin",
-    "rescue_centre_admin",
     "shelter_manager",
     "adoption_coordinator",
   ],
   lost_pet_alert: [
     "super_admin",
-    "rescue_centre_admin",
     "shelter_manager",
     "adoption_coordinator",
   ],
@@ -195,13 +231,12 @@ const NOTIFICATION_TYPE_ACCESS: Record<string, UserRole[]> = {
   volunteer: ["super_admin", "volunteer_coordinator"],
 
   // Adoption notifications (general)
-  adoption: ["super_admin", "adoption_coordinator", "rescue_centre_admin"],
+  adoption: ["super_admin", "adoption_coordinator"],
 
   // Medical notifications (general)
   medical: [
     "super_admin",
     "veterinarian",
-    "rescue_centre_admin",
     "shelter_manager",
   ],
 };

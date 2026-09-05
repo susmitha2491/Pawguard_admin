@@ -154,6 +154,8 @@ export const userService = {
     if (data.phone !== undefined) payload.phone = data.phone;
     if (data.is_active !== undefined) payload.is_active = data.is_active;
     if (data.password !== undefined && data.password !== "") payload.password = data.password;
+    if (data.rescue_centre_id !== undefined) payload.rescue_centre_id = data.rescue_centre_id;
+    if (data.organization_id !== undefined) payload.organization_id = data.organization_id;
     const roleNames =
       data.role_names !== undefined
         ? data.role_names

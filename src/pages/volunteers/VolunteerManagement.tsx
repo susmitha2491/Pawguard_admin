@@ -507,6 +507,15 @@ const VolunteerManagement = () => {
       addToast("Invalid volunteer profile ID.", "error");
       return;
     }
+    const vol = applications.find((v: any) => String(v.id) === String(profileId));
+    if (vol) {
+      const hours = Number(vol.total_hours || vol.hours_served || 0);
+      const shifts = Number(vol.completed_shifts || vol.shifts_completed || 0);
+      if (hours === 0 && shifts === 0) {
+        addToast("Volunteer must have at least 1 completed shift or logged service hours to issue a certificate.", "info");
+        return;
+      }
+    }
     try {
       addToast("Generating verified volunteer service certificate...", "info");
       const cert = await volunteerService.getCertificate(profileId);

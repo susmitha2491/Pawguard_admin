@@ -528,13 +528,12 @@ export const getMenusForRole = (role?: string | UserRole | null): RoleMenuItem[]
         { name: "Dashboard", path: dashboardPath, iconType: "dashboard" },
         { name: "Rescue Management", path: "/rescues", iconType: "rescues" },
         { name: "Rescue Requests", path: "/rescue-requests", iconType: "ambulance" },
-        { name: "Rescue Dispatch", path: "/rescue-dispatch", iconType: "vehicles" },
-        { name: "Vehicle Fleet", path: "/vehicles", iconType: "vehicles" },
-        { name: "Dog Management", path: "/pets", iconType: "pets" },
+        { name: "Dispatch Management", path: "/rescue-dispatch", iconType: "vehicles" },
+        { name: "Dog Profiles", path: "/pets", iconType: "pets" },
         { name: "Shelter Management", path: "/shelters", iconType: "shelters" },
-        { name: "Shelter Dogs", path: "/shelter-dogs", iconType: "pets" },
-        { name: "Notifications", path: "/notifications", iconType: "notifications" },
+        { name: "Vehicle Fleet", path: "/vehicles", iconType: "vehicles" },
         { name: "Reports & Analytics", path: "/reports", iconType: "reports" },
+        { name: "Notifications", path: "/notifications", iconType: "notifications" },
       ];
 
     case "rescue_coordinator":

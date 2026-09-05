@@ -26,7 +26,53 @@ export interface PetPayload {
   [key: string]: unknown;
 }
 
+const TAG_TOKEN_STORAGE_KEY = "pawguard_safety_tag_vault";
+
+const getVaultMap = (): Record<string, string> => {
+  try {
+    const raw = localStorage.getItem(TAG_TOKEN_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
+const saveVaultMap = (map: Record<string, string>): void => {
+  try {
+    localStorage.setItem(TAG_TOKEN_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    /* ignore storage write error */
+  }
+};
+
+export const getStoredTagToken = (dogOrPetId: string): string | null => {
+  const cleanId = String(dogOrPetId || "").trim();
+  if (!cleanId) return null;
+  const vault = getVaultMap();
+  return vault[cleanId] || null;
+};
+
+export const storeTagToken = (dogOrPetId: string, token: string): void => {
+  const cleanId = String(dogOrPetId || "").trim();
+  const cleanToken = String(token || "").trim();
+  if (!cleanId || !cleanToken) return;
+  const vault = getVaultMap();
+  vault[cleanId] = cleanToken;
+  saveVaultMap(vault);
+};
+
+export const removeStoredTagToken = (dogOrPetId: string): void => {
+  const cleanId = String(dogOrPetId || "").trim();
+  if (!cleanId) return;
+  const vault = getVaultMap();
+  delete vault[cleanId];
+  saveVaultMap(vault);
+};
+
 export const petService = {
+  getStoredTagToken,
+  storeTagToken,
+  removeStoredTagToken,
   // GET /dogs (Dog Master / Shelter Intake Records)
   getDogs: async (params?: Record<string, unknown>) => {
     const response = await api.get("/dogs", { params });
@@ -341,20 +387,49 @@ export const petService = {
     const cleanId = String(dogId || "").trim();
     if (!cleanId) throw new Error("Dog ID is required.");
     const response = await api.get(`/dogs/${cleanId}/safety-tag`);
-    return response.data;
+    const resData = response.data;
+    const inner = resData?.data?.data || resData?.data || resData;
+
+    const found =
+      inner?.raw_token ||
+      inner?.token ||
+      inner?.full_token ||
+      inner?.tag_token ||
+      inner?.safety_token ||
+      inner?.value;
+
+    if (found && typeof found === "string") {
+      storeTagToken(cleanId, found);
+    } else {
+      const stored = getStoredTagToken(cleanId);
+      if (stored && inner && typeof inner === "object") {
+        inner.raw_token = stored;
+        inner.token = stored;
+      }
+    }
+    return resData;
   },
 
   // POST /dogs/{dog_id}/safety-tag - provision/generate a new permanent Safety Tag for a Dog Master record
   // Pass forceReissue=true to force re-issuance (POST /dogs/{dog_id}/safety-tag?force_reissue=true)
   provisionSafetyTag: async (dogId: string, forceReissue = false) => {
-    const url = forceReissue ? `/dogs/${dogId}/safety-tag?force_reissue=true` : `/dogs/${dogId}/safety-tag`;
+    const cleanId = String(dogId || "").trim();
+    const url = forceReissue ? `/dogs/${cleanId}/safety-tag?force_reissue=true` : `/dogs/${cleanId}/safety-tag`;
     const response = await api.post(url);
-    return response.data;
+    const resData = response.data;
+    const inner = resData?.data?.data || resData?.data || resData;
+    const token = inner?.raw_token || inner?.token || inner?.rawToken;
+    if (token && typeof token === "string") {
+      storeTagToken(cleanId, token);
+    }
+    return resData;
   },
 
   // DELETE /dogs/{dog_id}/safety-tag - revoke/deactivate a Dog Master record's Safety Tag
   revokeSafetyTag: async (dogId: string) => {
-    const response = await api.delete(`/dogs/${dogId}/safety-tag`);
+    const cleanId = String(dogId || "").trim();
+    const response = await api.delete(`/dogs/${cleanId}/safety-tag`);
+    removeStoredTagToken(cleanId);
     return response.data;
   },
 
@@ -587,7 +662,13 @@ export const petService = {
       ? `/companion-pets/${cleanId}/safety-tag?force_reissue=true`
       : `/companion-pets/${cleanId}/safety-tag`;
     const response = await api.post(url);
-    return response.data;
+    const resData = response.data;
+    const inner = resData?.data?.data || resData?.data || resData;
+    const token = inner?.raw_token || inner?.token || inner?.rawToken;
+    if (token && typeof token === "string") {
+      storeTagToken(cleanId, token);
+    }
+    return resData;
   },
 
   // GET /companion-pets/{pet_id}/safety-tag - get Safety Tag metadata for a Companion Pet
@@ -595,7 +676,27 @@ export const petService = {
     const cleanId = String(petId || "").trim();
     if (!cleanId) throw new Error("Companion Pet ID is required.");
     const response = await api.get(`/companion-pets/${cleanId}/safety-tag`);
-    return response.data;
+    const resData = response.data;
+    const inner = resData?.data?.data || resData?.data || resData;
+
+    const found =
+      inner?.raw_token ||
+      inner?.token ||
+      inner?.full_token ||
+      inner?.tag_token ||
+      inner?.safety_token ||
+      inner?.value;
+
+    if (found && typeof found === "string") {
+      storeTagToken(cleanId, found);
+    } else {
+      const stored = getStoredTagToken(cleanId);
+      if (stored && inner && typeof inner === "object") {
+        inner.raw_token = stored;
+        inner.token = stored;
+      }
+    }
+    return resData;
   },
 
   // DELETE /companion-pets/{pet_id}/safety-tag - revoke Safety Tag for a Companion Pet
@@ -603,6 +704,7 @@ export const petService = {
     const cleanId = String(petId || "").trim();
     if (!cleanId) throw new Error("Companion Pet ID is required.");
     const response = await api.delete(`/companion-pets/${cleanId}/safety-tag`);
+    removeStoredTagToken(cleanId);
     return response.data;
   },
 

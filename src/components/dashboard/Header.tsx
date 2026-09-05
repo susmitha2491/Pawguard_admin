@@ -232,9 +232,6 @@ const Header = ({
             )}
 
             <div style={{ display: "flex", flexDirection: "column" }}>
-              <span style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", lineHeight: 1.2 }}>
-                {displayName}
-              </span>
               <span
                 style={{
                   fontSize: "11px",
@@ -243,7 +240,6 @@ const Header = ({
                   background: "#EFF6FF",
                   padding: "1px 6px",
                   borderRadius: "4px",
-                  marginTop: "2px",
                   display: "inline-block",
                   width: "fit-content",
                 }}

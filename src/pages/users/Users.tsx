@@ -28,6 +28,7 @@ import {
 } from "react-icons/fa";
 import userService, { type UserPayload, extractPermissionCodes } from "../../services/userService";
 import authService from "../../services/auth/authService";
+import shelterService from "../../services/shelterService";
 import PasswordInput from "../../components/auth/PasswordInput";
 import { notifyDataChanged } from "../../utils/dataSync";
 import { normalizeRole, getCurrentUserRole, getCurrentUser } from "../../utils/roleUtils";
@@ -591,13 +592,52 @@ const Users = () => {
   const [customPermCode, setCustomPermCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Rescue Centre options for Super Admin assignment
+  const [rescueCentres, setRescueCentres] = useState<Array<{ id: string; name: string }>>([]);
+  const [rescueCentresLoading, setRescueCentresLoading] = useState(false);
+
   // Form State for Add / Edit User
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     role: "rescue_agent",
     password: "",
+    rescue_centre_id: "",
   });
+
+  // Fetch rescue centres (shelter facilities) for Super Admin assignment
+  const fetchRescueCentres = useCallback(async () => {
+    if (!isSuperAdmin) return;
+    try {
+      setRescueCentresLoading(true);
+      const response = await shelterService.getShelters();
+      const rawBody = response as unknown;
+      const rawData = (rawBody as { data?: unknown })?.data;
+      const rawItems = (rawData as { items?: unknown })?.items;
+      let facilityList = Array.isArray(rawBody)
+        ? (rawBody as any[])
+        : Array.isArray(rawData)
+          ? (rawData as any[])
+          : Array.isArray(rawItems)
+            ? (rawItems as any[])
+            : [];
+      const options = facilityList
+        .filter((f) => f.id && (f.name || f.facility_name))
+        .map((f) => ({
+          id: String(f.id),
+          name: String(f.name || f.facility_name || "Unnamed Facility"),
+        }));
+      setRescueCentres(options);
+    } catch {
+      setRescueCentres([]);
+    } finally {
+      setRescueCentresLoading(false);
+    }
+  }, [isSuperAdmin]);
+
+  useEffect(() => {
+    fetchRescueCentres();
+  }, [fetchRescueCentres]);
 
   /**
    * Fetch complete user profile from backend API to ensure exact field matching
@@ -1005,11 +1045,13 @@ const Users = () => {
         createPayload.rescue_centre_id = currentShelterId;
         (createPayload as any).facility_id = currentShelterId;
         (createPayload as any).shelter_id = currentShelterId;
+      } else if (isSuperAdmin && formData.rescue_centre_id) {
+        createPayload.rescue_centre_id = formData.rescue_centre_id;
       }
       await userService.createUser(createPayload);
       addToast(`User ${formData.name} provisioned successfully!`, "success");
       setIsAddModalOpen(false);
-      setFormData({ name: "", email: "", role: "rescue_agent", password: "" });
+      setFormData({ name: "", email: "", role: "rescue_agent", password: "", rescue_centre_id: "" });
       fetchUsers();
       notifyDataChanged();
     } catch (err: unknown) {
@@ -1033,13 +1075,18 @@ const Users = () => {
         return;
       }
     }
+    // Super Admin updating Rescue Centre Admin - include rescue_centre_id if provided
+    const updatePayload: Partial<UserPayload> = {
+      full_name: formData.name.trim(),
+      role_names: parseRoleNames(formData.role),
+    };
+    if (isSuperAdmin && formData.role === "rescue_centre_admin" && formData.rescue_centre_id) {
+      updatePayload.rescue_centre_id = formData.rescue_centre_id;
+    }
 
     try {
       setIsSubmitting(true);
-      await userService.updateUser(selectedUser.id, {
-        full_name: formData.name.trim(),
-        role_names: parseRoleNames(formData.role),
-      });
+      await userService.updateUser(selectedUser.id, updatePayload);
       addToast(`User ${formData.name} updated successfully!`, "success");
       setIsEditModalOpen(false);
       setSelectedUser(null);
@@ -1496,7 +1543,7 @@ const Users = () => {
             subtitle="Onboard new staff member"
             color="#2563EB"
             onClick={() => {
-              setFormData({ name: "", email: "", role: "rescue_agent", password: "" });
+              setFormData({ name: "", email: "", role: "rescue_agent", password: "", rescue_centre_id: "" });
               setIsAddModalOpen(true);
             }}
           />
@@ -1716,11 +1763,13 @@ const Users = () => {
                 }
               }
               setSelectedUser(target);
+              const targetCentreId = target.rescue_centre_id || (target as any).rescue_center_id || (target as any).facility_id || (target as any).organization_id;
               setFormData({
                 name: target.full_name || target.name || "",
                 email: target.email || "",
                 role: target.roles?.[0] || target.role || "rescue_agent",
                 password: "",
+                rescue_centre_id: targetCentreId || "",
               });
               setIsEditModalOpen(true);
             }}
@@ -2111,11 +2160,13 @@ const Users = () => {
                       return;
                     }
                     setSelectedUser(selectedUserProfile);
+                    const profileCentreId = selectedUserProfile.rescue_centre_id || (selectedUserProfile as any).rescue_center_id || (selectedUserProfile as any).facility_id || (selectedUserProfile as any).organization_id;
                     setFormData({
                       name: selectedUserProfile.full_name || selectedUserProfile.name || "",
                       email: selectedUserProfile.email || "",
                       role: selectedUserProfile.roles?.[0] || selectedUserProfile.role || "rescue_agent",
                       password: "",
+                      rescue_centre_id: profileCentreId || "",
                     });
                     setIsProfileModalOpen(false);
                     setIsEditModalOpen(true);
@@ -2365,6 +2416,26 @@ const Users = () => {
             </select>
           </div>
 
+          {isSuperAdmin && formData.role === "rescue_centre_admin" && (
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                Primary Operational Location (Optional)
+              </label>
+              <select
+                value={formData.rescue_centre_id}
+                onChange={(e) => setFormData({ ...formData, rescue_centre_id: e.target.value })}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px", background: "#FFFFFF" }}
+                disabled={rescueCentresLoading}
+              >
+                <option value="">All Operational Locations (Unrestricted Access)</option>
+                {rescueCentres.map((rc) => (
+                  <option key={rc.id} value={rc.id}>{rc.name}</option>
+                ))}
+              </select>
+              {rescueCentresLoading && <span style={{ fontSize: "12px", color: "#64748B" }}>Loading rescue centres...</span>}
+            </div>
+          )}
+
           <div>
             <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
               Initial Password (Optional — min 10 chars, auto-generated if left empty)
@@ -2443,6 +2514,26 @@ const Users = () => {
               )}
             </select>
           </div>
+
+          {isSuperAdmin && formData.role === "rescue_centre_admin" && (
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                Primary Operational Location (Optional)
+              </label>
+              <select
+                value={formData.rescue_centre_id}
+                onChange={(e) => setFormData({ ...formData, rescue_centre_id: e.target.value })}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px", background: "#FFFFFF" }}
+                disabled={rescueCentresLoading}
+              >
+                <option value="">All Operational Locations (Unrestricted Access)</option>
+                {rescueCentres.map((rc) => (
+                  <option key={rc.id} value={rc.id}>{rc.name}</option>
+                ))}
+              </select>
+              {rescueCentresLoading && <span style={{ fontSize: "12px", color: "#64748B" }}>Loading rescue centres...</span>}
+            </div>
+          )}
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" }}>
             <button type="button" onClick={() => setIsEditModalOpen(false)} style={{ padding: "10px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFFFFF", color: "#475569", fontWeight: 600 }}>

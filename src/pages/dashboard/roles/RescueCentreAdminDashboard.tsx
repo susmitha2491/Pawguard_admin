@@ -7,7 +7,6 @@ import QuickActionCard from "../../../components/dashboard/QuickActionCard";
 import {
   FaAmbulance,
   FaPaw,
-  FaStethoscope,
   FaHome,
   FaChartBar,
   FaUsers,
@@ -18,22 +17,19 @@ import {
   FaMapMarkerAlt,
   FaClock,
   FaInfoCircle,
-  FaExclamationTriangle,
   FaTruck,
 } from "react-icons/fa";
 import dashboardService from "../../../services/dashboardService";
 import rescueService from "../../../services/rescueService";
 import dogService from "../../../services/dogService";
 import shelterService from "../../../services/shelterService";
-import inventoryService from "../../../services/inventoryService";
-import userService from "../../../services/userService";
 import vehicleService from "../../../services/vehicleService";
-import grievanceService from "../../../services/grievanceService";
-import { useToast } from "../../../context/ToastContext";
 import { rescueStatusBadge, dispatchStage, dispatchAgentNames } from "../../../utils/rescueStatus";
 import { useDataSync } from "../../../utils/dataSync";
 import { normalizeRole, getCurrentUser, getRescueCentreId } from "../../../utils/roleUtils";
 import { formatDateTime } from "../../../utils/dateUtils";
+import { unwrapList } from "../../../utils/chartUtils";
+import LocationMapPreview from "../../../components/common/LocationMapPreview";
 import type { RescueRequestTableRow } from "../../rescues/RescueRequests";
 
 interface RescueCallRow {
@@ -45,6 +41,18 @@ interface RescueCallRow {
   dispatch_status: string;
   agent: string;
   created_at: string;
+  rawItem: Record<string, unknown>;
+}
+
+interface DispatchRow {
+  id: string;
+  case_id: string;
+  ticket_number: string;
+  vehicle_number: string;
+  driver_name: string;
+  agents: string;
+  status: string;
+  dispatch_time: string;
   rawItem: Record<string, unknown>;
 }
 
@@ -71,13 +79,6 @@ const badgeStyle = (bg: string, color: string): React.CSSProperties => ({
   textTransform: "uppercase",
 });
 
-const unwrapList = (res: any): any[] => {
-  if (!res) return [];
-  if (Array.isArray(res)) return res;
-  if (Array.isArray(res.data)) return res.data;
-  return [];
-};
-
 const mapRescueCallRowToDetail = (row: RescueCallRow): RescueRequestTableRow => {
   const raw = row.rawItem;
   const stage = dispatchStage({ status: raw.status as string, dispatch: raw.dispatch as Record<string, unknown> });
@@ -86,6 +87,10 @@ const mapRescueCallRowToDetail = (row: RescueCallRow): RescueRequestTableRow => 
   const assignedAgentName = String(raw.assigned_agent_name || raw.assigned_agent || (dispatchObj as any)?.agent_name || (assignedAgentId ? `Agent (${assignedAgentId})` : ""));
   const assignedVehicleId = String(raw.assigned_vehicle_id || (dispatchObj as any)?.vehicle_id || "");
   const assignedVehicleNumber = String(raw.assigned_vehicle_number || raw.assigned_vehicle || (dispatchObj as any)?.vehicle_number || (assignedVehicleId ? `Vehicle (${assignedVehicleId})` : ""));
+  const latVal = raw.latitude !== undefined && raw.latitude !== null ? (raw.latitude as number | string) : ((raw.location as any)?.latitude);
+  const lngVal = raw.longitude !== undefined && raw.longitude !== null ? (raw.longitude as number | string) : ((raw.location as any)?.longitude);
+  const landmarkVal = raw.location_landmark || raw.landmark;
+
   return {
     id: row.id,
     ticket_number: String(raw.ticket_number || row.ticket || ""),
@@ -94,6 +99,9 @@ const mapRescueCallRowToDetail = (row: RescueCallRow): RescueRequestTableRow => 
       : String(raw.reporter_name || row.reporter || "Unknown Reporter"),
     phone: String(raw.reporter_phone || raw.phone || "Not provided"),
     location: String(raw.location_address || raw.location || "Location not recorded"),
+    latitude: latVal !== undefined && latVal !== null ? latVal : undefined,
+    longitude: lngVal !== undefined && lngVal !== null ? lngVal : undefined,
+    location_landmark: landmarkVal ? String(landmarkVal) : undefined,
     condition: String(raw.physical_condition || "-"),
     severity: String(raw.severity || raw.urgency_level || "medium").toLowerCase(),
     is_urgent: !!raw.is_urgent,
@@ -116,12 +124,14 @@ const mapRescueCallRowToDetail = (row: RescueCallRow): RescueRequestTableRow => 
 
 const RescueCentreAdminDashboard = () => {
   const navigate = useNavigate();
-  const { addToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"rescues" | "intake" | "agents" | "vehicles" | "complaints">("rescues");
+  const [activeTab, setActiveTab] = useState<"rescues" | "dispatches" | "intake" | "agents" | "vehicles">("rescues");
+  
   const [selectedCase, setSelectedCase] = useState<RescueRequestTableRow | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [selectedDispatch, setSelectedDispatch] = useState<DispatchRow | null>(null);
+  const [isDispatchModalOpen, setIsDispatchModalOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<any | null>(null);
   const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<any | null>(null);
@@ -129,34 +139,25 @@ const RescueCentreAdminDashboard = () => {
   const [selectedIntake, setSelectedIntake] = useState<DogIntakeRow | null>(null);
   const [isIntakeModalOpen, setIsIntakeModalOpen] = useState(false);
 
-  // Rescued Animal Intake Registration State
-  const [isRegisterIntakeModalOpen, setIsRegisterIntakeModalOpen] = useState(false);
-  const [isSubmittingIntake, setIsSubmittingIntake] = useState(false);
-  const [registerIntakeForm, setRegisterIntakeForm] = useState({
-    name: "",
-    breed: "Mixed Breed",
-    gender: "male",
-    shelter_id: "",
-    rescue_case_id: "",
-    notes: "Newly arrived rescued animal intake.",
-  });
+  // Data Stores
+  const [rescueCalls, setRescueCalls] = useState<RescueCallRow[]>([]);
+  const [dispatchesList, setDispatchesList] = useState<DispatchRow[]>([]);
+  const [dogIntakes, setDogIntakes] = useState<DogIntakeRow[]>([]);
+  const [rescueAgents, setRescueAgents] = useState<any[]>([]);
+  const [fleetVehicles, setFleetVehicles] = useState<any[]>([]);
 
-  // Complaints & Escalations State
-  const [grievanceTickets, setGrievanceTickets] = useState<any[]>([]);
-  const [selectedGrievance, setSelectedGrievance] = useState<any | null>(null);
-  const [isGrievanceModalOpen, setIsGrievanceModalOpen] = useState(false);
-  const [escalateReason, setEscalateReason] = useState("");
-  const [isEscalating, setIsEscalating] = useState(false);
-
-  // Centre Configuration State
-  const [isCentreConfigOpen, setIsCentreConfigOpen] = useState(false);
-  const [centreForm, setCentreForm] = useState({
-    name: "Central Rescue Operations Centre",
-    phone: "+91 1800-RESCUE",
-    address: "Sector 14, Main Emergency Complex",
-    operating_hours: "24/7 Rapid Response",
-    capacity: 100,
-    status: "active",
+  // Headline Operational Metrics
+  const [statsData, setStatsData] = useState({
+    totalCalls: 0,
+    pendingCalls: 0,
+    activeDispatches: 0,
+    shelterDogsCount: 0,
+    availableAgentsCount: 0,
+    totalAgentsCount: 0,
+    availableVehiclesCount: 0,
+    totalVehiclesCount: 0,
+    shelterOccupancy: 0,
+    totalShelterCapacity: 0,
   });
 
   const getSafeVal = (val: any, fallback = "—") => {
@@ -228,92 +229,7 @@ const RescueCentreAdminDashboard = () => {
     return assignment !== "Unassigned" ? "Busy (On Call)" : "Available";
   };
 
-  const handleEscalateGrievanceSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedGrievance?.id || !escalateReason.trim()) {
-      addToast("Please provide a reason for escalation to Super Admin.", "error");
-      return;
-    }
 
-    try {
-      setIsEscalating(true);
-      await grievanceService.escalateGrievance(selectedGrievance.id, escalateReason.trim());
-      addToast(`Complaint ticket #${selectedGrievance.ticket_number || selectedGrievance.id} escalated to Super Admin successfully!`, "success");
-      setIsGrievanceModalOpen(false);
-      setEscalateReason("");
-      fetchDashboardData();
-    } catch {
-      addToast("Failed to escalate ticket.", "error");
-    } finally {
-      setIsEscalating(false);
-    }
-  };
-
-  const handleUpdateGrievanceStatusSubmit = async (status: string) => {
-    if (!selectedGrievance?.id) return;
-    try {
-      await grievanceService.updateGrievanceStatus(selectedGrievance.id, status);
-      addToast(`Complaint ticket status updated to ${status}.`, "success");
-      setIsGrievanceModalOpen(false);
-      fetchDashboardData();
-    } catch {
-      addToast("Failed to update complaint status.", "error");
-    }
-  };
-
-  const handleRegisterIntakeSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!registerIntakeForm.name.trim()) {
-      addToast("Please provide the animal / dog name for intake registration.", "error");
-      return;
-    }
-
-    try {
-      setIsSubmittingIntake(true);
-      const targetShelterId = registerIntakeForm.shelter_id || getRescueCentreId(getCurrentUser()) || "";
-      await dogService.createDog({
-        name: registerIntakeForm.name.trim(),
-        breed: registerIntakeForm.breed || "Mixed Breed",
-        gender: registerIntakeForm.gender || "male",
-        status: "rescued",
-        is_adoptable: false,
-        shelter_id: targetShelterId || undefined,
-        description: registerIntakeForm.notes,
-        medical_status: "Pending Check",
-      });
-      addToast(`Rescued animal '${registerIntakeForm.name.trim()}' intake logged successfully!`, "success");
-      setIsRegisterIntakeModalOpen(false);
-      setRegisterIntakeForm({
-        name: "",
-        breed: "Mixed Breed",
-        gender: "male",
-        shelter_id: "",
-        rescue_case_id: "",
-        notes: "Newly arrived rescued animal intake.",
-      });
-      fetchDashboardData();
-    } catch (err: any) {
-      addToast(err?.response?.data?.detail || err?.message || "Failed to register animal intake.", "error");
-    } finally {
-      setIsSubmittingIntake(false);
-    }
-  };
-
-  // Lifecycle Data States
-  const [rescueCalls, setRescueCalls] = useState<RescueCallRow[]>([]);
-  const [dogIntakes, setDogIntakes] = useState<DogIntakeRow[]>([]);
-  const [rescueAgents, setRescueAgents] = useState<any[]>([]);
-  const [fleetVehicles, setFleetVehicles] = useState<any[]>([]);
-
-  // Metric Totals
-  const [statsData, setStatsData] = useState({
-    totalCalls: 0,
-    pendingCalls: 0,
-    activeDispatches: 0,
-    shelterDogsCount: 0,
-    medicallyClearedCount: 0,
-    lowStockAlertsCount: 0,
-  });
 
   const fetchDashboardData = useCallback(async () => {
     try {
@@ -325,66 +241,44 @@ const RescueCentreAdminDashboard = () => {
       const isRescueAdmin = currentRole === "rescue_centre_admin";
       const currentCentreId = getRescueCentreId(currentUserObj);
 
-      if (isRescueAdmin && !currentCentreId) {
-        setError("No Rescue Centre Assigned: Your account does not have an assigned Rescue Centre. Contact a Super Administrator to assign your Rescue Centre.");
-        setLoading(false);
-        setRescueCalls([]);
-        setDogIntakes([]);
-        setRescueAgents([]);
-        setFleetVehicles([]);
-        setGrievanceTickets([]);
-        setStatsData({
-          totalCalls: 0,
-          pendingCalls: 0,
-          activeDispatches: 0,
-          shelterDogsCount: 0,
-          medicallyClearedCount: 0,
-          lowStockAlertsCount: 0,
-        });
-        return;
-      }
-
-      const scopeParams = currentCentreId ? { rescue_centre_id: currentCentreId } : {};
+      // Rescue Centre Admin has operational access across ALL locations.
+      // Do not restrict queries to a single rescue_centre_id for rescue_centre_admin.
+      const scopeParams = !isRescueAdmin && currentCentreId ? { rescue_centre_id: currentCentreId } : {};
 
       const [
         dashRes,
         casesRes,
+        dispatchesRes,
         dogsRes,
-        _sheltersRes,
-        inventoryRes,
-        usersRes,
+        sheltersRes,
         vehiclesRes,
-        grievanceRes,
+        agentsAvailRes,
+        vehiclesAvailRes,
       ] = await Promise.allSettled([
         dashboardService.getRescueCentreDashboard(scopeParams),
-        rescueService.getRescueCases({ page_size: 500, ...scopeParams }),
+        rescueService.getAllRescueCases(scopeParams),
+        rescueService.getDispatches({ page_size: 500, ...scopeParams }),
         dogService.getAllDogs(scopeParams),
         shelterService.getShelters(scopeParams),
-        inventoryService.getInventory(),
-        userService.getUsers(scopeParams),
         vehicleService.getVehicles(scopeParams),
-        grievanceService.getGrievances(scopeParams),
+        rescueService.getAgentAvailability(scopeParams),
+        rescueService.getVehicleAvailability(scopeParams),
       ]);
 
       const dashData = dashRes.status === "fulfilled" ? dashRes.value?.data || dashRes.value || {} : {};
-      const casesList = casesRes.status === "fulfilled" ? unwrapList(casesRes.value) : [];
+      const casesList = casesRes.status === "fulfilled" ? unwrapList(casesRes.value?.data ?? casesRes.value) : [];
+      const dispatchesRawList = dispatchesRes.status === "fulfilled" ? unwrapList(dispatchesRes.value) : [];
       const dogsList = dogsRes.status === "fulfilled" ? unwrapList(dogsRes.value) : [];
-      const inventoryList = inventoryRes.status === "fulfilled" ? unwrapList(inventoryRes.value) : [];
-      const usersList = usersRes.status === "fulfilled" ? unwrapList(usersRes.value) : [];
+      const sheltersData = sheltersRes.status === "fulfilled" ? unwrapList(sheltersRes.value) : [];
       const vehiclesList = vehiclesRes.status === "fulfilled" ? unwrapList(vehiclesRes.value) : [];
-      const grievancesList = grievanceRes.status === "fulfilled" ? unwrapList(grievanceRes.value) : [];
+      const agentsAvailList = agentsAvailRes.status === "fulfilled" ? unwrapList(agentsAvailRes.value) : [];
+      const vehiclesAvailList = vehiclesAvailRes.status === "fulfilled" ? unwrapList(vehiclesAvailRes.value) : [];
 
-      setGrievanceTickets(grievancesList);
-
-      // Process Resource Availability
-      const agents = usersList.filter((u: any) => {
-        const r = normalizeRole(u);
-        return r === "rescue_agent" || r === "rescue_coordinator" || String(u.role || "").toLowerCase().includes("agent");
-      });
-      setRescueAgents(agents);
+      // Process Resource Availability from Backend Agent Availability API
+      setRescueAgents(agentsAvailList);
       setFleetVehicles(vehiclesList);
 
-      // 1. Process Recent Rescue Calls & Dispatches
+      // 1. Process Recent Rescue Calls
       const recentCalls: RescueCallRow[] = casesList.map((item: any) => {
         const rawStatus = String(item.status || "").toLowerCase();
         const dispatchObj = item.dispatch || null;
@@ -392,7 +286,7 @@ const RescueCentreAdminDashboard = () => {
         const displayStatus = (rawStatus === "verified" && hasAssignment) ? "accepted" : rawStatus;
 
         const stage = dispatchStage({ status: displayStatus, dispatch: dispatchObj });
-        const agents = dispatchAgentNames(dispatchObj);
+        const agentsInfo = dispatchAgentNames(dispatchObj);
         return {
           id: item.id || "",
           ticket: item.ticket_number || item.id || "-",
@@ -400,13 +294,28 @@ const RescueCentreAdminDashboard = () => {
           animal_count: item.animal_count ?? 1,
           status: displayStatus,
           dispatch_status: stage.label,
-          agent: agents.agents.length > 0 ? agents.agents.join(", ") : "-",
+          agent: agentsInfo.agents.length > 0 ? agentsInfo.agents.join(", ") : "-",
           created_at: item.created_at || "",
           rawItem: item,
         };
       });
 
-      // 2. Process Shelter Dog Master Intakes
+      // 2. Process Actual Dispatches Backend Data
+      const processedDispatches: DispatchRow[] = dispatchesRawList.map((d: any) => ({
+        id: String(d.id || d.dispatch_id || "-"),
+        case_id: String(d.case_id || d.request_id || d.rescue_case_id || "-"),
+        ticket_number: String(d.ticket_number || d.case_ticket || d.case_id || "-"),
+        vehicle_number: String(d.assigned_vehicle_number || d.vehicle_number || d.vehicle_id || "Unassigned"),
+        driver_name: String(d.assigned_driver_name || d.driver_name || d.driver_id || "Unassigned"),
+        agents: Array.isArray(d.assigned_agents)
+          ? d.assigned_agents.join(", ")
+          : String(d.assigned_agent_name || d.agent_name || d.agent_id || "Unassigned"),
+        status: String(d.status || "dispatched").toUpperCase(),
+        dispatch_time: String(d.dispatch_time || d.dispatched_at || d.created_at || ""),
+        rawItem: d,
+      }));
+
+      // 3. Process Shelter Dog Master Intakes
       const intakes: DogIntakeRow[] = dogsList
         .filter((d: any) => String(d.status || "").toLowerCase() === "rescued")
         .map((d: any) => ({
@@ -421,38 +330,44 @@ const RescueCentreAdminDashboard = () => {
           rawItem: d,
         }));
 
-      // 3. Calculate Aggregate Metrics
+      // 4. Calculate Operational Metrics
       const pendingCases = casesList.filter((c: any) => {
         const s = String(c.status || "").toLowerCase();
         return s === "pending" || s === "reported" || s === "requested";
       }).length;
 
-      const dispatchedCases = casesList.filter((c: any) => {
-        const s = String(c.status || "").toLowerCase();
-        return s === "dispatched" || s === "en_route" || s === "on_site";
-      }).length;
+      const activeDispatchesCount = dispatchesRawList.length > 0
+        ? dispatchesRawList.filter((d: any) => !["completed", "cancelled", "returned"].includes(String(d.status || "").toLowerCase())).length
+        : casesList.filter((c: any) => ["dispatched", "en_route", "on_site"].includes(String(c.status || "").toLowerCase())).length;
 
-      const clearedDogs = dogsList.filter((d: any) => {
-        const ms = String(d.medical_status || "").toLowerCase();
-        return ms.includes("clear") || ms.includes("fit") || Boolean(d.is_fit_for_adoption || d.is_adoptable);
-      }).length;
+      const availableAgents = agentsAvailList.length;
 
-      const lowStockItems = inventoryList.filter((inv: any) => {
-        const qty = Number(inv.quantity ?? inv.current_stock ?? 0);
-        const minQty = Number(inv.min_quantity ?? inv.reorder_level ?? 10);
-        return qty <= minQty;
-      }).length;
+      const availableVehicles = vehiclesAvailList.length > 0
+        ? vehiclesAvailList.length
+        : vehiclesList.filter((v: any) => getVehicleAvailability(v) === "Available").length;
+
+      let totalCap = 0;
+      let totalOcc = 0;
+      sheltersData.forEach((s: any) => {
+        totalCap += Number(s.total_capacity || s.capacity || 0);
+        totalOcc += Number(s.current_occupancy || s.occupancy || s.dog_count || 0);
+      });
 
       setRescueCalls(recentCalls);
+      setDispatchesList(processedDispatches);
       setDogIntakes(intakes);
 
       setStatsData({
         totalCalls: dashData.total_calls ?? dashData.totalCalls ?? casesList.length,
         pendingCalls: dashData.pending ?? dashData.pendingCases ?? pendingCases,
-        activeDispatches: dashData.dispatched ?? dashData.dispatchedCases ?? dispatchedCases,
-        shelterDogsCount: dogsList.length,
-        medicallyClearedCount: clearedDogs,
-        lowStockAlertsCount: lowStockItems,
+        activeDispatches: dashData.dispatched ?? dashData.dispatchedCases ?? activeDispatchesCount,
+        shelterDogsCount: intakes.length,
+        availableAgentsCount: availableAgents,
+        totalAgentsCount: agentsAvailList.length,
+        availableVehiclesCount: availableVehicles,
+        totalVehiclesCount: vehiclesList.length,
+        shelterOccupancy: totalOcc,
+        totalShelterCapacity: totalCap > 0 ? totalCap : 100,
       });
     } catch (err: any) {
       console.error("Rescue Centre Admin Dashboard Error:", err);
@@ -486,16 +401,40 @@ const RescueCentreAdminDashboard = () => {
       value: loading ? "..." : String(statsData.activeDispatches),
       trend: "Units En-Route / On-Site",
       color: "#16A34A",
-      icon: <FaUsers />,
+      icon: <FaTruck />,
       onClick: () => navigate("/rescue-dispatch"),
     },
     {
-      title: "Shelter Intakes",
-      value: loading ? "..." : String(dogIntakes.length),
-      trend: `${statsData.medicallyClearedCount} Medically Cleared`,
+      title: "Shelter Dog Intakes",
+      value: loading ? "..." : String(statsData.shelterDogsCount),
+      trend: "Post-Rescue Handover",
       color: "#1E3A8A",
       icon: <FaPaw />,
       onClick: () => setActiveTab("intake"),
+    },
+    {
+      title: "Available Agents",
+      value: loading ? "..." : `${statsData.availableAgentsCount} / ${statsData.totalAgentsCount}`,
+      trend: "Ready for Dispatch",
+      color: "#16A34A",
+      icon: <FaUsers />,
+      onClick: () => setActiveTab("agents"),
+    },
+    {
+      title: "Fleet Vehicles Available",
+      value: loading ? "..." : `${statsData.availableVehiclesCount} / ${statsData.totalVehiclesCount}`,
+      trend: "Rescue Vans Ready",
+      color: "#16A34A",
+      icon: <FaTruck />,
+      onClick: () => setActiveTab("vehicles"),
+    },
+    {
+      title: "Shelter Occupancy",
+      value: loading ? "..." : `${statsData.shelterOccupancy} / ${statsData.totalShelterCapacity}`,
+      trend: "Kennel Capacity",
+      color: "#1E3A8A",
+      icon: <FaHome />,
+      onClick: () => navigate("/shelters"),
     },
   ];
 
@@ -526,6 +465,29 @@ const RescueCentreAdminDashboard = () => {
       header: "Reported At",
       render: (v: string) => (v ? formatDateTime(v) : "-"),
     },
+  ];
+
+  const dispatchColumns = [
+    { key: "id", header: "Dispatch ID", render: (v: string) => <span style={{ fontFamily: "monospace", fontSize: "11px" }}>{v}</span> },
+    { key: "ticket_number", header: "Rescue Ticket #" },
+    { key: "vehicle_number", header: "Vehicle Assigned" },
+    { key: "driver_name", header: "Driver / Lead Agent" },
+    { key: "agents", header: "Dispatch Team" },
+    {
+      key: "status",
+      header: "Dispatch Stage",
+      render: (v: string) => {
+        const s = String(v || "").toLowerCase();
+        const isCompleted = s === "completed";
+        const isEnRoute = s.includes("route") || s.includes("dispatch");
+        return (
+          <span style={badgeStyle(isCompleted ? "#ECFDF5" : isEnRoute ? "#EFF6FF" : "#FFFBEB", isCompleted ? "#15803D" : isEnRoute ? "#1E3A8A" : "#D97706")}>
+            {v}
+          </span>
+        );
+      },
+    },
+    { key: "dispatch_time", header: "Dispatched At", render: (v: string) => (v ? formatDateTime(v) : "—") },
   ];
 
   const intakeColumns = [
@@ -570,32 +532,13 @@ const RescueCentreAdminDashboard = () => {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
           <div>
             <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>
-              Rescue Centre Operations & Lifecycle Management Portal
+              Rescue Centre Operations &amp; Lifecycle Management Portal
             </h1>
             <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "13px" }}>
-              Complete operational monitoring: rescue cases, agent dispatch, medical intake, shelter capacity & inventory alerts.
+              Operational monitoring: rescue cases, dispatch management, dog master profile intake, shelter capacity &amp; fleet readiness.
             </p>
           </div>
           <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-            <button
-              type="button"
-              onClick={() => setIsRegisterIntakeModalOpen(true)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "9px 16px",
-                borderRadius: "10px",
-                border: "none",
-                background: "#10B981",
-                color: "#FFF",
-                fontSize: "13px",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              <FaPaw /> + Log Animal Intake
-            </button>
             <button
               type="button"
               onClick={fetchDashboardData}
@@ -625,14 +568,13 @@ const RescueCentreAdminDashboard = () => {
         </div>
       )}
 
-      {/* Quick Action Navigation Cards */}
+      {/* Quick Action Navigation Cards — Scoped to Rescue Centre Admin Workspace */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px", marginBottom: "20px" }}>
         <QuickActionCard icon={<FaAmbulance />} title="Rescue Requests" subtitle="Incidents & Triage" color="#1E3A8A" onClick={() => navigate("/rescue-requests")} />
-        <QuickActionCard icon={<FaUsers />} title="Dispatch Unit" subtitle="Agent Fleet" color="#16A34A" onClick={() => navigate("/rescue-dispatch")} />
-        <QuickActionCard icon={<FaPaw />} title="Dog Management" subtitle="Dog Master Profiles" color="#1E3A8A" onClick={() => navigate("/pets")} />
-        <QuickActionCard icon={<FaHome />} title="Shelter Facilities" subtitle="Kennel Capacity" color="#1E3A8A" onClick={() => navigate("/shelters")} />
-        <QuickActionCard icon={<FaPaw />} title="Shelter Dogs" subtitle="Post-Rescue Handover" color="#15803D" onClick={() => navigate("/shelter-dogs")} />
-        <QuickActionCard icon={<FaStethoscope />} title="Medical Suite" subtitle="Medical Records" color="#1E3A8A" onClick={() => navigate("/medical-records")} />
+        <QuickActionCard icon={<FaTruck />} title="Dispatch Management" subtitle="Fleet & Field Units" color="#16A34A" onClick={() => navigate("/rescue-dispatch")} />
+        <QuickActionCard icon={<FaPaw />} title="Dog Profile" subtitle="Dog Records" color="#1E3A8A" onClick={() => navigate("/pets")} />
+        <QuickActionCard icon={<FaHome />} title="Shelter Management" subtitle="Kennel Capacity & Care" color="#1E3A8A" onClick={() => navigate("/shelters")} />
+        <QuickActionCard icon={<FaTruck />} title="Vehicle Fleet" subtitle="Rescue Ambulance Fleet" color="#16A34A" onClick={() => navigate("/vehicles")} />
         <QuickActionCard icon={<FaChartBar />} title="Reports & Analytics" subtitle="Operational Insights" color="#1E3A8A" onClick={() => navigate("/reports")} />
       </div>
 
@@ -643,7 +585,7 @@ const RescueCentreAdminDashboard = () => {
         ))}
       </div>
 
-      {/* MULTI-TAB LIFECYCLE MONITORING QUEUE */}
+      {/* MULTI-TAB RESCUE CENTRE OPERATIONAL MONITORING QUEUE */}
       <div className="soft-card" style={{ padding: "20px", marginBottom: "24px" }}>
         {/* Source Navigation Tabs */}
         <div style={{ borderBottom: "2px solid #E2E8F0", paddingBottom: "12px", marginBottom: "16px" }}>
@@ -665,7 +607,27 @@ const RescueCentreAdminDashboard = () => {
                 gap: "8px",
               }}
             >
-              <FaAmbulance /> Rescue Requests & Dispatch Stage ({rescueCalls.length})
+              <FaAmbulance /> Rescue Requests ({rescueCalls.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("dispatches")}
+              style={{
+                padding: "9px 16px",
+                borderRadius: "10px",
+                border: activeTab === "dispatches" ? "2px solid #16A34A" : "1px solid #CBD5E1",
+                background: activeTab === "dispatches" ? "#ECFDF5" : "#FFFFFF",
+                color: activeTab === "dispatches" ? "#15803D" : "#475569",
+                fontWeight: 700,
+                fontSize: "13px",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              <FaTruck /> Active Dispatches ({dispatchesList.length})
             </button>
 
             <button
@@ -685,7 +647,7 @@ const RescueCentreAdminDashboard = () => {
                 gap: "8px",
               }}
             >
-              <FaPaw /> Shelter Dog Master Intakes ({dogIntakes.length})
+              <FaPaw /> Shelter Dog Intakes ({dogIntakes.length})
             </button>
 
             <button
@@ -725,38 +687,18 @@ const RescueCentreAdminDashboard = () => {
                 gap: "8px",
               }}
             >
-              <FaAmbulance /> Rescue Vehicles &amp; Fleet ({fleetVehicles.length})
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab("complaints")}
-              style={{
-                padding: "9px 16px",
-                borderRadius: "10px",
-                border: activeTab === "complaints" ? "2px solid #DC2626" : "1px solid #CBD5E1",
-                background: activeTab === "complaints" ? "#FEF2F2" : "#FFFFFF",
-                color: activeTab === "complaints" ? "#991B1B" : "#475569",
-                fontWeight: 700,
-                fontSize: "13px",
-                cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "8px",
-              }}
-            >
-              <FaExclamationTriangle /> Complaints &amp; Escalations ({grievanceTickets.length})
+              <FaTruck /> Vehicle Fleet ({fleetVehicles.length})
             </button>
           </div>
         </div>
 
-        {/* TAB 1: RESCUE REQUESTS & DISPATCH */}
+        {/* TAB 1: RESCUE REQUESTS */}
         {activeTab === "rescues" && (
           <DataTable
             columns={rescueColumns}
             data={rescueCalls}
             loading={loading}
-            emptyMessage="No recent rescue requests logged."
+            emptyMessage="No rescue requests found."
             onRowClick={(row: RescueCallRow) => {
               const detailRow = mapRescueCallRowToDetail(row);
               setSelectedCase(detailRow);
@@ -789,7 +731,46 @@ const RescueCentreAdminDashboard = () => {
           />
         )}
 
-        {/* TAB 2: SHELTER DOG MASTER INTAKES */}
+        {/* TAB 2: ACTIVE DISPATCHES */}
+        {activeTab === "dispatches" && (
+          <DataTable
+            columns={dispatchColumns}
+            data={dispatchesList}
+            loading={loading}
+            emptyMessage="No active vehicle dispatches found for this centre."
+            onRowClick={(row: DispatchRow) => {
+              setSelectedDispatch(row);
+              setIsDispatchModalOpen(true);
+            }}
+            renderRowActions={(row: DispatchRow) => (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedDispatch(row);
+                  setIsDispatchModalOpen(true);
+                }}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "6px",
+                  border: "1px solid #16A34A",
+                  background: "#ECFDF5",
+                  color: "#15803D",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
+                <FaEye /> Dispatch Details
+              </button>
+            )}
+          />
+        )}
+
+        {/* TAB 3: SHELTER DOG MASTER INTAKES */}
         {activeTab === "intake" && (
           <DataTable
             columns={intakeColumns}
@@ -867,7 +848,7 @@ const RescueCentreAdminDashboard = () => {
             ]}
             data={rescueAgents}
             loading={loading}
-            emptyMessage="No registered rescue agents found."
+            emptyMessage="No registered rescue agents found for this centre."
             onRowClick={(row: any) => {
               setSelectedAgent(row);
               setIsAgentModalOpen(true);
@@ -945,7 +926,7 @@ const RescueCentreAdminDashboard = () => {
             ]}
             data={fleetVehicles}
             loading={loading}
-            emptyMessage="No vehicles registered in fleet."
+            emptyMessage="No vehicles registered in fleet for this centre."
             onRowClick={(row: any) => {
               setSelectedVehicle(row);
               setIsVehicleModalOpen(true);
@@ -973,74 +954,6 @@ const RescueCentreAdminDashboard = () => {
                 }}
               >
                 <FaEye /> View Details
-              </button>
-            )}
-          />
-        )}
-
-        {/* TAB 6: COMPLAINTS & ESCALATIONS */}
-        {activeTab === "complaints" && (
-          <DataTable
-            columns={[
-              { key: "ticket_number", header: "Ticket #", render: (_v: string, r: any) => r.ticket_number || r.id || "—" },
-              { key: "title", header: "Complaint Title / Issue", render: (_v: string, r: any) => r.title || r.subject || "Operational Complaint" },
-              { key: "reporter_name", header: "Reporter / Contact", render: (_v: string, r: any) => r.reporter_name || r.reporter || r.email || "Public Feedback" },
-              {
-                key: "priority",
-                header: "Priority",
-                render: (val: string) => {
-                  const p = String(val || "medium").toLowerCase();
-                  return (
-                    <span style={{ padding: "2px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: 700, background: p === "urgent" || p === "high" ? "#FEF2F2" : "#FFFBEB", color: p === "urgent" || p === "high" ? "#DC2626" : "#D97706" }}>
-                      {p.toUpperCase()}
-                    </span>
-                  );
-                },
-              },
-              {
-                key: "status",
-                header: "Status",
-                render: (val: string) => {
-                  const s = String(val || "open").toLowerCase();
-                  return (
-                    <span style={{ padding: "2px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: 700, background: s === "resolved" ? "#ECFDF5" : s === "escalated" ? "#FEF2F2" : "#EFF6FF", color: s === "resolved" ? "#15803D" : s === "escalated" ? "#DC2626" : "#1E3A8A" }}>
-                      {s.toUpperCase()}
-                    </span>
-                  );
-                },
-              },
-              { key: "created_at", header: "Date Filed", render: (v: string) => (v ? formatDateTime(v) : "—") },
-            ]}
-            data={grievanceTickets}
-            loading={loading}
-            emptyMessage="No complaints or escalation tickets logged for this centre."
-            onRowClick={(row: any) => {
-              setSelectedGrievance(row);
-              setIsGrievanceModalOpen(true);
-            }}
-            renderRowActions={(row: any) => (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedGrievance(row);
-                  setIsGrievanceModalOpen(true);
-                }}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: "6px",
-                  border: "1px solid #DC2626",
-                  background: "#FEF2F2",
-                  color: "#991B1B",
-                  fontSize: "12px",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
-              >
-                <FaExclamationTriangle /> Manage Escalation
               </button>
             )}
           />
@@ -1121,6 +1034,20 @@ const RescueCentreAdminDashboard = () => {
               </div>
             </div>
 
+            {/* Rescue Location Map Section */}
+            <div>
+              <strong style={{ display: "block", marginBottom: "8px", fontSize: "14px", color: "#0F172A" }}>
+                <FaMapMarkerAlt size={14} style={{ marginRight: "6px", color: "#EF4444" }} /> Rescue Location &amp; Map
+              </strong>
+              <LocationMapPreview
+                latitude={selectedCase.latitude ?? (selectedCase.raw?.latitude as any)}
+                longitude={selectedCase.longitude ?? (selectedCase.raw?.longitude as any)}
+                locationAddress={selectedCase.location}
+                locationLandmark={selectedCase.location_landmark ?? (selectedCase.raw?.location_landmark as any) ?? (selectedCase.raw?.landmark as any)}
+                height="220px"
+              />
+            </div>
+
             {/* Reporter Notes */}
             {Boolean(selectedCase.raw?.reporter_notes) && (
               <div style={{ background: "#F1F5F9", padding: "12px 14px", borderRadius: "10px", border: "1px solid #CBD5E1" }}>
@@ -1128,16 +1055,6 @@ const RescueCentreAdminDashboard = () => {
                   <FaInfoCircle size={12} style={{ marginRight: "6px" }} /> Reporter Description / Notes:
                 </strong>
                 <span style={{ fontSize: "13px", color: "#475569" }}>{String(selectedCase.raw.reporter_notes)}</span>
-              </div>
-            )}
-
-            {/* Rejection Rationale */}
-            {Boolean(selectedCase.rejection_rationale) && (
-              <div style={{ background: "#FEF2F2", padding: "12px 14px", borderRadius: "10px", border: "1px solid #FCA5A5" }}>
-                <strong style={{ color: "#DC2626", display: "block", marginBottom: "4px", fontSize: "13px" }}>
-                  <FaExclamationTriangle size={12} style={{ marginRight: "6px" }} /> Rejection Rationale:
-                </strong>
-                <span style={{ fontSize: "13px", color: "#991B1B" }}>{selectedCase.rejection_rationale}</span>
               </div>
             )}
 
@@ -1174,7 +1091,58 @@ const RescueCentreAdminDashboard = () => {
         )}
       </Modal>
 
-
+      {/* Dispatch Detail Modal */}
+      <Modal
+        isOpen={isDispatchModalOpen}
+        onClose={() => setIsDispatchModalOpen(false)}
+        title={`Dispatch Operational Details — ${selectedDispatch?.ticket_number || selectedDispatch?.id || "Dispatch"}`}
+        size="lg"
+        footer={
+          <button
+            onClick={() => setIsDispatchModalOpen(false)}
+            style={{ padding: "8px 16px", background: "#64748B", color: "#FFF", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
+          >
+            Close
+          </button>
+        }
+      >
+        {selectedDispatch && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", background: "#F8FAFC", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+              <div>
+                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Dispatch ID</span>
+                <strong style={{ fontFamily: "monospace" }}>{selectedDispatch.id}</strong>
+              </div>
+              <div>
+                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Target Rescue Case Ticket</span>
+                <strong>{selectedDispatch.ticket_number}</strong>
+              </div>
+              <div>
+                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Assigned Vehicle</span>
+                <strong>{selectedDispatch.vehicle_number}</strong>
+              </div>
+              <div>
+                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Lead Driver / Agent</span>
+                <strong>{selectedDispatch.driver_name}</strong>
+              </div>
+              <div>
+                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Dispatch Team</span>
+                <strong>{selectedDispatch.agents}</strong>
+              </div>
+              <div>
+                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Dispatch Status</span>
+                <span style={{ padding: "2px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: 800, background: "#ECFDF5", color: "#15803D" }}>
+                  {selectedDispatch.status}
+                </span>
+              </div>
+              <div>
+                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Dispatch Time</span>
+                <strong>{selectedDispatch.dispatch_time ? formatDateTime(selectedDispatch.dispatch_time) : "—"}</strong>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Rescue Agent Detail Modal */}
       <Modal
@@ -1193,7 +1161,6 @@ const RescueCentreAdminDashboard = () => {
       >
         {selectedAgent && (
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {/* Operational Information Grid */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", background: "#F8FAFC", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
               <div>
                 <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Agent Name</span>
@@ -1227,30 +1194,6 @@ const RescueCentreAdminDashboard = () => {
                   {selectedAgent.is_active !== false ? "ACTIVE AGENT" : "INACTIVE"}
                 </span>
               </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Verification Status</span>
-                <strong>{selectedAgent.is_verified ? "Verified" : "Pending"}</strong>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>MFA Enabled</span>
-                <strong>{selectedAgent.mfa_enabled ? "Yes" : "No"}</strong>
-              </div>
-            </div>
-
-            {/* Account Information Metadata Section */}
-            <div style={{ background: "#F1F5F9", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
-              <strong style={{ color: "#475569", fontSize: "13px", display: "block", marginBottom: "8px" }}>
-                Account Information
-              </strong>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px", fontSize: "12px", color: "#475569" }}>
-                <div><span>User ID:</span> <strong style={{ fontFamily: "monospace" }}>{selectedAgent.id}</strong></div>
-                {selectedAgent.created_at && (
-                  <div><span>Created At:</span> <strong>{formatDateTime(selectedAgent.created_at)}</strong></div>
-                )}
-                {selectedAgent.updated_at && (
-                  <div><span>Updated At:</span> <strong>{formatDateTime(selectedAgent.updated_at)}</strong></div>
-                )}
-              </div>
             </div>
           </div>
         )}
@@ -1273,7 +1216,6 @@ const RescueCentreAdminDashboard = () => {
       >
         {selectedVehicle && (
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {/* Operational Information Grid */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", background: "#F8FAFC", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
               <div>
                 <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Vehicle / Registration Number</span>
@@ -1307,36 +1249,6 @@ const RescueCentreAdminDashboard = () => {
                 <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Assigned Driver / Rescue Agent</span>
                 <strong>{getVehicleDriver(selectedVehicle)}</strong>
               </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Mileage</span>
-                <strong>{selectedVehicle.mileage !== undefined && selectedVehicle.mileage !== null ? `${selectedVehicle.mileage} miles` : "—"}</strong>
-              </div>
-            </div>
-
-            {/* Vehicle & Compliance Information Section */}
-            <div style={{ background: "#FFF", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
-              <strong style={{ color: "#475569", fontSize: "13px", display: "block", marginBottom: "8px" }}>
-                Vehicle &amp; Compliance Information
-              </strong>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px", fontSize: "12px", color: "#475569" }}>
-                <div><span>Insurance Provider:</span> <strong>{getSafeVal(selectedVehicle.insurance_provider || selectedVehicle.insuranceProvider)}</strong></div>
-                <div><span>Policy Number:</span> <strong>{getSafeVal(selectedVehicle.insurance_policy_number || selectedVehicle.insurancePolicyNumber)}</strong></div>
-                <div><span>Insurance Expiry:</span> <strong>{selectedVehicle.insurance_expiry ? formatDateTime(String(selectedVehicle.insurance_expiry)) : "—"}</strong></div>
-                <div><span>Contact Phone:</span> <strong>{getSafeVal(selectedVehicle.insurance_contact_phone || selectedVehicle.insuranceContactPhone)}</strong></div>
-              </div>
-            </div>
-
-            {/* System Metadata Section */}
-            <div style={{ background: "#F1F5F9", padding: "10px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px", fontSize: "11px", color: "#64748B" }}>
-                <div><span>System ID:</span> <strong style={{ fontFamily: "monospace" }}>{selectedVehicle.id}</strong></div>
-                {selectedVehicle.created_at && (
-                  <div><span>Created At:</span> <strong>{formatDateTime(String(selectedVehicle.created_at))}</strong></div>
-                )}
-                {selectedVehicle.updated_at && (
-                  <div><span>Updated At:</span> <strong>{formatDateTime(String(selectedVehicle.updated_at))}</strong></div>
-                )}
-              </div>
             </div>
           </div>
         )}
@@ -1359,7 +1271,6 @@ const RescueCentreAdminDashboard = () => {
       >
         {selectedIntake && (
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {/* Operational Intake Information */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", background: "#F8FAFC", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
               <div>
                 <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Dog Name</span>
@@ -1394,226 +1305,8 @@ const RescueCentreAdminDashboard = () => {
                 </span>
               </div>
             </div>
-
-            {/* Additional Info from rawItem if exists */}
-            <div style={{ background: "#FFF", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
-              <strong style={{ color: "#475569", fontSize: "13px", display: "block", marginBottom: "8px" }}>
-                Dog Details
-              </strong>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px", fontSize: "12px", color: "#475569" }}>
-                <div><span>Breed:</span> <strong>{getSafeVal(selectedIntake.rawItem?.breed)}</strong></div>
-                <div><span>Gender:</span> <strong style={{ textTransform: "capitalize" }}>{getSafeVal(selectedIntake.rawItem?.gender)}</strong></div>
-                <div><span>Estimated Age:</span> <strong>{getSafeVal(selectedIntake.rawItem?.estimated_age || selectedIntake.rawItem?.age)}</strong></div>
-                <div><span>Weight:</span> <strong>{selectedIntake.rawItem?.weight ? `${selectedIntake.rawItem.weight} kg` : "—"}</strong></div>
-              </div>
-            </div>
-
-            {/* System Metadata Section */}
-            <div style={{ background: "#F1F5F9", padding: "10px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px", fontSize: "11px", color: "#64748B" }}>
-                <div><span>Record ID:</span> <strong style={{ fontFamily: "monospace" }}>{selectedIntake.id}</strong></div>
-                {Boolean((selectedIntake.rawItem as any)?.created_at) && (
-                  <div><span>Created At:</span> <strong>{formatDateTime(String((selectedIntake.rawItem as any).created_at))}</strong></div>
-                )}
-                {Boolean((selectedIntake.rawItem as any)?.updated_at) && (
-                  <div><span>Updated At:</span> <strong>{formatDateTime(String((selectedIntake.rawItem as any).updated_at))}</strong></div>
-                )}
-              </div>
-            </div>
           </div>
         )}
-      </Modal>
-
-      {/* Grievance Complaint & Escalation Modal */}
-      <Modal
-        isOpen={isGrievanceModalOpen}
-        onClose={() => setIsGrievanceModalOpen(false)}
-        title={`Complaint / Escalation Ticket — ${selectedGrievance?.ticket_number || selectedGrievance?.id || "Details"}`}
-        size="lg"
-      >
-        {selectedGrievance && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div style={{ background: "#F8FAFC", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", fontSize: "13px" }}>
-                <div><span style={{ color: "#64748B", display: "block" }}>Issue / Title</span><strong>{selectedGrievance.title || "Operational Complaint"}</strong></div>
-                <div><span style={{ color: "#64748B", display: "block" }}>Reporter</span><strong>{selectedGrievance.reporter_name || "Public Feedback"}</strong></div>
-                <div><span style={{ color: "#64748B", display: "block" }}>Priority</span><strong style={{ textTransform: "uppercase", color: "#DC2626" }}>{selectedGrievance.priority || "Medium"}</strong></div>
-                <div><span style={{ color: "#64748B", display: "block" }}>Status</span><strong style={{ textTransform: "uppercase", color: "#1E3A8A" }}>{selectedGrievance.status || "Open"}</strong></div>
-              </div>
-              {selectedGrievance.description && (
-                <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid #E2E8F0", fontSize: "13px", color: "#334155" }}>
-                  <strong>Description:</strong> {selectedGrievance.description}
-                </div>
-              )}
-            </div>
-
-            {/* Quick Status Action Buttons */}
-            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={() => handleUpdateGrievanceStatusSubmit("in_progress")}
-                style={{ padding: "8px 14px", borderRadius: "8px", border: "1px solid #1E3A8A", background: "#EFF6FF", color: "#1E3A8A", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
-              >
-                Mark In Progress
-              </button>
-              <button
-                type="button"
-                onClick={() => handleUpdateGrievanceStatusSubmit("resolved")}
-                style={{ padding: "8px 14px", borderRadius: "8px", border: "1px solid #16A34A", background: "#ECFDF5", color: "#15803D", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
-              >
-                Mark Resolved
-              </button>
-            </div>
-
-            {/* Escalation Form */}
-            <form onSubmit={handleEscalateGrievanceSubmit} style={{ marginTop: "12px", background: "#FEF2F2", padding: "16px", borderRadius: "12px", border: "1px solid #FCA5A5", display: "flex", flexDirection: "column", gap: "12px" }}>
-              <div style={{ fontSize: "14px", fontWeight: 700, color: "#991B1B" }}>
-                ⚠️ Escalate Ticket to Super Administrator
-              </div>
-              <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#7F1D1D", marginBottom: "4px" }}>
-                  Escalation Reason &amp; Operational Context *
-                </label>
-                <textarea
-                  rows={3}
-                  required
-                  placeholder="Describe why top-level Super Admin intervention is required..."
-                  value={escalateReason}
-                  onChange={(e) => setEscalateReason(e.target.value)}
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #FCA5A5", fontSize: "13px" }}
-                />
-              </div>
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button
-                  type="submit"
-                  disabled={isEscalating}
-                  style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#DC2626", color: "#FFFFFF", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
-                >
-                  {isEscalating ? "Escalating..." : "Submit Escalation"}
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-      </Modal>
-
-      {/* Centre Profile & Configuration Modal */}
-      <Modal
-        isOpen={isCentreConfigOpen}
-        onClose={() => setIsCentreConfigOpen(false)}
-        title="Rescue Centre Profile & Configuration"
-      >
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            addToast("Centre operational configuration updated successfully!", "success");
-            setIsCentreConfigOpen(false);
-          }}
-          style={{ display: "flex", flexDirection: "column", gap: "14px" }}
-        >
-          <div>
-            <label style={{ display: "block", fontSize: "12.5px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>Centre Name</label>
-            <input type="text" value={centreForm.name} onChange={(e) => setCentreForm({ ...centreForm, name: e.target.value })} style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px" }} required />
-          </div>
-          <div>
-            <label style={{ display: "block", fontSize: "12.5px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>Emergency Phone Hotline</label>
-            <input type="text" value={centreForm.phone} onChange={(e) => setCentreForm({ ...centreForm, phone: e.target.value })} style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px" }} required />
-          </div>
-          <div>
-            <label style={{ display: "block", fontSize: "12.5px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>Operating Hours</label>
-            <input type="text" value={centreForm.operating_hours} onChange={(e) => setCentreForm({ ...centreForm, operating_hours: e.target.value })} style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px" }} required />
-          </div>
-          <div>
-            <label style={{ display: "block", fontSize: "12.5px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>Operating Address</label>
-            <input type="text" value={centreForm.address} onChange={(e) => setCentreForm({ ...centreForm, address: e.target.value })} style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px" }} required />
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "8px" }}>
-            <button type="button" onClick={() => setIsCentreConfigOpen(false)} style={{ padding: "8px 14px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", fontSize: "12.5px" }}>Cancel</button>
-            <button type="submit" style={{ padding: "8px 14px", borderRadius: "6px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, fontSize: "12.5px", cursor: "pointer" }}>Save Config</button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Rescued Animal Intake Registration Modal */}
-      <Modal
-        isOpen={isRegisterIntakeModalOpen}
-        onClose={() => setIsRegisterIntakeModalOpen(false)}
-        title="Register Rescued Animal Arrival & Shelter Intake"
-      >
-        <form onSubmit={handleRegisterIntakeSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-          <div>
-            <label style={{ display: "block", fontSize: "12.5px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
-              Animal / Dog Name *
-            </label>
-            <input
-              type="text"
-              value={registerIntakeForm.name}
-              onChange={(e) => setRegisterIntakeForm({ ...registerIntakeForm, name: e.target.value })}
-              placeholder="e.g. Buddy (or Rescue Tag Name)"
-              style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px" }}
-              required
-            />
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            <div>
-              <label style={{ display: "block", fontSize: "12.5px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
-                Breed / Description
-              </label>
-              <input
-                type="text"
-                value={registerIntakeForm.breed}
-                onChange={(e) => setRegisterIntakeForm({ ...registerIntakeForm, breed: e.target.value })}
-                placeholder="e.g. Mixed Breed / Indie"
-                style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px" }}
-              />
-            </div>
-            <div>
-              <label style={{ display: "block", fontSize: "12.5px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
-                Gender
-              </label>
-              <select
-                value={registerIntakeForm.gender}
-                onChange={(e) => setRegisterIntakeForm({ ...registerIntakeForm, gender: e.target.value })}
-                style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px" }}
-              >
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="unknown">Unknown</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label style={{ display: "block", fontSize: "12.5px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
-              Intake Notes & Physical Condition
-            </label>
-            <textarea
-              rows={3}
-              value={registerIntakeForm.notes}
-              onChange={(e) => setRegisterIntakeForm({ ...registerIntakeForm, notes: e.target.value })}
-              placeholder="Initial physical assessment notes upon arrival..."
-              style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px", resize: "vertical" }}
-            />
-          </div>
-
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "8px" }}>
-            <button
-              type="button"
-              onClick={() => setIsRegisterIntakeModalOpen(false)}
-              style={{ padding: "8px 14px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", fontSize: "12.5px" }}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmittingIntake}
-              style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: "12.5px", cursor: "pointer" }}
-            >
-              {isSubmittingIntake ? "Registering..." : "Submit Animal Intake"}
-            </button>
-          </div>
-        </form>
       </Modal>
     </div>
   );

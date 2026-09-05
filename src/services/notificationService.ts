@@ -117,8 +117,68 @@ export const isInventoryNotification = (notif: NotificationItem): boolean => {
 };
 
 /**
+ * Check if a notification is related to rescue operations
+ */
+export const isRescueNotification = (notif: NotificationItem): boolean => {
+  const type = String(notif.type || "").toLowerCase().trim();
+  const eventType = String(notif.event_type || "").toLowerCase().trim();
+  const notifData = notif.data || {};
+  const moduleName = String(
+    notifData.module || notifData.category || (notif as any).module || (notif as any).category || ""
+  ).toLowerCase().trim();
+
+  // Known rescue operation types, event types, or modules
+  const rescueIdentifiers = new Set([
+    "rescue",
+    "emergency",
+    "dispatch",
+    "vehicle",
+    "rescue_request",
+    "rescue_verification",
+    "rescue_assignment",
+    "rescue_completion",
+    "rescue_escalation",
+    "rescue_failure",
+    "shelter_handover",
+  ]);
+
+  if (rescueIdentifiers.has(type) || rescueIdentifiers.has(eventType) || rescueIdentifiers.has(moduleName)) {
+    return true;
+  }
+
+  // Prefix matching for rescue_, dispatch_, emergency_
+  if (
+    type.startsWith("rescue") ||
+    type.startsWith("dispatch") ||
+    type.startsWith("emergency") ||
+    eventType.startsWith("rescue") ||
+    eventType.startsWith("dispatch") ||
+    eventType.startsWith("emergency") ||
+    moduleName.startsWith("rescue") ||
+    moduleName.startsWith("dispatch") ||
+    moduleName.startsWith("emergency")
+  ) {
+    return true;
+  }
+
+  // Metadata check for explicit rescue links
+  if (
+    Boolean(notifData.rescue_id) ||
+    Boolean(notifData.rescueId) ||
+    Boolean(notifData.dispatch_id) ||
+    Boolean(notifData.dispatchId) ||
+    Boolean(notifData.is_rescue)
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+/**
  * Filter notifications based on role and shelter operational assignment.
  * Enforces strict recipient rules:
+ * - Rescue Centre Admin MUST receive ONLY rescue-operation-related notifications.
  * - Inventory Low Stock alerts MUST NOT be sent/displayed to Vets, Rescue Team, or Adopter/Public users.
  * - Primary recipients: Shelter Manager for the specific shelter, Inventory Manager, Admin.
  * - One shelter's inventory alerts MUST NOT be exposed to another shelter's manager.
@@ -129,6 +189,11 @@ export const shouldUserReceiveNotification = (
   role: UserRole | null
 ): boolean => {
   if (!role) return false;
+
+  // Strict role scoping for Rescue Centre Admin: only rescue-operation-related notifications
+  if (role === "rescue_centre_admin") {
+    return isRescueNotification(notif);
+  }
 
   if (isInventoryNotification(notif)) {
     // 1. Role-based gating:
@@ -197,21 +262,30 @@ export const deduplicateNotifications = (list: NotificationItem[]): Notification
 /**
  * Transform backend notification response to frontend NotificationItem format
  */
-const transformNotification = (notif: NotificationResponse): NotificationItem => {
+const transformNotification = (notif: NotificationResponse & Record<string, any>): NotificationItem => {
   const createdTime = notif.created_at
     ? formatDateTime(notif.created_at)
     : "Just now";
 
+  const rawData = typeof notif.data === "object" && notif.data !== null ? notif.data : {};
+  const mergedData = notif.action_url
+    ? { ...rawData, action_url: notif.action_url }
+    : Object.keys(rawData).length > 0
+    ? rawData
+    : undefined;
+
   return {
     id: notif.id,
     title: notif.title,
-    message: notif.body,
-    type: (notif.notification_type || "system") as NotificationItem["type"],
-    read: Boolean(notif.is_read),
+    message: notif.body || notif.message || "",
+    type: (notif.notification_type || notif.type || "system") as NotificationItem["type"],
+    read: Boolean(notif.is_read ?? notif.read),
     created_at: notif.created_at,
     user_id: notif.user_id,
     time: createdTime,
-    data: notif.action_url ? { action_url: notif.action_url } : undefined,
+    event_type: notif.event_type || notif.trigger || notif.action,
+    role_required: notif.role_required || notif.target_roles,
+    data: mergedData,
   };
 };
 

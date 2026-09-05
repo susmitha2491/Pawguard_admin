@@ -524,11 +524,6 @@ function DataTable<T = any>({
         >
           <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", color: "#64748B" }}>
             <span>
-              Showing <strong>{totalRecords > 0 ? (activePage - 1) * pageSize + 1 : 0}</strong> to{" "}
-              <strong>{Math.min(activePage * pageSize, totalRecords)}</strong> of <strong>{totalRecords}</strong> records
-            </span>
-            <span style={{ color: "#CBD5E1" }}>•</span>
-            <span>
               Page <strong>{activePage}</strong> of <strong>{totalPages}</strong>
             </span>
           </div>

@@ -181,6 +181,14 @@ export const modulePermissionKeys = (moduleKey: string): string[] =>
 /** Backend module keys → frontend `PERMISSION_MODULES` keys. */
 const MODULE_ALIASES: Record<string, string> = {
   animal: "animals",
+  shelter: "shelters",
+  shelters: "shelters",
+  shelter_facility: "shelters",
+  shelter_facilities: "shelters",
+  "shelter-facility": "shelters",
+  "shelter-facilities": "shelters",
+  facility: "shelters",
+  facilities: "shelters",
   adoption: "adoptions",
   foster: "foster_placements",
   fosters: "foster_placements",

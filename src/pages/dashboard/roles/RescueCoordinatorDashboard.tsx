@@ -26,10 +26,26 @@ import volunteerService from "../../../services/volunteerService";
 import { useDataSync, notifyDataChanged } from "../../../utils/dataSync";
 import { rescueStatusBadge } from "../../../utils/rescueStatus.tsx";
 import { formatDateTime } from "../../../utils/dateUtils";
+import LocationMapPreview from "../../../components/common/LocationMapPreview";
 
 // ── Transport volunteer helpers ──
-const isTransportVol = (vol: any): boolean =>
-  String(vol?.preferred_role || vol?.volunteer_type || vol?.applied_role || "").toLowerCase().includes("transport");
+const isTransportVol = (vol: any): boolean => {
+  if (!vol || typeof vol !== "object") return false;
+  const prefRole = String(vol.preferred_role || vol.volunteer_type || vol.applied_role || vol.role || "").toLowerCase();
+  const skills = String(vol.skills || vol.capabilities || "").toLowerCase();
+  const vehicle = String(vol.vehicle_type || vol.vehicle || vol.driver_license_number || vol.license || "").toLowerCase();
+
+  if (prefRole.includes("transport") || prefRole.includes("driver") || prefRole.includes("vehicle") || prefRole.includes("ambulance")) {
+    return true;
+  }
+  if (skills.includes("transport") || skills.includes("driver") || skills.includes("driving") || skills.includes("vehicle") || skills.includes("ambulance")) {
+    return true;
+  }
+  if (vehicle && vehicle !== "n/a" && vehicle !== "none" && vehicle !== "undefined") {
+    return true;
+  }
+  return false;
+};
 
 const isVolPending = (st?: string) => { const s = String(st || "").toLowerCase(); return s === "applied" || s === "pending" || s === "submitted"; };
 const isVolApproved = (st?: string) => { const s = String(st || "").toLowerCase(); return s === "approved" || s === "active" || s === "onboarded"; };
@@ -142,8 +158,8 @@ const RescueCoordinatorDashboard = () => {
 
       const [dashRes, allRes, assignedRes, gpsRes] = await Promise.allSettled([
         dashboardService.getRescueDashboard(),
-        rescueService.getRescueCases({ page_size: 500 }),
-        rescueService.getRescueCases({ page_size: 500, assigned_to_me: true }),
+        rescueService.getAllRescueCases(),
+        rescueService.getAllRescueCases({ assigned_to_me: true }),
         rescueService.getAgentLocations(),
       ]);
 
@@ -163,13 +179,15 @@ const RescueCoordinatorDashboard = () => {
       }
 
       if (allRes.status === "fulfilled") {
-        setAllCases(unwrapList(allRes.value).map(formatCase));
+        const rawAll = unwrapList(allRes.value?.data ?? allRes.value);
+        setAllCases(rawAll.map(formatCase));
       } else {
         setAllCases([]);
       }
 
       if (assignedRes.status === "fulfilled") {
-        setAssignedCases(unwrapList(assignedRes.value).map(formatCase));
+        const rawAssigned = unwrapList(assignedRes.value?.data ?? assignedRes.value);
+        setAssignedCases(rawAssigned.map(formatCase));
       } else {
         setAssignedCases([]);
       }
@@ -188,11 +206,34 @@ const RescueCoordinatorDashboard = () => {
   const fetchTransportVols = useCallback(async () => {
     try {
       setVolLoading(true);
-      let res: any;
-      try { res = await volunteerService.getVolunteers(); } catch { res = []; }
-      const list: any[] = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : Array.isArray(res?.items) ? res.items : [];
-      const transport = list.filter(isTransportVol);
-      transport.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+      const combinedList: any[] = [];
+
+      try {
+        const appRes = await volunteerService.getApplications();
+        const apps = Array.isArray(appRes) ? appRes : Array.isArray(appRes?.data) ? appRes.data : Array.isArray(appRes?.items) ? appRes.items : [];
+        if (Array.isArray(apps)) combinedList.push(...apps);
+      } catch {
+        /* applications endpoint optional fallback */
+      }
+
+      try {
+        const volRes = await volunteerService.getVolunteers();
+        const vols = Array.isArray(volRes) ? volRes : Array.isArray(volRes?.data) ? volRes.data : Array.isArray(volRes?.items) ? volRes.items : [];
+        if (Array.isArray(vols)) {
+          const existingIds = new Set(combinedList.map((item: any) => String(item.id || item.profile_id || item.application_id)));
+          for (const v of vols) {
+            const vId = String(v.id || v.profile_id || v.application_id);
+            if (!existingIds.has(vId)) {
+              combinedList.push(v);
+            }
+          }
+        }
+      } catch {
+        /* volunteers endpoint fallback */
+      }
+
+      const transport = combinedList.filter(isTransportVol);
+      transport.sort((a, b) => new Date(b.created_at || b.submitted_at || 0).getTime() - new Date(a.created_at || a.submitted_at || 0).getTime());
       setTransportVols(transport);
     } catch {
       setTransportVols([]);
@@ -206,19 +247,25 @@ const RescueCoordinatorDashboard = () => {
     if (!id) { addToast("Invalid volunteer ID.", "error"); return; }
     try {
       setIsVolSubmitting(true);
-      try { await volunteerService.approveApplication(id); }
-      catch (e: any) {
-        if (e?.response?.status === 404 || e?.response?.status === 405) { await volunteerService.updateVolunteerProfile(id, { status: "active" }); }
-        else throw e;
+      try {
+        await volunteerService.approveApplication(id);
+      } catch (e: any) {
+        if (e?.response?.status === 404 || e?.response?.status === 405) {
+          await volunteerService.updateVolunteerProfile(id, { status: "active" });
+        } else {
+          throw e;
+        }
       }
       addToast("Transport volunteer approved!", "success");
-      setTransportVols((prev) => prev.map((v) => v.id === id ? { ...v, status: "approved" } : v));
-      if (selectedVol?.id === id) setSelectedVol((p: any) => p ? { ...p, status: "approved" } : null);
-      fetchTransportVols();
+      setIsVolModalOpen(false);
+      await fetchTransportVols();
       notifyDataChanged();
     } catch (err: any) {
-      addToast(err?.response?.data?.detail || err?.message || "Failed to approve.", "error");
-    } finally { setIsVolSubmitting(false); }
+      const errMsg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to approve transport volunteer.";
+      addToast(errMsg, "error");
+    } finally {
+      setIsVolSubmitting(false);
+    }
   };
 
   const handleVolReject = async (vol: any) => {
@@ -226,19 +273,25 @@ const RescueCoordinatorDashboard = () => {
     if (!id) { addToast("Invalid volunteer ID.", "error"); return; }
     try {
       setIsVolSubmitting(true);
-      try { await volunteerService.rejectApplication(id, "Rejected by Rescue Coordinator."); }
-      catch (e: any) {
-        if (e?.response?.status === 404 || e?.response?.status === 405) { await volunteerService.updateVolunteerProfile(id, { status: "rejected" }); }
-        else throw e;
+      try {
+        await volunteerService.rejectApplication(id, "Rejected by Rescue Coordinator.");
+      } catch (e: any) {
+        if (e?.response?.status === 404 || e?.response?.status === 405) {
+          await volunteerService.updateVolunteerProfile(id, { status: "rejected" });
+        } else {
+          throw e;
+        }
       }
       addToast("Transport volunteer application rejected.", "info");
-      setTransportVols((prev) => prev.map((v) => v.id === id ? { ...v, status: "rejected" } : v));
-      if (selectedVol?.id === id) setSelectedVol((p: any) => p ? { ...p, status: "rejected" } : null);
-      fetchTransportVols();
+      setIsVolModalOpen(false);
+      await fetchTransportVols();
       notifyDataChanged();
     } catch (err: any) {
-      addToast(err?.response?.data?.detail || err?.message || "Failed to reject.", "error");
-    } finally { setIsVolSubmitting(false); }
+      const errMsg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to reject transport volunteer.";
+      addToast(errMsg, "error");
+    } finally {
+      setIsVolSubmitting(false);
+    }
   };
 
   useEffect(() => {
@@ -327,8 +380,8 @@ const RescueCoordinatorDashboard = () => {
       addToast("Rescue incident verified successfully!", "success");
       setIsViewModalOpen(false);
       fetchCasesData();
-    } catch {
-      addToast("Failed to verify rescue incident.", "error");
+    } catch (err: any) {
+      addToast(err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to verify rescue incident.", "error");
     } finally {
       setIsActionLoading(false);
     }
@@ -341,8 +394,8 @@ const RescueCoordinatorDashboard = () => {
       addToast("Rescue case escalated to high priority!", "info");
       setIsViewModalOpen(false);
       fetchCasesData();
-    } catch {
-      addToast("Failed to escalate rescue case.", "error");
+    } catch (err: any) {
+      addToast(err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to escalate rescue case.", "error");
     } finally {
       setIsActionLoading(false);
     }
@@ -355,8 +408,8 @@ const RescueCoordinatorDashboard = () => {
       addToast("Animal marked as located by field team!", "info");
       setIsViewModalOpen(false);
       fetchCasesData();
-    } catch {
-      addToast("Failed to update status to located.", "error");
+    } catch (err: any) {
+      addToast(err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to update status to located.", "error");
     } finally {
       setIsActionLoading(false);
     }
@@ -369,8 +422,8 @@ const RescueCoordinatorDashboard = () => {
       addToast("Animal marked as secured!", "info");
       setIsViewModalOpen(false);
       fetchCasesData();
-    } catch {
-      addToast("Failed to update status to secured.", "error");
+    } catch (err: any) {
+      addToast(err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to update status to secured.", "error");
     } finally {
       setIsActionLoading(false);
     }
@@ -383,8 +436,8 @@ const RescueCoordinatorDashboard = () => {
       addToast("Animal successfully admitted to rescue centre!", "success");
       setIsViewModalOpen(false);
       fetchCasesData();
-    } catch {
-      addToast("Failed to admit animal to rescue centre.", "error");
+    } catch (err: any) {
+      addToast(err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to admit animal to rescue centre.", "error");
     } finally {
       setIsActionLoading(false);
     }
@@ -405,8 +458,8 @@ const RescueCoordinatorDashboard = () => {
       setIsViewModalOpen(false);
       setRejectionRationale("");
       fetchCasesData();
-    } catch {
-      addToast("Failed to reject rescue report.", "error");
+    } catch (err: any) {
+      addToast(err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to reject rescue report.", "error");
     } finally {
       setIsActionLoading(false);
     }
@@ -423,8 +476,8 @@ const RescueCoordinatorDashboard = () => {
       });
       addToast(`Rescue case priority updated to ${editSeverity.toUpperCase()}${editIsUrgent ? " (URGENT)" : ""}.`, "success");
       fetchCasesData();
-    } catch {
-      addToast("Failed to update case priority.", "error");
+    } catch (err: any) {
+      addToast(err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to update case priority.", "error");
     } finally {
       setIsUpdatingPriority(false);
     }
@@ -437,8 +490,8 @@ const RescueCoordinatorDashboard = () => {
       const agentsList = unwrapList(res);
       setSuggestedAgents(agentsList);
       setIsSuggestModalOpen(true);
-    } catch {
-      addToast("Could not fetch GPS agent suggestions.", "error");
+    } catch (err: any) {
+      addToast(err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Could not fetch GPS agent suggestions.", "error");
     } finally {
       setIsSuggestingAgents(false);
     }
@@ -894,6 +947,13 @@ const RescueCoordinatorDashboard = () => {
             <div>
               <strong style={{ color: "#475569" }}>Location:</strong> {String(selectedRequest.location || "-")}
             </div>
+            <LocationMapPreview
+              latitude={(selectedRequest as any).latitude ?? ((selectedRequest as any).raw?.latitude as any)}
+              longitude={(selectedRequest as any).longitude ?? ((selectedRequest as any).raw?.longitude as any)}
+              locationAddress={String(selectedRequest.location || "")}
+              locationLandmark={(selectedRequest as any).location_landmark ?? ((selectedRequest as any).raw?.location_landmark as any) ?? ((selectedRequest as any).raw?.landmark as any)}
+              height="200px"
+            />
             <div>
               <strong style={{ color: "#475569" }}>Priority / Severity:</strong>{" "}
               <span

@@ -167,34 +167,50 @@ export const volunteerService = {
 
   // GET /volunteers/{profile_id}/certificate
   getCertificate: async (profileId: string) => {
-    const response = await api.get(`/volunteers/${profileId}/certificate`, {
-      responseType: "blob",
-    });
-    if (response.data && response.data.type === "application/json") {
-      const text = await response.data.text();
-      try {
-        return JSON.parse(text);
-      } catch {
-        return response.data;
+    try {
+      const response = await api.get(`/volunteers/${profileId}/certificate`);
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 400 || err?.response?.status === 403 || err?.response?.status === 404 || err?.response?.status === 422) {
+        throw err;
       }
+      const response = await api.get(`/volunteers/${profileId}/certificate`, {
+        responseType: "blob",
+      });
+      if (response.data && response.data.type === "application/json") {
+        const text = await response.data.text();
+        try {
+          return JSON.parse(text);
+        } catch {
+          return response.data;
+        }
+      }
+      return response.data;
     }
-    return response.data;
   },
 
   // GET /volunteers/me/certificate
   getMyCertificate: async () => {
-    const response = await api.get(`/volunteers/me/certificate`, {
-      responseType: "blob",
-    });
-    if (response.data && response.data.type === "application/json") {
-      const text = await response.data.text();
-      try {
-        return JSON.parse(text);
-      } catch {
-        return response.data;
+    try {
+      const response = await api.get(`/volunteers/me/certificate`);
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 400 || err?.response?.status === 403 || err?.response?.status === 404 || err?.response?.status === 422) {
+        throw err;
       }
+      const response = await api.get(`/volunteers/me/certificate`, {
+        responseType: "blob",
+      });
+      if (response.data && response.data.type === "application/json") {
+        const text = await response.data.text();
+        try {
+          return JSON.parse(text);
+        } catch {
+          return response.data;
+        }
+      }
+      return response.data;
     }
-    return response.data;
   },
 
   // GET /volunteers/shifts - List shifts

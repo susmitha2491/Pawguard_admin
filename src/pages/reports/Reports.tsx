@@ -10,10 +10,13 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
+  Cell,
 } from "recharts";
 import {
   FaUsers,
@@ -37,6 +40,7 @@ import {
   FaSyringe,
   FaPills,
   FaCheckCircle,
+  FaMapMarkerAlt,
 } from "react-icons/fa";
 import volunteerService from "../../services/volunteerService";
 import fosterService from "../../services/fosterService";
@@ -58,6 +62,27 @@ const numericValue = (val: unknown): number => {
 
 const formatCurrency = (val: unknown): string =>
   `₹${numericValue(val).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const getLocationDisplay = (c: any): string => {
+  const loc = String(c?.location_address || c?.location || c?.address || c?.location_landmark || "").trim();
+  return loc.length > 0 ? loc : "Location not provided";
+};
+
+const getAnimalDisplay = (c: any): string => {
+  if (c?.dog_name && String(c.dog_name).trim()) {
+    return String(c.dog_name).trim();
+  }
+  if (c?.animal_type && String(c.animal_type).trim()) {
+    return String(c.animal_type).trim();
+  }
+  if (c?.animal_species && String(c.animal_species).trim()) {
+    return String(c.animal_species).trim();
+  }
+  if (c?.species && String(c.species).trim()) {
+    return String(c.species).trim();
+  }
+  return "Animal details unavailable";
+};
 
 const Reports = () => {
   const { addToast } = useToast();
@@ -97,6 +122,7 @@ const Reports = () => {
   const [donations, setDonations] = useState<any[]>([]);
 
   const [rescueCases, setRescueCases] = useState<any[]>([]);
+  const [rescueMeta, setRescueMeta] = useState<any>(null);
   const [dispatches, setDispatches] = useState<any[]>([]);
 
   const [vaccineReminders, setVaccineReminders] = useState<any[]>([]);
@@ -123,7 +149,7 @@ const Reports = () => {
         try {
           const [sumRes, donRes] = await Promise.allSettled([
             financeService.getFinanceSummary().catch(() => null),
-            donationsService.getDonations({ page: 1, page_size: 100 }),
+            donationsService.getDonations({ page: 1, page_size: 50 }),
           ]);
 
           const sumObj = (sumRes.status === "fulfilled" ? sumRes.value?.data ?? sumRes.value : null) as Record<string, unknown> | null;
@@ -159,19 +185,22 @@ const Reports = () => {
         try {
           const currentUser = getCurrentUser();
           const currentCentreId = (currentUser as any)?.rescue_centre_id || (currentUser as any)?.rescue_center_id;
-          const queryParams: Record<string, any> = { page: 1, page_size: 100 };
-          if (userRole === "rescue_centre_admin" && currentCentreId) {
+          
+          const queryParams: Record<string, any> = {};
+          if (!["rescue_centre_admin", "super_admin", "admin"].includes(userRole) && currentCentreId) {
             queryParams.rescue_centre_id = currentCentreId;
           }
 
           const [casesRes, dispatchRes] = await Promise.allSettled([
-            rescueService.getRescueCases(queryParams),
-            rescueService.getDispatches(queryParams),
+            rescueService.getAllRescueCases(queryParams),
+            rescueService.getAllDispatches(queryParams),
           ]);
-          let casesList = casesRes.status === "fulfilled" ? (Array.isArray(casesRes.value?.data) ? casesRes.value.data : Array.isArray(casesRes.value) ? casesRes.value : []) : [];
-          let dispatchList = dispatchRes.status === "fulfilled" ? (Array.isArray(dispatchRes.value?.data) ? dispatchRes.value.data : Array.isArray(dispatchRes.value) ? dispatchRes.value : []) : [];
 
-          if (userRole === "rescue_centre_admin" && currentCentreId) {
+          let casesList = casesRes.status === "fulfilled" ? (casesRes.value?.data ?? []) : [];
+          let casesMeta = casesRes.status === "fulfilled" ? (casesRes.value?.meta ?? null) : null;
+          let dispatchList = dispatchRes.status === "fulfilled" ? (dispatchRes.value?.data ?? []) : [];
+
+          if (!["rescue_centre_admin", "super_admin", "admin"].includes(userRole) && currentCentreId) {
             casesList = casesList.filter((c: any) => {
               const cCentreId = c.rescue_centre_id || c.rescue_center_id || c.organization_id;
               return !cCentreId || String(cCentreId) === String(currentCentreId);
@@ -183,6 +212,7 @@ const Reports = () => {
           }
 
           setRescueCases(casesList);
+          setRescueMeta(casesMeta);
           setDispatches(dispatchList);
         } catch (e) {
           console.error("Error loading rescue reports data:", e);
@@ -304,7 +334,7 @@ const Reports = () => {
       if (isAdoptionCoordinator || isSuperAdmin) {
         try {
           const [adoptRes, petRes] = await Promise.allSettled([
-            adoptionService.getAdoptions({ page: 1, page_size: 100 }),
+            adoptionService.getAdoptions({ page: 1, page_size: 50 }),
             dogService.getAllDogs(),
           ]);
           const adoptList = adoptRes.status === "fulfilled" ? (Array.isArray(adoptRes.value?.data) ? adoptRes.value.data : Array.isArray(adoptRes.value) ? adoptRes.value : []) : [];
@@ -386,7 +416,7 @@ const Reports = () => {
       // 8. Load Inventory Data (if Inventory Manager, Super Admin)
       if (isInventoryManager || isSuperAdmin) {
         try {
-          const invRes = await inventoryService.getInventory({ page: 1, page_size: 100 });
+          const invRes = await inventoryService.getInventory({ page: 1, page_size: 50 });
           const rawItems = Array.isArray(invRes?.data) ? invRes.data : Array.isArray(invRes) ? invRes : [];
           setInventoryItems(rawItems.map(normalizeInventoryRow));
         } catch (e) {
@@ -521,10 +551,137 @@ const Reports = () => {
     return points;
   }, [shelterDogs, adoptions]);
 
-  // Derived Rescue Metrics
-  const activeDispatchesCount = useMemo(() => dispatches.filter((d) => !["completed", "cancelled"].includes(String(d.status).toLowerCase())).length, [dispatches]);
-  const criticalCasesCount = useMemo(() => rescueCases.filter((c) => String(c.severity || c.priority).toLowerCase() === "critical" || c.is_urgent).length, [rescueCases]);
-  const completedRescuesCount = useMemo(() => rescueCases.filter((c) => String(c.status).toLowerCase() === "completed" || String(c.status).toLowerCase() === "resolved").length, [rescueCases]);
+  // Authoritative total rescue cases count from meta.total or fallback to array length
+  const totalRescueCasesCount = rescueMeta?.total ?? rescueCases.length;
+
+  // Derived Rescue Case Trend data (grouped by created_at)
+  const rescueTrendPoints = useMemo(() => {
+    if (!rescueCases || rescueCases.length === 0) return [];
+    const countByDate = new Map<string, number>();
+
+    rescueCases.forEach((c) => {
+      const rawDate = c.created_at || c.date;
+      if (!rawDate) return;
+      const d = new Date(rawDate);
+      if (isNaN(d.getTime())) return;
+      const dateKey = d.toISOString().slice(0, 10);
+      countByDate.set(dateKey, (countByDate.get(dateKey) || 0) + 1);
+    });
+
+    const sortedDates = Array.from(countByDate.keys()).sort();
+    return sortedDates.map((dateStr) => {
+      const d = new Date(dateStr);
+      const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      return {
+        date: label,
+        fullDate: dateStr,
+        count: countByDate.get(dateStr) || 0,
+      };
+    });
+  }, [rescueCases]);
+
+  // Derived Status Distribution (backend supported enums: reported, verified, dispatched, located, rescued, admitted, rejected)
+  const rescueStatusDistribution = useMemo(() => {
+    const SUPPORTED_STATUSES = ["reported", "verified", "dispatched", "located", "rescued", "admitted", "rejected"];
+    const statusMap = new Map<string, number>();
+    SUPPORTED_STATUSES.forEach((s) => statusMap.set(s, 0));
+
+    rescueCases.forEach((c) => {
+      const s = String(c.status || "reported").toLowerCase();
+      statusMap.set(s, (statusMap.get(s) || 0) + 1);
+    });
+
+    return SUPPORTED_STATUSES.map((status) => ({
+      statusKey: status,
+      label: status.charAt(0).toUpperCase() + status.slice(1),
+      count: statusMap.get(status) || 0,
+    }));
+  }, [rescueCases]);
+
+  // Derived Severity & Urgency Analysis (critical, high, medium, low & is_urgent)
+  const rescueSeverityAnalysis = useMemo(() => {
+    let critical = 0;
+    let high = 0;
+    let medium = 0;
+    let low = 0;
+    let urgent = 0;
+
+    rescueCases.forEach((c) => {
+      const sev = String(c.severity || "").toLowerCase();
+      if (sev === "critical") critical++;
+      else if (sev === "high") high++;
+      else if (sev === "low") low++;
+      else medium++;
+
+      if (Boolean(c.is_urgent)) urgent++;
+    });
+
+    return { critical, high, medium, low, urgent, total: rescueCases.length };
+  }, [rescueCases]);
+
+  // Derived Location-Wise Analysis (grouped by backend location_address)
+  const locationWiseRescueAnalysis = useMemo(() => {
+    if (!rescueCases || rescueCases.length === 0) return [];
+    const locMap = new Map<string, { total: number; dispatched: number; rescued: number; pending: number }>();
+
+    rescueCases.forEach((c) => {
+      const loc = getLocationDisplay(c);
+      const current = locMap.get(loc) || { total: 0, dispatched: 0, rescued: 0, pending: 0 };
+      current.total += 1;
+
+      const st = String(c.status || "").toLowerCase();
+      if (["rescued", "admitted", "completed", "resolved"].includes(st)) {
+        current.rescued += 1;
+      } else if (["dispatched", "en_route", "in_transit", "located", "arrived", "active"].includes(st)) {
+        current.dispatched += 1;
+      } else {
+        current.pending += 1;
+      }
+
+      locMap.set(loc, current);
+    });
+
+    return Array.from(locMap.entries())
+      .map(([locationName, metrics]) => ({ locationName, ...metrics }))
+      .sort((a, b) => b.total - a.total);
+  }, [rescueCases]);
+
+  // Derived Dispatch Performance Metrics
+  const dispatchPerformanceMetrics = useMemo(() => {
+    const total = dispatches.length;
+    let active = 0;
+    let completed = 0;
+    let other = 0;
+    const durations: number[] = [];
+
+    dispatches.forEach((d) => {
+      const st = String(d.status || "").toLowerCase();
+      if (["completed", "rescued", "admitted", "resolved"].includes(st)) {
+        completed++;
+      } else if (["cancelled", "rejected", "failed"].includes(st)) {
+        other++;
+      } else {
+        active++;
+      }
+
+      const start = d.dispatched_at || d.created_at;
+      const end = d.completed_at || d.arrived_at || d.updated_at;
+      if (start && end && ["completed", "rescued", "resolved"].includes(st)) {
+        const startTime = new Date(start).getTime();
+        const endTime = new Date(end).getTime();
+        if (!isNaN(startTime) && !isNaN(endTime) && endTime > startTime) {
+          const mins = Math.round((endTime - startTime) / (1000 * 60));
+          if (mins > 0 && mins < 1440) durations.push(mins);
+        }
+      }
+    });
+
+    const avgResponseTime = durations.length > 0
+      ? `${Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)} mins`
+      : "Data pending field agent timestamps";
+
+    return { total, active, completed, other, avgResponseTime };
+  }, [dispatches]);
 
   // Export handlers
   const handleExportCSV = (filename: string, headers: string, rows: string[]) => {
@@ -549,14 +706,49 @@ const Reports = () => {
   // RESCUE OPERATIONS REPORT VIEW
   const renderRescueReports = () => {
     const rescueStatCards = [
-      { title: "Total Rescue Cases", value: loading ? "..." : String(rescueCases.length), trend: "Incident Log", color: "#2563EB", icon: <FaAmbulance /> },
-      { title: "Active Field Dispatches", value: loading ? "..." : String(activeDispatchesCount), trend: "In Progress", color: "#F59E0B", icon: <FaTruck /> },
-      { title: "Critical & Urgent Cases", value: loading ? "..." : String(criticalCasesCount), trend: "High Priority", color: "#DC2626", icon: <FaExclamationTriangle /> },
-      { title: "Completed Rescues", value: loading ? "..." : String(completedRescuesCount), trend: "Safely Intake", color: "#10B981", icon: <FaCheckCircle /> },
+      {
+        title: "Total Rescue Cases",
+        value: loading ? "..." : String(totalRescueCasesCount),
+        trend: rescueMeta?.total !== undefined ? `Authoritative meta.total: ${rescueMeta.total}` : "Incident Log",
+        color: "#2563EB",
+        icon: <FaAmbulance />,
+      },
+      {
+        title: "Active Field Dispatches",
+        value: loading ? "..." : String(dispatchPerformanceMetrics.active),
+        trend: `${dispatchPerformanceMetrics.total} Total Dispatches`,
+        color: "#F59E0B",
+        icon: <FaTruck />,
+      },
+      {
+        title: "Critical & Urgent Cases",
+        value: loading ? "..." : String(rescueSeverityAnalysis.critical + rescueSeverityAnalysis.urgent),
+        trend: `${rescueSeverityAnalysis.critical} Critical • ${rescueSeverityAnalysis.urgent} Urgent`,
+        color: "#DC2626",
+        icon: <FaExclamationTriangle />,
+      },
+      {
+        title: "Completed Rescues",
+        value: loading ? "..." : String(rescueCases.filter((c) => ["rescued", "admitted", "completed", "resolved"].includes(String(c.status || "").toLowerCase())).length),
+        trend: "Safely Intake",
+        color: "#10B981",
+        icon: <FaCheckCircle />,
+      },
     ];
+
+    const STATUS_COLORS: Record<string, string> = {
+      reported: "#94A3B8",
+      verified: "#3B82F6",
+      dispatched: "#F59E0B",
+      located: "#8B5CF6",
+      rescued: "#10B981",
+      admitted: "#059669",
+      rejected: "#EF4444",
+    };
 
     return (
       <div style={{ width: "100%", boxSizing: "border-box" }}>
+        {/* Header */}
         <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
           <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Rescue Operations &amp; Incident Analytics</h1>
           <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
@@ -564,6 +756,7 @@ const Reports = () => {
           </p>
         </div>
 
+        {/* Quick Export Actions */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", marginBottom: "24px" }}>
           <QuickActionCard
             icon={<FaFileAlt />}
@@ -571,8 +764,10 @@ const Reports = () => {
             subtitle="Full rescue incident log raw dataset"
             color="#2563EB"
             onClick={() => {
-              const headers = "Case_ID,Dog_Name,Location,Severity,Status,Reporter,Created_At";
-              const rows = rescueCases.map((c) => `"${c.id || "-"}","${c.dog_name || "Dog"}","${c.location || "-"}","${c.severity || "medium"}","${c.status || "pending"}","${c.reporter_name || "-"}","${c.created_at || "-"}"`);
+              const headers = "Case_ID,Ticket_Number,Animal_Details,Location,Severity,Is_Urgent,Status,Reporter,Created_At";
+              const rows = rescueCases.map((c) => 
+                `"${c.id || "-"}","${c.ticket_number || c.ticket || "-"}","${getAnimalDisplay(c)}","${getLocationDisplay(c)}","${c.severity || "medium"}","${Boolean(c.is_urgent)}","${c.status || "reported"}","${c.reporter_name || c.reporter || "-"}","${c.created_at || "-"}"`
+              );
               handleExportCSV("rescue_cases_report", headers, rows);
             }}
           />
@@ -582,51 +777,292 @@ const Reports = () => {
             subtitle="Field dispatch logs and tracking dataset"
             color="#10B981"
             onClick={() => {
-              const headers = "Dispatch_ID,Case_ID,Agent,Vehicle,Status,Dispatched_At";
-              const rows = dispatches.map((d) => `"${d.id || "-"}","${d.rescue_request_id || "-"}","${d.agent_name || "-"}","${d.vehicle_number || "-"}","${d.status || "dispatched"}","${d.created_at || "-"}"`);
+              const headers = "Dispatch_ID,Request_ID,Ticket_Number,Agent,Vehicle,Status,Dispatched_At";
+              const rows = dispatches.map((d) => 
+                `"${d.id || "-"}","${d.rescue_request_id || d.request_id || "-"}","${d.ticket_number || "-"}","${d.agent_name || d.assigned_agent_id || "-"}","${d.vehicle_number || d.assigned_vehicle_id || "-"}","${d.status || "dispatched"}","${d.created_at || d.dispatched_at || "-"}"`
+              );
               handleExportCSV("rescue_dispatches_report", headers, rows);
             }}
           />
         </div>
 
+        {/* 4 Top KPI Cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "24px" }}>
           {rescueStatCards.map((card) => (
             <StatCard key={card.title} {...card} />
           ))}
         </div>
 
-        <div className="soft-card" style={{ padding: "20px" }}>
+        {/* SECTION 1: RESCUE CASE TREND CHART */}
+        <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", marginBottom: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
+          <div style={{ marginBottom: "20px" }}>
+            <h2 style={{ margin: 0, fontSize: "20px", color: "#0F172A", fontWeight: 800 }}>Rescue Incident Volume Trend</h2>
+            <p style={{ marginTop: "4px", color: "#64748B", fontSize: "14px" }}>Daily emergency rescue case reporting volume over time based on real created_at timestamps</p>
+          </div>
+
+          {rescueTrendPoints.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "40px 20px", background: "#F8FAFC", borderRadius: "12px", border: "1px stroke #E2E8F0", color: "#64748B", fontSize: "14px" }}>
+              No historical rescue incident trend data available in the current date range.
+            </div>
+          ) : (
+            <div style={{ width: "100%", height: 280 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={rescueTrendPoints} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorRescueTrend" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#2563EB" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#2563EB" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+                  <XAxis dataKey="date" stroke="#94A3B8" fontSize={12} tickLine={false} />
+                  <YAxis stroke="#94A3B8" fontSize={12} tickLine={false} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "#0F172A", border: "none", borderRadius: "8px", color: "#FFF", fontSize: "12px" }}
+                    formatter={(val: any) => [`${val} Cases`, "Incident Volume"]}
+                  />
+                  <Area type="monotone" dataKey="count" stroke="#2563EB" strokeWidth={3} fillOpacity={1} fill="url(#colorRescueTrend)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+
+        {/* SECTION 2: RESCUE STATUS DISTRIBUTION & SEVERITY / URGENCY TRIAGE */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "24px", marginBottom: "24px" }}>
+          {/* Rescue Status Distribution */}
+          <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
+            <h2 style={{ margin: "0 0 6px", fontSize: "18px", color: "#0F172A", fontWeight: 800 }}>Rescue Status Distribution</h2>
+            <p style={{ margin: "0 0 20px", color: "#64748B", fontSize: "13px" }}>Case distribution across official backend statuses</p>
+            
+            <div style={{ width: "100%", height: 220, marginBottom: "16px" }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={rescueStatusDistribution} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+                  <XAxis dataKey="label" stroke="#94A3B8" fontSize={10} tickLine={false} interval={0} />
+                  <YAxis stroke="#94A3B8" fontSize={12} tickLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={{ backgroundColor: "#0F172A", border: "none", borderRadius: "8px", color: "#FFF", fontSize: "12px" }} />
+                  <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+                    {rescueStatusDistribution.map((entry) => (
+                      <Cell key={entry.statusKey} fill={STATUS_COLORS[entry.statusKey] || "#2563EB"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+              {rescueStatusDistribution.map((item) => (
+                <div key={item.statusKey} style={{ display: "flex", alignItems: "center", gap: "6px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "4px 10px", fontSize: "12px" }}>
+                  <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: STATUS_COLORS[item.statusKey] || "#2563EB" }} />
+                  <span style={{ color: "#475569", fontWeight: 600 }}>{item.label}:</span>
+                  <span style={{ color: "#0F172A", fontWeight: 800 }}>{item.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Severity & Urgency Analysis */}
+          <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
+            <h2 style={{ margin: "0 0 6px", fontSize: "18px", color: "#0F172A", fontWeight: 800 }}>Severity &amp; Urgency Triage Analysis</h2>
+            <p style={{ margin: "0 0 20px", color: "#64748B", fontSize: "13px" }}>Breakdown by backend severity levels and urgent flag</p>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "20px" }}>
+              <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", padding: "16px", borderRadius: "14px" }}>
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "#991B1B" }}>CRITICAL SEVERITY</div>
+                <div style={{ fontSize: "28px", fontWeight: 900, color: "#7F1D1D", marginTop: "4px" }}>{rescueSeverityAnalysis.critical}</div>
+                <div style={{ fontSize: "11px", color: "#991B1B", marginTop: "4px" }}>Life-threatening medical state</div>
+              </div>
+
+              <div style={{ background: "#FFEDD5", border: "1px solid #FDBA74", padding: "16px", borderRadius: "14px" }}>
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "#9A3412" }}>HIGH SEVERITY</div>
+                <div style={{ fontSize: "28px", fontWeight: 900, color: "#C2410C", marginTop: "4px" }}>{rescueSeverityAnalysis.high}</div>
+                <div style={{ fontSize: "11px", color: "#9A3412", marginTop: "4px" }}>Severe injury / high risk</div>
+              </div>
+
+              <div style={{ background: "#FEF3C7", border: "1px solid #FDE68A", padding: "16px", borderRadius: "14px" }}>
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "#92400E" }}>MEDIUM SEVERITY</div>
+                <div style={{ fontSize: "28px", fontWeight: 900, color: "#B45309", marginTop: "4px" }}>{rescueSeverityAnalysis.medium}</div>
+                <div style={{ fontSize: "11px", color: "#92400E", marginTop: "4px" }}>Moderate condition</div>
+              </div>
+
+              <div style={{ background: "#F0FDF4", border: "1px solid #86EFAC", padding: "16px", borderRadius: "14px" }}>
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "#166534" }}>LOW SEVERITY</div>
+                <div style={{ fontSize: "28px", fontWeight: 900, color: "#15803D", marginTop: "4px" }}>{rescueSeverityAnalysis.low}</div>
+                <div style={{ fontSize: "11px", color: "#166534", marginTop: "4px" }}>Minor condition / routine</div>
+              </div>
+            </div>
+
+            <div style={{ background: "linear-gradient(135deg, #DC2626 0%, #991B1B 100%)", borderRadius: "14px", padding: "16px", color: "#FFF", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: "13px", fontWeight: 700 }}>🚨 URGENT FLAGGED CASES (is_urgent: true)</div>
+                <div style={{ fontSize: "12px", opacity: 0.9, marginTop: "2px" }}>High priority dispatch intervention requested</div>
+              </div>
+              <div style={{ fontSize: "32px", fontWeight: 900 }}>{rescueSeverityAnalysis.urgent}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* SECTION 3: LOCATION-WISE RESCUE ANALYSIS */}
+        <div className="soft-card" style={{ padding: "24px", marginBottom: "24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+            <FaMapMarkerAlt color="#2563EB" size={20} />
+            <div>
+              <h2 style={{ margin: 0, fontSize: "20px", color: "#0F172A", fontWeight: 800 }}>Location-Wise Rescue Operations Oversight</h2>
+              <p style={{ margin: "2px 0 0", color: "#64748B", fontSize: "13px" }}>All-location rescue case distribution, dispatches, and completions based on real backend location data</p>
+            </div>
+          </div>
+
+          {locationWiseRescueAnalysis.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "30px 20px", color: "#64748B", fontSize: "14px" }}>
+              No location data available in current rescue records.
+            </div>
+          ) : (
+            <div style={{ maxHeight: "360px", overflowY: "auto", overflowX: "auto", border: "1px solid #E2E8F0", borderRadius: "12px" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                <thead>
+                  <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
+                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>FIELD LOCATION / AREA</th>
+                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", textAlign: "center", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>TOTAL CASES</th>
+                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", textAlign: "center", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>DISPATCHED / ACTIVE</th>
+                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", textAlign: "center", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>COMPLETED / RESCUED</th>
+                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", textAlign: "center", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>PENDING / REPORTED</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {locationWiseRescueAnalysis.map((loc, idx) => (
+                    <tr key={loc.locationName || idx} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                      <td style={{ padding: "12px 10px", fontWeight: 700, color: "#0F172A", fontSize: "14px" }}>
+                        {loc.locationName}
+                      </td>
+                      <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: "#2563EB" }}>
+                        {loc.total}
+                      </td>
+                      <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                        <span style={{ padding: "2px 10px", borderRadius: "999px", background: "#FEF3C7", color: "#B45309", fontSize: "12px", fontWeight: 700 }}>
+                          {loc.dispatched}
+                        </span>
+                      </td>
+                      <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                        <span style={{ padding: "2px 10px", borderRadius: "999px", background: "#D1FAE5", color: "#065F46", fontSize: "12px", fontWeight: 700 }}>
+                          {loc.rescued}
+                        </span>
+                      </td>
+                      <td style={{ padding: "12px 10px", textAlign: "center" }}>
+                        <span style={{ padding: "2px 10px", borderRadius: "999px", background: "#F1F5F9", color: "#475569", fontSize: "12px", fontWeight: 700 }}>
+                          {loc.pending}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* SECTION 4: DISPATCH FIELD PERFORMANCE */}
+        <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", marginBottom: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
+          <h2 style={{ margin: "0 0 6px", fontSize: "20px", color: "#0F172A", fontWeight: 800 }}>Dispatch Field Operations Performance</h2>
+          <p style={{ margin: "0 0 20px", color: "#64748B", fontSize: "13px" }}>Real-time dispatch log metrics and field team completion tracking</p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>
+            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "16px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 700 }}>TOTAL DISPATCHES LOGGED</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#0F172A", marginTop: "4px" }}>{dispatchPerformanceMetrics.total}</div>
+              <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>Real backend dispatch records</div>
+            </div>
+
+            <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "16px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#B45309", fontWeight: 700 }}>IN-PROGRESS FIELD DISPATCHES</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#D97706", marginTop: "4px" }}>{dispatchPerformanceMetrics.active}</div>
+              <div style={{ fontSize: "12px", color: "#B45309", marginTop: "2px" }}>Vehicles &amp; agents en route</div>
+            </div>
+
+            <div style={{ background: "#ECFDF5", border: "1px solid #A7F3D0", padding: "16px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#047857", fontWeight: 700 }}>COMPLETED FIELD DISPATCHES</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#059669", marginTop: "4px" }}>{dispatchPerformanceMetrics.completed}</div>
+              <div style={{ fontSize: "12px", color: "#047857", marginTop: "2px" }}>Safely intaken to facility</div>
+            </div>
+
+            <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", padding: "16px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#475569", fontWeight: 700 }}>AVG FIELD RESPONSE TIME</div>
+              <div style={{ fontSize: "18px", fontWeight: 800, color: "#334155", marginTop: "6px" }}>{dispatchPerformanceMetrics.avgResponseTime}</div>
+              <div style={{ fontSize: "11px", color: "#64748B", marginTop: "4px" }}>Calculated from valid dispatch timestamps</div>
+            </div>
+          </div>
+        </div>
+
+        {/* SECTION 5: RECENT RESCUE INCIDENTS & FIELD LOG */}
+        <div className="soft-card" style={{ padding: "24px" }}>
           <h3 style={{ margin: "0 0 16px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
-            Recent Rescue Incidents &amp; Field Log ({rescueCases.length})
+            Recent Rescue Incidents &amp; Field Log ({totalRescueCasesCount})
           </h3>
           {rescueCases.length === 0 ? (
             <div style={{ textAlign: "center", padding: "30px 20px", color: "#64748B", fontSize: "14px" }}>No rescue cases currently logged.</div>
           ) : (
-            <div style={{ overflowX: "auto" }}>
+            <div style={{ maxHeight: "420px", overflowY: "auto", overflowX: "auto", border: "1px solid #E2E8F0", borderRadius: "12px" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
                 <thead>
                   <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
-                    <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>CASE ID</th>
-                    <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>ANIMAL / DOG</th>
-                    <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>LOCATION</th>
-                    <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>SEVERITY</th>
-                    <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>STATUS</th>
+                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>TICKET / CASE ID</th>
+                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>ANIMAL / DOG</th>
+                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>LOCATION</th>
+                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>SEVERITY</th>
+                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>URGENCY</th>
+                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>STATUS</th>
+                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>CREATED DATE/TIME</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rescueCases.slice(0, 10).map((c, idx) => (
-                    <tr key={c.id || idx} style={{ borderBottom: "1px solid #F1F5F9" }}>
-                      <td style={{ padding: "10px", fontFamily: "monospace", fontSize: "12px" }}>{String(c.id).slice(0, 8)}</td>
-                      <td style={{ padding: "10px", fontWeight: 700, color: "#0F172A" }}>{c.dog_name || c.animal_type || "Rescued Dog"}</td>
-                      <td style={{ padding: "10px", fontSize: "13px", color: "#475569" }}>{c.location || "Field Location"}</td>
-                      <td style={{ padding: "10px" }}>
-                        <span style={{ padding: "3px 10px", borderRadius: "999px", fontSize: "11px", fontWeight: 800, background: String(c.severity).toLowerCase() === "critical" ? "#FEE2E2" : "#FEF3C7", color: String(c.severity).toLowerCase() === "critical" ? "#991B1B" : "#B45309" }}>
-                          {String(c.severity || "NORMAL").toUpperCase()}
-                        </span>
-                      </td>
-                      <td style={{ padding: "10px", fontSize: "13px", fontWeight: 700 }}>{String(c.status || "pending").toUpperCase()}</td>
-                    </tr>
-                  ))}
+                  {rescueCases.map((c, idx) => {
+                    const ticketStr = c.ticket_number || c.ticket || (c.id ? String(c.id).slice(0, 8) : `CASE-${idx + 1}`);
+                    const sevStr = String(c.severity || "medium").toLowerCase();
+                    const statusStr = String(c.status || "reported").toUpperCase();
+                    const isUrgent = Boolean(c.is_urgent);
+                    const createdDateStr = c.created_at ? new Date(c.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "-";
+
+                    return (
+                      <tr key={c.id || idx} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                        <td style={{ padding: "12px 10px", fontFamily: "monospace", fontSize: "12px", fontWeight: 700, color: "#2563EB" }}>
+                          {ticketStr}
+                        </td>
+                        <td style={{ padding: "12px 10px", fontWeight: 700, color: "#0F172A" }}>
+                          {getAnimalDisplay(c)}
+                        </td>
+                        <td style={{ padding: "12px 10px", fontSize: "13px", color: "#475569" }}>
+                          {getLocationDisplay(c)}
+                        </td>
+                        <td style={{ padding: "12px 10px" }}>
+                          <span style={{
+                            padding: "3px 10px",
+                            borderRadius: "999px",
+                            fontSize: "11px",
+                            fontWeight: 800,
+                            background: sevStr === "critical" ? "#FEE2E2" : sevStr === "high" ? "#FFEDD5" : "#FEF3C7",
+                            color: sevStr === "critical" ? "#991B1B" : sevStr === "high" ? "#C2410C" : "#B45309",
+                          }}>
+                            {sevStr.toUpperCase()}
+                          </span>
+                        </td>
+                        <td style={{ padding: "12px 10px" }}>
+                          {isUrgent ? (
+                            <span style={{ padding: "3px 10px", borderRadius: "999px", fontSize: "11px", fontWeight: 800, background: "#DC2626", color: "#FFF" }}>
+                              🚨 URGENT
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: "12px", color: "#94A3B8" }}>Standard</span>
+                          )}
+                        </td>
+                        <td style={{ padding: "12px 10px", fontSize: "12px", fontWeight: 700, color: "#0F172A" }}>
+                          {statusStr}
+                        </td>
+                        <td style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B" }}>
+                          {createdDateStr}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

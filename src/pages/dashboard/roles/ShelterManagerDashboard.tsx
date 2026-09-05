@@ -2407,8 +2407,7 @@ const ShelterManagerDashboard = () => {
                     ℹ️ SAFETY TAG IS ACTIVE ON BACKEND
                   </div>
                   <div style={{ fontSize: "12px", color: "#64748B", maxWidth: "440px", lineHeight: 1.5 }}>
-                    Tag Status: <strong style={{ color: "#16A34A" }}>ACTIVE</strong>{" "}
-                    {tagMetadata?.token_prefix ? `(Prefix: ${String(tagMetadata.token_prefix)})` : ""}
+                    Tag Status: <strong style={{ color: "#16A34A" }}>ACTIVE</strong>
                     <br />
                     To render and print the QR code for this active tag on this browser without re-issuing or changing the backend tag, enter the existing raw token below:
                   </div>

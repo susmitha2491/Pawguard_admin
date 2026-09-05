@@ -20,7 +20,7 @@ import ShelterDetailsModal from "../../components/shelters/ShelterDetailsModal";
 import KennelDetailsModal from "../../components/shelters/KennelDetailsModal";
 import KennelAssignmentModal from "../../components/shelters/KennelAssignmentModal";
 import { notifyDataChanged } from "../../utils/dataSync";
-import { getCurrentUser, normalizeRole, getRescueCentreId } from "../../utils/roleUtils";
+import { getCurrentUser, normalizeRole } from "../../utils/roleUtils";
 
 const FACILITY_TYPES = ["shelter", "clinic", "foster_home", "partner"];
 const FACILITY_STATUSES = ["active", "inactive", "maintenance"];
@@ -47,8 +47,16 @@ const emptyKennelForm = {
   capacity: "1",
 };
 
-const unwrapList = (v: any) =>
-  Array.isArray(v) ? v : Array.isArray(v?.data) ? v.data : [];
+const unwrapList = (v: any) => {
+  if (!v) return [];
+  if (Array.isArray(v)) return v;
+  if (Array.isArray(v?.data)) return v.data;
+  if (Array.isArray(v?.data?.items)) return v.data.items;
+  if (Array.isArray(v?.data?.facilities)) return v.data.facilities;
+  if (Array.isArray(v?.items)) return v.items;
+  if (Array.isArray(v?.facilities)) return v.facilities;
+  return [];
+};
 
 interface RowActionItem {
   label: string;
@@ -144,10 +152,10 @@ const RowActionMenu: React.FC<{ actions: RowActionItem[] }> = ({ actions }) => {
 export const Shelters = () => {
   const currentUser = getCurrentUser();
   const currentRole = normalizeRole(currentUser);
-  const userRescueCentreId = getRescueCentreId(currentUser);
   const userShelterId = (currentUser as any)?.shelter_id || (currentUser as any)?.shelter?.id || (currentUser as any)?.assigned_shelter_id;
 
   const canManageKennels = currentRole === "super_admin" || currentRole === "shelter_manager";
+  const canManageShelters = currentRole === "super_admin" || currentRole === "rescue_centre_admin" || currentRole === "shelter_manager";
 
   const [activeTab, setActiveTab] = useState<"facilities" | "kennels">("facilities");
   const [shelters, setShelters] = useState<any[]>([]);
@@ -227,13 +235,6 @@ export const Shelters = () => {
       setLoading(true);
       setError(null);
 
-      if (currentRole === "rescue_centre_admin" && !userRescueCentreId) {
-        setError("No Rescue Centre Assigned: Your account does not have an assigned Rescue Centre. Contact a Super Administrator.");
-        setShelters([]);
-        setLoading(false);
-        return;
-      }
-
       const queryParams: Record<string, any> = {
         search: debouncedSearch.trim() || undefined,
         status: statusFilter || undefined,
@@ -242,21 +243,14 @@ export const Shelters = () => {
         page_size: pageSize,
       };
 
-      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
-        queryParams.rescue_centre_id = userRescueCentreId;
-      } else if (currentRole === "shelter_manager" && userShelterId) {
+      if (currentRole === "shelter_manager" && userShelterId) {
         queryParams.shelter_id = userShelterId;
       }
 
       const response = await shelterService.getShelters(queryParams);
       let facilityList = unwrapList(response);
 
-      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
-        facilityList = facilityList.filter((f: any) => {
-          const fCentreId = f.rescue_centre_id || f.rescue_center_id || f.organization_id || f.facility_id;
-          return !fCentreId || String(fCentreId) === String(userRescueCentreId);
-        });
-      } else if (currentRole === "shelter_manager" && userShelterId) {
+      if (currentRole === "shelter_manager" && userShelterId) {
         facilityList = facilityList.filter((f: any) => {
           const fShelterId = f.id || f.shelter_id || f.facility_id;
           return !fShelterId || String(fShelterId).toLowerCase() === String(userShelterId).toLowerCase();
@@ -267,11 +261,21 @@ export const Shelters = () => {
       setTotalCount(total);
       setShelters(facilityList);
     } catch (err: any) {
-      setError(
-        err?.response?.data?.detail ||
-        err?.response?.data?.message ||
-        "Failed to load shelter facilities from backend API."
-      );
+      const status = err?.response?.status;
+      const dataDetail = err?.response?.data?.detail || err?.response?.data?.message;
+      let detailStr = "";
+      if (typeof dataDetail === "string") {
+        detailStr = dataDetail;
+      } else if (Array.isArray(dataDetail)) {
+        detailStr = dataDetail.map((d: any) => d?.msg || d?.message || JSON.stringify(d)).join(", ");
+      } else if (dataDetail && typeof dataDetail === "object") {
+        detailStr = JSON.stringify(dataDetail);
+      } else if (err?.message) {
+        detailStr = err.message;
+      } else {
+        detailStr = "Failed to load shelter facilities from backend API.";
+      }
+      setError(status ? `[HTTP ${status}] ${detailStr}` : detailStr);
     } finally {
       setLoading(false);
     }
@@ -281,20 +285,12 @@ export const Shelters = () => {
   const fetchAllShelters = async () => {
     try {
       const queryParams: Record<string, any> = { page: 1, page_size: 50 };
-      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
-        queryParams.rescue_centre_id = userRescueCentreId;
-      } else if (currentRole === "shelter_manager" && userShelterId) {
+      if (currentRole === "shelter_manager" && userShelterId) {
         queryParams.shelter_id = userShelterId;
       }
 
       const response = await shelterService.getShelters(queryParams);
-      let facs = unwrapList(response);
-      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
-        facs = facs.filter((f: any) => {
-          const fCentreId = f.rescue_centre_id || f.rescue_center_id || f.organization_id || f.facility_id;
-          return !fCentreId || String(fCentreId) === String(userRescueCentreId);
-        });
-      }
+      const facs = unwrapList(response);
       setAllShelters(facs);
     } catch {
       setAllShelters([]);
@@ -318,20 +314,13 @@ export const Shelters = () => {
     setKennelsLoading(true);
     try {
       const queryParams: Record<string, any> = { page: 1, page_size: 50 };
-      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
-        queryParams.rescue_centre_id = userRescueCentreId;
-      } else if (currentRole === "shelter_manager" && userShelterId) {
+      if (currentRole === "shelter_manager" && userShelterId) {
         queryParams.shelter_id = userShelterId;
       }
       const facsRes = await shelterService.getShelters(queryParams);
       let facList = unwrapList(facsRes);
 
-      if (currentRole === "rescue_centre_admin" && userRescueCentreId) {
-        facList = facList.filter((f: any) => {
-          const fCentreId = f.rescue_centre_id || f.rescue_center_id || f.organization_id || f.facility_id;
-          return !fCentreId || String(fCentreId) === String(userRescueCentreId);
-        });
-      } else if (currentRole === "shelter_manager" && userShelterId) {
+      if (currentRole === "shelter_manager" && userShelterId) {
         facList = facList.filter((f: any) => {
           const fShelterId = f.id || f.shelter_id || f.facility_id;
           return !fShelterId || String(fShelterId).toLowerCase() === String(userShelterId).toLowerCase();
@@ -393,14 +382,14 @@ export const Shelters = () => {
   }, [activeTab]);
 
   useEffect(() => {
-    if (searchParams.get("action") === "add") {
+    if (searchParams.get("action") === "add" && canManageShelters) {
       setIsRegisterModalOpen(true);
       window.history.replaceState({}, "", window.location.pathname);
-    } else if (searchParams.get("action") === "allocate") {
+    } else if (searchParams.get("action") === "allocate" && canManageKennels) {
       setIsAssignModalOpen(true);
       window.history.replaceState({}, "", window.location.pathname);
     }
-  }, [searchParams]);
+  }, [searchParams, canManageShelters, canManageKennels]);
 
   // Handler for Registering Facility
   const handleRegisterFacility = async (e: React.FormEvent) => {
@@ -651,32 +640,38 @@ export const Shelters = () => {
               setIsShelterDetailsOpen(true);
             },
           },
-          {
-            label: "Edit Facility",
-            icon: <FaEdit style={{ color: "#475569" }} />,
-            onClick: () => {
-              setSelectedFacility(row);
-              setEditForm({
-                name: row.name || "",
-                address: row.address || "",
-                phone: row.phone || "",
-                facility_type: row.facility_type || "shelter",
-                total_capacity: row.total_capacity !== undefined ? String(row.total_capacity) : "",
-                status: row.status || "active",
-              });
-              setIsEditModalOpen(true);
-            },
-          },
-          {
-            label: "Delete Facility",
-            icon: <FaTrash />,
-            danger: true,
-            onClick: () => {
-              setSelectedFacility(row);
-              setIsDeleteModalOpen(true);
-            },
-          },
         ];
+
+        if (canManageShelters) {
+          actions.push(
+            {
+              label: "Edit Facility",
+              icon: <FaEdit style={{ color: "#475569" }} />,
+              onClick: () => {
+                setSelectedFacility(row);
+                setEditForm({
+                  name: row.name || "",
+                  address: row.address || "",
+                  phone: row.phone || "",
+                  facility_type: row.facility_type || "shelter",
+                  total_capacity: row.total_capacity !== undefined ? String(row.total_capacity) : "",
+                  status: row.status || "active",
+                });
+                setIsEditModalOpen(true);
+              },
+            },
+            {
+              label: "Delete Facility",
+              icon: <FaTrash />,
+              danger: true,
+              onClick: () => {
+                setSelectedFacility(row);
+                setIsDeleteModalOpen(true);
+              },
+            }
+          );
+        }
+
         return <RowActionMenu actions={actions} />;
       },
     },
@@ -791,70 +786,31 @@ export const Shelters = () => {
         </div>
 
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          <Can permission={["create_shelters", "edit_shelters", "manage_shelters"]}>
-            <button
-              onClick={() => setIsRegisterModalOpen(true)}
-              style={{
-                padding: "8px 14px",
-                background: "#1E3A8A",
-                color: "#FFFFFF",
-                border: "none",
-                borderRadius: "6px",
-                fontSize: "13px",
-                fontWeight: 600,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-              }}
-            >
-              <FaPlus /> Register Facility
-            </button>
-            <button
-              onClick={() => {
-                setSectionForm({ ...emptySectionForm, facility_id: allShelters[0]?.id || "" });
-                setIsSectionModalOpen(true);
-              }}
-              style={{
-                padding: "8px 14px",
-                background: "#FFFFFF",
-                color: "#334155",
-                border: "1px solid #CBD5E1",
-                borderRadius: "6px",
-                fontSize: "13px",
-                fontWeight: 600,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-              }}
-            >
-              <FaLayerGroup style={{ color: "#0D9488" }} /> Add Section
-            </button>
-            <button
-              onClick={() => setIsKennelCreateModalOpen(true)}
-              style={{
-                padding: "8px 14px",
-                background: "#FFFFFF",
-                color: "#334155",
-                border: "1px solid #CBD5E1",
-                borderRadius: "6px",
-                fontSize: "13px",
-                fontWeight: 600,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-              }}
-            >
-              <FaBed style={{ color: "#7C3AED" }} /> Add Kennel Unit
-            </button>
-            {canManageKennels && (
+          {canManageShelters && (
+            <Can permission={["create_shelters", "edit_shelters", "manage_shelters"]}>
+              <button
+                onClick={() => setIsRegisterModalOpen(true)}
+                style={{
+                  padding: "8px 14px",
+                  background: "#1E3A8A",
+                  color: "#FFFFFF",
+                  border: "none",
+                  borderRadius: "6px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                }}
+              >
+                <FaPlus /> Register Facility
+              </button>
               <button
                 onClick={() => {
-                  setPreselectedKennelForAssign(null);
-                  setIsAssignModalOpen(true);
+                  setSectionForm({ ...emptySectionForm, facility_id: allShelters[0]?.id || "" });
+                  setIsSectionModalOpen(true);
                 }}
                 style={{
                   padding: "8px 14px",
@@ -870,10 +826,51 @@ export const Shelters = () => {
                   gap: "6px",
                 }}
               >
-                <FaPaw style={{ color: "#EA580C" }} /> Assign Animal
+                <FaLayerGroup style={{ color: "#0D9488" }} /> Add Section
               </button>
-            )}
-          </Can>
+              <button
+                onClick={() => setIsKennelCreateModalOpen(true)}
+                style={{
+                  padding: "8px 14px",
+                  background: "#FFFFFF",
+                  color: "#334155",
+                  border: "1px solid #CBD5E1",
+                  borderRadius: "6px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <FaBed style={{ color: "#7C3AED" }} /> Add Kennel Unit
+              </button>
+              {canManageKennels && (
+                <button
+                  onClick={() => {
+                    setPreselectedKennelForAssign(null);
+                    setIsAssignModalOpen(true);
+                  }}
+                  style={{
+                    padding: "8px 14px",
+                    background: "#FFFFFF",
+                    color: "#334155",
+                    border: "1px solid #CBD5E1",
+                    borderRadius: "6px",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                >
+                  <FaPaw style={{ color: "#EA580C" }} /> Assign Animal
+                </button>
+              )}
+            </Can>
+          )}
         </div>
       </div>
 
