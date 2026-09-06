@@ -69,7 +69,8 @@ export const storageService = {
   },
 
   /**
-   * Fetch all storage files and generate a map of dogId to latest confirmed photo download URL.
+   * Fetch confirmed storage files and map dogId to embedded photo download URL directly.
+   * Uses direct embedded URLs from backend storage payload to avoid N+1 per-file HTTP calls.
    */
   buildPhotoMapForDogs: async (): Promise<Record<string, string>> => {
     try {
@@ -80,30 +81,16 @@ export const storageService = {
         ? files.filter((f: any) => f.entity_type === "dog_profile" && f.is_uploaded)
         : [];
         
-      const latestFileMap: Record<string, any> = {};
+      const resolvedMap: Record<string, string> = {};
       confirmed.forEach((f: any) => {
         const dId = f.entity_id;
         if (!dId) return;
-        if (!latestFileMap[dId] || new Date(f.created_at).getTime() > new Date(latestFileMap[dId].created_at).getTime()) {
-          latestFileMap[dId] = f;
+        const directUrl = f.download_url || f.file_url || f.public_url || f.url || f.presigned_url;
+        if (directUrl && typeof directUrl === "string") {
+          resolvedMap[dId] = directUrl.trim();
         }
       });
 
-      const resolvedMap: Record<string, string> = {};
-      await Promise.all(
-        Object.keys(latestFileMap).map(async (dId) => {
-          const file = latestFileMap[dId];
-          try {
-            const dlResponse = await api.get(`/storage/${file.id}/download-url`);
-            const dlData = dlResponse.data?.data || dlResponse.data;
-            if (dlData && dlData.download_url) {
-              resolvedMap[dId] = dlData.download_url;
-            }
-          } catch (err) {
-            console.warn(`Failed to get download URL for file ${file.id}:`, err);
-          }
-        })
-      );
       return resolvedMap;
     } catch (err) {
       console.warn("Failed to build dog photo map:", err);

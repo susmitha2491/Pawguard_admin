@@ -599,21 +599,6 @@ const Pets = () => {
   };
 
   /**
-   * Load the persistent photo URL map from backend storage for all dogs.
-   * Called once on mount and after any photo upload to keep the map fresh.
-   */
-  const loadDogPhotoMap = async () => {
-    try {
-      const map = await storageService.buildPhotoMapForDogs();
-      if (Object.keys(map).length > 0) {
-        setDogPhotoMap(map);
-      }
-    } catch (err) {
-      console.warn("Could not load dog photo map:", err);
-    }
-  };
-
-  /**
    * Refresh the photo URL for a single dog in the dogPhotoMap.
    * Called after a successful photo upload so the profile refreshes immediately.
    */
@@ -641,7 +626,6 @@ const Pets = () => {
   useEffect(() => {
     fetchAllDogs();
     fetchRescueCases();
-    loadDogPhotoMap();
   }, []);
 
   useEffect(() => {
@@ -858,9 +842,17 @@ const extractTagData = (res: any) => {
         }
 
         const metaData = extractTagData(metaRes);
-        if (metaData) {
+        if (metaData && typeof metaData === "object") {
           setTagMetadata(metaData);
-          activeState = metaData.is_active === true || String(metaData.status || "").toUpperCase() === "ACTIVE";
+          const stUpper = String(metaData.status || metaData.state || "").toUpperCase();
+          const isExplicitInactive = stUpper === "INACTIVE" || stUpper === "REVOKED" || stUpper === "DEACTIVATED" || metaData.is_active === false;
+
+          activeState = !isExplicitInactive && (
+            metaData.is_active === true ||
+            stUpper === "ACTIVE" ||
+            Boolean(metaData.public_scan_url || metaData.public_scan_path || metaData.raw_token || metaData.token || metaData.id)
+          );
+
           if (!activeState) {
             setTagStatus("INACTIVE");
             setRawToken(null);

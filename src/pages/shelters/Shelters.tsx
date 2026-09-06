@@ -22,7 +22,6 @@ import KennelAssignmentModal from "../../components/shelters/KennelAssignmentMod
 import { notifyDataChanged } from "../../utils/dataSync";
 import { getCurrentUser, normalizeRole } from "../../utils/roleUtils";
 
-const FACILITY_TYPES = ["shelter", "clinic", "foster_home", "partner"];
 const FACILITY_STATUSES = ["active", "inactive", "maintenance"];
 const SECTION_TYPES = ["quarantine", "isolation", "surgical", "puppy", "general", "adoption"];
 
@@ -152,7 +151,7 @@ const RowActionMenu: React.FC<{ actions: RowActionItem[] }> = ({ actions }) => {
 export const Shelters = () => {
   const currentUser = getCurrentUser();
   const currentRole = normalizeRole(currentUser);
-  const userShelterId = (currentUser as any)?.shelter_id || (currentUser as any)?.shelter?.id || (currentUser as any)?.assigned_shelter_id;
+  const userShelterId = (currentUser as any)?.shelter_id || (currentUser as any)?.shelter?.id || (currentUser as any)?.assigned_shelter_id || (currentUser as any)?.facility_id || (currentUser as any)?.shelter_facility_id;
 
   const canManageKennels = currentRole === "super_admin" || currentRole === "shelter_manager";
   const canManageShelters = currentRole === "super_admin" || currentRole === "rescue_centre_admin" || currentRole === "shelter_manager";
@@ -167,7 +166,6 @@ export const Shelters = () => {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [typeFilter, setTypeFilter] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [totalCount, setTotalCount] = useState(0);
@@ -183,9 +181,6 @@ export const Shelters = () => {
   const [allSections, setAllSections] = useState<any[]>([]);
   const [allKennels, setAllKennels] = useState<any[]>([]);
   const [kennelsLoading, setKennelsLoading] = useState(false);
-
-  // Dashboard Aggregates State
-  const [dashboardStats, setDashboardStats] = useState<any | null>(null);
 
   const { addToast } = useToast();
   const [searchParams] = useSearchParams();
@@ -229,31 +224,46 @@ export const Shelters = () => {
     return () => clearTimeout(handler);
   }, [search]);
 
-  // Fetch Facilities
+  // Fetch Facilities — Enforce shelter-only & shelter_manager scope
   const fetchShelters = async () => {
     try {
       setLoading(true);
       setError(null);
 
+      // If shelter_manager has no assigned shelter facility, return empty immediately
+      if (currentRole === "shelter_manager" && !userShelterId) {
+        setShelters([]);
+        setTotalCount(0);
+        setLoading(false);
+        return;
+      }
+
       const queryParams: Record<string, any> = {
         search: debouncedSearch.trim() || undefined,
         status: statusFilter || undefined,
-        facility_type: typeFilter || undefined,
+        facility_type: "shelter",
         page,
         page_size: pageSize,
       };
 
       if (currentRole === "shelter_manager" && userShelterId) {
         queryParams.shelter_id = userShelterId;
+        queryParams.facility_id = userShelterId;
       }
 
       const response = await shelterService.getShelters(queryParams);
       let facilityList = unwrapList(response);
 
+      // Strict client-side filter: keep ONLY actual shelter facilities
+      facilityList = facilityList.filter((f: any) => {
+        const ft = String(f.facility_type || "shelter").toLowerCase();
+        return ft === "shelter";
+      });
+
       if (currentRole === "shelter_manager" && userShelterId) {
         facilityList = facilityList.filter((f: any) => {
-          const fShelterId = f.id || f.shelter_id || f.facility_id;
-          return !fShelterId || String(fShelterId).toLowerCase() === String(userShelterId).toLowerCase();
+          const fShelterId = String(f.id || f.shelter_id || f.facility_id || "").toLowerCase();
+          return fShelterId === String(userShelterId).toLowerCase();
         });
       }
 
@@ -281,85 +291,119 @@ export const Shelters = () => {
     }
   };
 
-  // Fetch All Facilities for dropdowns & aggregates
+  // Fetch All Facilities for dropdowns & aggregate KPI calculations
   const fetchAllShelters = async () => {
     try {
-      const queryParams: Record<string, any> = { page: 1, page_size: 50 };
+      if (currentRole === "shelter_manager" && !userShelterId) {
+        setAllShelters([]);
+        return;
+      }
+
+      const queryParams: Record<string, any> = { page: 1, page_size: 500, facility_type: "shelter" };
       if (currentRole === "shelter_manager" && userShelterId) {
         queryParams.shelter_id = userShelterId;
+        queryParams.facility_id = userShelterId;
       }
 
       const response = await shelterService.getShelters(queryParams);
-      const facs = unwrapList(response);
+      let facs = unwrapList(response);
+
+      // Enforce shelter-only filtering
+      facs = facs.filter((f: any) => {
+        const ft = String(f.facility_type || "shelter").toLowerCase();
+        return ft === "shelter";
+      });
+
+      if (currentRole === "shelter_manager" && userShelterId) {
+        facs = facs.filter((f: any) => {
+          const fShelterId = String(f.id || f.shelter_id || f.facility_id || "").toLowerCase();
+          return fShelterId === String(userShelterId).toLowerCase();
+        });
+      }
       setAllShelters(facs);
     } catch {
       setAllShelters([]);
     }
   };
 
-  // Fetch Dashboard aggregate stats
-  const fetchDashboardStats = async () => {
-    try {
-      const stats = await shelterService.getShelterDashboard().catch(() => null);
-      if (stats) {
-        setDashboardStats(stats?.data || stats);
-      }
-    } catch {
-      // quiet fallback
-    }
-  };
-
-  // Fetch all Kennels across facilities for Kennels Tab
+  // Fetch all Kennels across facilities for Kennels Tab with robust parallel handling
   const fetchAllKennelsWorkspace = async () => {
     setKennelsLoading(true);
     try {
-      const queryParams: Record<string, any> = { page: 1, page_size: 50 };
+      if (currentRole === "shelter_manager" && !userShelterId) {
+        setAllSections([]);
+        setAllKennels([]);
+        setKennelsLoading(false);
+        return;
+      }
+
+      const queryParams: Record<string, any> = { page: 1, page_size: 500, facility_type: "shelter" };
       if (currentRole === "shelter_manager" && userShelterId) {
         queryParams.shelter_id = userShelterId;
+        queryParams.facility_id = userShelterId;
       }
       const facsRes = await shelterService.getShelters(queryParams);
       let facList = unwrapList(facsRes);
 
+      facList = facList.filter((f: any) => {
+        const ft = String(f.facility_type || "shelter").toLowerCase();
+        return ft === "shelter";
+      });
+
       if (currentRole === "shelter_manager" && userShelterId) {
         facList = facList.filter((f: any) => {
-          const fShelterId = f.id || f.shelter_id || f.facility_id;
-          return !fShelterId || String(fShelterId).toLowerCase() === String(userShelterId).toLowerCase();
+          const fShelterId = String(f.id || f.shelter_id || f.facility_id || "").toLowerCase();
+          return fShelterId === String(userShelterId).toLowerCase();
         });
       }
 
-      const fetchedSections: any[] = [];
-      let fetchedKennels: any[] = [];
-
-      for (const fac of facList) {
-        try {
+      // Fetch sections for all facilities in parallel using Promise.allSettled
+      const sectionResults = await Promise.allSettled(
+        facList.map(async (fac: any) => {
           const secRes = await shelterService.getFacilitySections(fac.id);
           const secList = unwrapList(secRes);
+          return secList.map((sec: any) => ({
+            ...sec,
+            facility_name: fac.name,
+            facility_id: fac.id,
+          }));
+        })
+      );
 
-          for (const sec of secList) {
-            fetchedSections.push({ ...sec, facility_name: fac.name, facility_id: fac.id });
-            try {
-              const kRes = await shelterService.getSectionKennels(sec.id);
-              const kList = unwrapList(kRes).map((k: any) => ({
-                ...k,
-                facility_id: fac.id,
-                facility_name: fac.name,
-                section_name: sec.name,
-                section_type: sec.section_type,
-              }));
-              fetchedKennels = [...fetchedKennels, ...kList];
-            } catch {
-              // ignore single section error
-            }
-          }
-        } catch {
-          // ignore single facility error
+      const fetchedSections: any[] = [];
+      sectionResults.forEach((res) => {
+        if (res.status === "fulfilled" && Array.isArray(res.value)) {
+          fetchedSections.push(...res.value);
         }
-      }
+      });
+
+      // Fetch kennels for all sections in parallel using Promise.allSettled
+      const kennelResults = await Promise.allSettled(
+        fetchedSections.map(async (sec: any) => {
+          const kRes = await shelterService.getSectionKennels(sec.id);
+          const kList = unwrapList(kRes);
+          return kList.map((k: any) => ({
+            ...k,
+            facility_id: sec.facility_id,
+            facility_name: sec.facility_name,
+            section_name: sec.name,
+            section_type: sec.section_type,
+          }));
+        })
+      );
+
+      const fetchedKennels: any[] = [];
+      kennelResults.forEach((res) => {
+        if (res.status === "fulfilled" && Array.isArray(res.value)) {
+          fetchedKennels.push(...res.value);
+        }
+      });
 
       setAllSections(fetchedSections);
       setAllKennels(fetchedKennels);
     } catch {
-      // quiet catch
+      setAllSections([]);
+      setAllKennels([]);
     } finally {
       setKennelsLoading(false);
     }
@@ -367,11 +411,10 @@ export const Shelters = () => {
 
   useEffect(() => {
     fetchShelters();
-  }, [debouncedSearch, statusFilter, typeFilter, page, pageSize]);
+  }, [debouncedSearch, statusFilter, page, pageSize]);
 
   useEffect(() => {
     fetchAllShelters();
-    fetchDashboardStats();
     fetchAllKennelsWorkspace();
   }, []);
 
@@ -533,30 +576,42 @@ export const Shelters = () => {
     }
   };
 
-  // Aggregate Calculation for Summary KPIs from REAL Backend Data
+  // Aggregate Calculation for Summary KPIs from REAL Scoped Backend Data
   const computedStats = useMemo(() => {
-    const totalShelters = allShelters.length || totalCount;
-    const activeShelters = allShelters.filter((s) => s.status === "active").length;
-    const totalCapacity = allShelters.reduce((acc, s) => acc + (Number(s.total_capacity) || 0), 0);
+    // 1. Total Facilities (scoped to shelters available in this view)
+    const totalShelters = allShelters.length;
+
+    // 2. Active Facilities
+    const activeShelters = allShelters.filter((s) => (s.status || "active").toLowerCase() === "active").length;
+
+    // 3. Physical Kennels Counts
     const occupiedKennelsCount = allKennels.filter((k) => k.is_occupied).length;
     const totalKennelsCount = allKennels.length;
     const availableKennelsCount = Math.max(0, totalKennelsCount - occupiedKennelsCount);
 
-    // Occupancy Rate calculated strictly from real data
+    // 4. Capacity Calculations
+    const declaredCapacity = allShelters.reduce((acc, s) => acc + (Number(s.total_capacity || s.capacity) || 0), 0);
+    const kennelCapacitySum = allKennels.reduce((acc, k) => acc + (Number(k.capacity) || 1), 0);
+
+    const totalCapacity = declaredCapacity > 0 ? declaredCapacity : (kennelCapacitySum > 0 ? kennelCapacitySum : totalKennelsCount);
+    const occupiedCount = occupiedKennelsCount;
+    const availableCount = totalCapacity > 0 ? Math.max(0, totalCapacity - occupiedCount) : availableKennelsCount;
+
+    // 5. Occupancy Rate (%) - Calculated strictly from matching scope dataset
     const effectiveCapacity = totalCapacity || totalKennelsCount;
     const occupancyPct = effectiveCapacity > 0
-      ? Math.min(100, Math.round(((dashboardStats?.occupied_spaces ?? occupiedKennelsCount) / effectiveCapacity) * 100))
+      ? Math.round((occupiedCount / effectiveCapacity) * 100)
       : 0;
 
     return {
       totalShelters,
       activeShelters,
-      totalCapacity: dashboardStats?.total_capacity ?? totalCapacity,
-      occupiedCount: dashboardStats?.occupied_spaces ?? occupiedKennelsCount,
-      availableCount: dashboardStats?.available_spaces ?? availableKennelsCount,
+      totalCapacity,
+      occupiedCount,
+      availableCount,
       occupancyPct,
     };
-  }, [allShelters, totalCount, allKennels, dashboardStats]);
+  }, [allShelters, allKennels]);
 
   // Filtered Kennels list for Kennels tab
   const filteredKennels = useMemo(() => {
@@ -602,7 +657,7 @@ export const Shelters = () => {
       ),
     },
     { key: "address", header: "Location / Address", render: (_v, row) => row.address || "Unspecified" },
-    { key: "phone", header: "Contact Phone", render: (_v, row) => row.phone || "—" },
+    { key: "phone", header: "Contact Phone", render: (_v, row) => <span style={{ wordBreak: "break-all" }}>{row.phone || "—"}</span> },
     { key: "total_capacity", header: "Capacity", render: (_v, row) => <span style={{ fontWeight: 600, color: "#0F172A" }}>{row.total_capacity ?? "Unspecified"}</span> },
     {
       key: "status",
@@ -1067,7 +1122,7 @@ export const Shelters = () => {
             loading={loading}
             error={error}
             onRetry={fetchShelters}
-            emptyMessage="No shelter facilities registered in the system."
+            emptyMessage={currentRole === "shelter_manager" && (!userShelterId || shelters.length === 0) ? "No shelter facilities assigned to this account." : "No shelter facilities registered in the system."}
             serverMode={true}
             totalCount={totalCount}
             page={page}
@@ -1099,21 +1154,6 @@ export const Shelters = () => {
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                   <option value="maintenance">Maintenance</option>
-                </select>
-
-                <select
-                  value={typeFilter}
-                  onChange={(e) => {
-                    setTypeFilter(e.target.value);
-                    setPage(1);
-                  }}
-                  style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px" }}
-                >
-                  <option value="">All Facility Types</option>
-                  <option value="shelter">Shelter</option>
-                  <option value="clinic">Clinic</option>
-                  <option value="foster_home">Foster Home</option>
-                  <option value="partner">Partner</option>
                 </select>
 
                 <select
@@ -1215,15 +1255,12 @@ export const Shelters = () => {
           </div>
           <div>
             <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155" }}>Facility Type</label>
-            <select
-              value={registerForm.facility_type}
-              onChange={(e) => setRegisterForm({ ...registerForm, facility_type: e.target.value })}
-              style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px" }}
-            >
-              {FACILITY_TYPES.map((t) => (
-                <option key={t} value={t}>{t.toUpperCase()}</option>
-              ))}
-            </select>
+            <input
+              type="text"
+              value="Shelter"
+              disabled
+              style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px", background: "#F1F5F9", color: "#64748B" }}
+            />
           </div>
           <div>
             <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155" }}>Address / Location</label>
@@ -1294,15 +1331,12 @@ export const Shelters = () => {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div>
               <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155" }}>Facility Type</label>
-              <select
-                value={editForm.facility_type}
-                onChange={(e) => setEditForm({ ...editForm, facility_type: e.target.value })}
-                style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px" }}
-              >
-                {FACILITY_TYPES.map((t) => (
-                  <option key={t} value={t}>{t.toUpperCase()}</option>
-                ))}
-              </select>
+              <input
+                type="text"
+                value="Shelter"
+                disabled
+                style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px", background: "#F1F5F9", color: "#64748B" }}
+              />
             </div>
             <div>
               <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155" }}>Operational Status</label>

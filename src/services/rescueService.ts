@@ -36,32 +36,18 @@ export const rescueService = {
     return response.data;
   },
 
-  // GET /rescue — fetch all pages of rescue cases
+  // GET /rescue — fetch page 1 without multi-page sequential loops
   getAllRescueCases: async (params?: Record<string, unknown>) => {
-    const pageSize = 50;
+    const pageSize = (params?.page_size as number) || 50;
     try {
-      const firstParams = { ...params, page: 1, page_size: pageSize };
+      const firstParams = { page: 1, page_size: pageSize, ...params };
       const response = await api.get("/rescue", { params: firstParams });
       const firstBody = response.data;
-      let collected = unwrapList(firstBody);
-      const totalPages = firstBody?.meta?.total_pages ?? firstBody?.total_pages ?? 1;
-      if (totalPages > 1 && Array.isArray(collected)) {
-        for (let p = 2; p <= totalPages; p++) {
-          try {
-            const pageRes = await api.get("/rescue", { params: { ...params, page: p, page_size: pageSize } });
-            const pageList = unwrapList(pageRes.data);
-            collected.push(...pageList);
-          } catch {
-            /* ignore page fetch error */
-          }
-        }
-      }
+      const collected = unwrapList(firstBody);
       return { success: true, data: collected, meta: firstBody?.meta };
     } catch (err) {
       console.error("getAllRescueCases error:", err);
-      const fallback = await api.get("/rescue", { params: { ...params, page: 1, page_size: 50 } });
-      const list = unwrapList(fallback.data);
-      return { success: true, data: list, meta: fallback.data?.meta };
+      return { success: false, data: [], meta: { total: 0 } };
     }
   },
 
@@ -239,30 +225,16 @@ export const rescueService = {
   },
 
   getAllDispatches: async (params?: Record<string, unknown>) => {
-    const pageSize = 50;
+    const pageSize = (params?.page_size as number) || 50;
     try {
-      const firstParams = { ...params, page: 1, page_size: pageSize };
+      const firstParams = { page: 1, page_size: pageSize, ...params };
       const response = await api.get("/rescue/dispatches", { params: firstParams });
       const firstBody = response.data;
-      let collected = unwrapList(firstBody);
-      const totalPages = firstBody?.meta?.total_pages ?? firstBody?.total_pages ?? 1;
-      if (totalPages > 1 && Array.isArray(collected)) {
-        for (let p = 2; p <= totalPages; p++) {
-          try {
-            const pageRes = await api.get("/rescue/dispatches", { params: { ...params, page: p, page_size: pageSize } });
-            const pageList = unwrapList(pageRes.data);
-            collected.push(...pageList);
-          } catch {
-            /* ignore page fetch error */
-          }
-        }
-      }
+      const collected = unwrapList(firstBody);
       return { success: true, data: collected, meta: firstBody?.meta };
     } catch (err) {
       console.error("getAllDispatches error:", err);
-      const fallback = await api.get("/rescue/dispatches", { params: { ...params, page: 1, page_size: 50 } });
-      const list = unwrapList(fallback.data);
-      return { success: true, data: list, meta: fallback.data?.meta };
+      return { success: false, data: [], meta: { total: 0 } };
     }
   },
 

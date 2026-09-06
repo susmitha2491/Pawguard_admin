@@ -939,7 +939,7 @@ const LostAndFound = () => {
       key: "id",
       header: "Report #",
       render: (_v, row) => (
-        <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#475569" }}>
+        <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#475569", fontWeight: 600 }}>
           {shortId(row.id)}
         </span>
       ),
@@ -949,18 +949,26 @@ const LostAndFound = () => {
       header: "Lost Pet",
       render: (val, row) => (
         <div>
-          <div style={{ fontWeight: 700, color: "#0F172A" }}>{val || "-"}</div>
+          <div style={{ fontWeight: 700, color: "#0F172A", fontSize: "13.5px" }}>{val || "-"}</div>
           <div style={{ marginTop: "2px" }}>{speciesChip(row.species)}</div>
         </div>
       ),
     },
-    { key: "breed", header: "Breed" },
-    { key: "color", header: "Color" },
-    { key: "location_address", header: "Last Seen Location" },
+    { key: "breed", header: "Breed", render: (val) => <span style={{ fontSize: "13px", color: "#334155" }}>{val || "-"}</span> },
+    { key: "color", header: "Color", render: (val) => <span style={{ fontSize: "13px", color: "#334155" }}>{val || "-"}</span> },
+    {
+      key: "location_address",
+      header: "Last Seen Location",
+      render: (val) => (
+        <div style={{ fontSize: "12.5px", color: "#334155", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={val || "-"}>
+          {val || "-"}
+        </div>
+      ),
+    },
     {
       key: "lost_at",
       header: "Lost Date/Time",
-      render: (val) => <span style={{ whiteSpace: "nowrap" }}>{formatDate(val)}</span>,
+      render: (val) => <span style={{ whiteSpace: "nowrap", fontSize: "12.5px" }}>{formatDate(val)}</span>,
     },
     {
       key: "user",
@@ -968,13 +976,15 @@ const LostAndFound = () => {
       render: (_v, row) => {
         const canSeeContact = role === "super_admin" || role === "rescue_centre_admin" || row.status === "resolved";
         if (!canSeeContact) {
-          return <span style={{ color: "#64748B", fontSize: "12px" }}>🔒 Protected Contact</span>;
+          return <span style={{ color: "#64748B", fontSize: "12px", fontStyle: "italic" }}>🔒 Protected Contact</span>;
         }
+        const name = row.user?.full_name || row.user?.email || "Reporter Profile";
+        const phone = row.user?.phone;
         return (
-          <span>
-            {row.user?.full_name || row.user?.email || "Reporter Profile"}
-            {row.user?.phone ? ` \u00b7 ${row.user.phone}` : ""}
-          </span>
+          <div style={{ fontSize: "12.5px" }}>
+            <div style={{ fontWeight: 600, color: "#1E293B" }}>{name}</div>
+            {phone ? <div style={{ fontSize: "11.5px", color: "#64748B" }}>{phone}</div> : null}
+          </div>
         );
       },
     },
@@ -986,7 +996,7 @@ const LostAndFound = () => {
       key: "id",
       header: "Report #",
       render: (_v, row) => (
-        <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#475569" }}>
+        <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#475569", fontWeight: 600 }}>
           {shortId(row.id)}
         </span>
       ),
@@ -996,17 +1006,25 @@ const LostAndFound = () => {
       header: "Found Animal",
       render: (val, row) => (
         <div>
-          <div style={{ fontWeight: 700, color: "#0F172A" }}>{val || "-"}</div>
+          <div style={{ fontWeight: 700, color: "#0F172A", fontSize: "13.5px" }}>{val || "-"}</div>
           <div style={{ marginTop: "2px" }}>{speciesChip(row.species)}</div>
         </div>
       ),
     },
-    { key: "color_observed", header: "Color" },
-    { key: "location_address", header: "Found Location" },
+    { key: "color_observed", header: "Color", render: (val) => <span style={{ fontSize: "13px", color: "#334155" }}>{val || "-"}</span> },
+    {
+      key: "location_address",
+      header: "Found Location",
+      render: (val) => (
+        <div style={{ fontSize: "12.5px", color: "#334155", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={val || "-"}>
+          {val || "-"}
+        </div>
+      ),
+    },
     {
       key: "found_at",
       header: "Found Date/Time",
-      render: (val) => <span style={{ whiteSpace: "nowrap" }}>{formatDate(val)}</span>,
+      render: (val) => <span style={{ whiteSpace: "nowrap", fontSize: "12.5px" }}>{formatDate(val)}</span>,
     },
     {
       key: "user",
@@ -1014,13 +1032,15 @@ const LostAndFound = () => {
       render: (_v, row) => {
         const canSeeContact = role === "super_admin" || role === "rescue_centre_admin" || row.status === "resolved";
         if (!canSeeContact) {
-          return <span style={{ color: "#64748B", fontSize: "12px" }}>🔒 Protected Contact</span>;
+          return <span style={{ color: "#64748B", fontSize: "12px", fontStyle: "italic" }}>🔒 Protected Contact</span>;
         }
+        const name = row.user?.full_name || row.user?.email || "Reporter Profile";
+        const phone = row.user?.phone;
         return (
-          <span>
-            {row.user?.full_name || row.user?.email || "Reporter Profile"}
-            {row.user?.phone ? ` \u00b7 ${row.user.phone}` : ""}
-          </span>
+          <div style={{ fontSize: "12.5px" }}>
+            <div style={{ fontWeight: 600, color: "#1E293B" }}>{name}</div>
+            {phone ? <div style={{ fontSize: "11.5px", color: "#64748B" }}>{phone}</div> : null}
+          </div>
         );
       },
     },
@@ -1032,7 +1052,7 @@ const LostAndFound = () => {
       key: "id",
       header: "Report #",
       render: (_v, row) => (
-        <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#475569" }}>
+        <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#475569", fontWeight: 600 }}>
           {shortId(row.id)}
         </span>
       ),
@@ -1047,7 +1067,7 @@ const LostAndFound = () => {
       header: "Animal",
       render: (_v, row) => (
         <div>
-          <div style={{ fontWeight: 700, color: "#0F172A" }}>
+          <div style={{ fontWeight: 700, color: "#0F172A", fontSize: "13.5px" }}>
             {row.pet_name || row.breed_observed || "-"}
           </div>
           <div style={{ marginTop: "2px" }}>{speciesChip(row.species)}</div>
@@ -1057,19 +1077,27 @@ const LostAndFound = () => {
     {
       key: "_breed",
       header: "Breed",
-      render: (_v, row) => row.breed || row.breed_observed || "-",
+      render: (_v, row) => <span style={{ fontSize: "13px", color: "#334155" }}>{row.breed || row.breed_observed || "-"}</span>,
     },
     {
       key: "_color",
       header: "Color",
-      render: (_v, row) => row.color || row.color_observed || "-",
+      render: (_v, row) => <span style={{ fontSize: "13px", color: "#334155" }}>{row.color || row.color_observed || "-"}</span>,
     },
-    { key: "location_address", header: "Location" },
+    {
+      key: "location_address",
+      header: "Location",
+      render: (val) => (
+        <div style={{ fontSize: "12.5px", color: "#334155", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={val || "-"}>
+          {val || "-"}
+        </div>
+      ),
+    },
     {
       key: "_date",
       header: "Reported Date/Time",
       render: (_v, row) => (
-        <span style={{ whiteSpace: "nowrap" }}>
+        <span style={{ whiteSpace: "nowrap", fontSize: "12.5px" }}>
           {formatDate(row.lost_at || row.found_at)}
         </span>
       ),
@@ -1080,13 +1108,15 @@ const LostAndFound = () => {
       render: (_v, row) => {
         const canSeeContact = role === "super_admin" || role === "rescue_centre_admin" || row.status === "resolved";
         if (!canSeeContact) {
-          return <span style={{ color: "#64748B", fontSize: "12px" }}>🔒 Protected Contact</span>;
+          return <span style={{ color: "#64748B", fontSize: "12px", fontStyle: "italic" }}>🔒 Protected Contact</span>;
         }
+        const name = row.user?.full_name || row.user?.email || "Reporter Profile";
+        const phone = row.user?.phone;
         return (
-          <span>
-            {row.user?.full_name || row.user?.email || "Reporter Profile"}
-            {row.user?.phone ? ` \u00b7 ${row.user.phone}` : ""}
-          </span>
+          <div style={{ fontSize: "12.5px" }}>
+            <div style={{ fontWeight: 600, color: "#1E293B" }}>{name}</div>
+            {phone ? <div style={{ fontSize: "11.5px", color: "#64748B" }}>{phone}</div> : null}
+          </div>
         );
       },
     },
@@ -1206,7 +1236,7 @@ const LostAndFound = () => {
   const labelStyle: CSSProperties = { fontSize: "13px", fontWeight: 600, color: "#334155" };
 
   return (
-    <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
+    <div style={{ padding: "20px 24px", width: "100%", boxSizing: "border-box" }}>
       <div
         style={{
           display: "flex",
@@ -1643,9 +1673,10 @@ const LostAndFound = () => {
             const rowKind = (row as RegistryReport & { _kind?: unknown })._kind;
             const kind = rowKind === "found" || rowKind === "lost" ? rowKind : (activeTab === "found" ? "found" : "lost");
             return (
-              <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center", whiteSpace: "nowrap" }}>
                 <button
                   type="button"
+                  title="View Report Details"
                   onClick={() => openDetails(row)}
                   style={{
                     display: "inline-flex",
@@ -1659,12 +1690,14 @@ const LostAndFound = () => {
                     fontSize: "12px",
                     fontWeight: 600,
                     cursor: "pointer",
+                    whiteSpace: "nowrap",
                   }}
                 >
                   <FaEye size={12} /> View
                 </button>
                 <button
                   type="button"
+                  title="Verify Safety Tag"
                   onClick={() => {
                     const animalId = row.companion_pet_id || (row as any).pet_id || (row as any).dog_id;
                     setVerifyExpectedAnimalId(animalId ? String(animalId) : undefined);
@@ -1682,12 +1715,14 @@ const LostAndFound = () => {
                     fontSize: "12px",
                     fontWeight: 600,
                     cursor: "pointer",
+                    whiteSpace: "nowrap",
                   }}
                 >
                   <FaQrcode size={12} /> Verify Tag
                 </button>
                 <button
                   type="button"
+                  title="Matches"
                   onClick={() => openMatches(row)}
                   style={{
                     display: "inline-flex",
@@ -1701,6 +1736,7 @@ const LostAndFound = () => {
                     fontSize: "12px",
                     fontWeight: 600,
                     cursor: "pointer",
+                    whiteSpace: "nowrap",
                   }}
                 >
                   <FaHandshake size={12} /> Matches
@@ -1709,6 +1745,7 @@ const LostAndFound = () => {
                   <Can permission="broadcast_lost_found">
                     <button
                       type="button"
+                      title="Broadcast"
                       onClick={() => {
                         setSelectedReport(row);
                         setSelectedReportKind("lost");
@@ -1727,6 +1764,7 @@ const LostAndFound = () => {
                         fontSize: "12px",
                         fontWeight: 600,
                         cursor: "pointer",
+                        whiteSpace: "nowrap",
                       }}
                     >
                       <FaBroadcastTower size={12} /> Broadcast
@@ -1736,6 +1774,7 @@ const LostAndFound = () => {
                 <Can permission="delete_lost_found">
                   <button
                     type="button"
+                    title="Delete Report"
                     onClick={() => {
                       setSelectedReport(row);
                       setSelectedReportKind(kind);
@@ -1753,6 +1792,7 @@ const LostAndFound = () => {
                       fontSize: "12px",
                       fontWeight: 600,
                       cursor: "pointer",
+                      whiteSpace: "nowrap",
                     }}
                   >
                     <FaTrash size={12} /> Delete

@@ -171,7 +171,7 @@ export const petService = {
   _allDogsPromise: null as Promise<any> | null,
   _lastFetchTime: 0,
 
-  // GET /dogs & /companion-pets — fetch complete dataset across all pages for Admin KPI/table view
+  // GET /dogs & /companion-pets — fetch single page for table/dashboard view without multi-page sequential loops
   getAllDogs: function (params?: Record<string, unknown>) {
     const now = Date.now();
     if (this._allDogsPromise && now - this._lastFetchTime < 30000 && !params) {
@@ -180,51 +180,24 @@ export const petService = {
 
     this._lastFetchTime = now;
     const promise = (async () => {
-      const pageSize = 50;
+      const pageSize = (params?.page_size as number) || 50;
       const collected: any[] = [];
+      let totalCount = 0;
       try {
-        const firstRes = await api.get("/dogs", { params: { ...params, page: 1, page_size: pageSize } });
+        const firstRes = await api.get("/dogs", { params: { page: 1, page_size: pageSize, ...params } });
         const firstBody = firstRes.data;
         const firstList = Array.isArray(firstBody?.data) ? firstBody.data : Array.isArray(firstBody) ? firstBody : [];
         collected.push(...firstList);
+        totalCount = firstBody?.meta?.total ?? firstBody?.data?.meta?.total ?? firstList.length;
 
-        const totalRecords = firstBody?.meta?.total ?? firstBody?.data?.meta?.total ?? collected.length;
-        const actualPageSize = firstBody?.meta?.page_size ?? (firstList.length > 0 ? firstList.length : pageSize);
-        const totalPages = firstBody?.meta?.total_pages ?? Math.ceil(totalRecords / Math.max(1, actualPageSize));
-
-        for (let p = 2; p <= totalPages; p++) {
-          try {
-            const pageRes = await api.get("/dogs", { params: { ...params, page: p, page_size: pageSize } });
-            const pageBody = pageRes.data;
-            const pageList = Array.isArray(pageBody?.data) ? pageBody.data : Array.isArray(pageBody) ? pageBody : [];
-            collected.push(...pageList);
-          } catch (pErr) {
-            console.warn(`Failed to fetch page ${p} of dogs:`, pErr);
-          }
-        }
-
-        // Merge ALL pages of CompanionPets dataset into global dogs list if accessible
+        // Fetch companion pets first page if accessible
         try {
           const compFirst = await api.get("/companion-pets", { params: { page: 1, page_size: pageSize } });
           const compBody = compFirst.data;
           const compList = Array.isArray(compBody?.data) ? compBody.data : Array.isArray(compBody) ? compBody : [];
-          const compTotalPages = compBody?.meta?.total_pages ?? Math.ceil((compBody?.meta?.total ?? compList.length) / pageSize);
-
-          const allCompPets: any[] = [...compList];
-          for (let cpPage = 2; cpPage <= compTotalPages; cpPage++) {
-            try {
-              const pageRes = await api.get("/companion-pets", { params: { page: cpPage, page_size: pageSize } });
-              const pageBody = pageRes.data;
-              const pageList = Array.isArray(pageBody?.data) ? pageBody.data : Array.isArray(pageBody) ? pageBody : [];
-              allCompPets.push(...pageList);
-            } catch {
-              /* ignore single page error */
-            }
-          }
-
-          if (allCompPets.length > 0) {
+          if (compList.length > 0) {
             const existingIds = new Set(collected.map((d: any) => d.id || d.dog_id));
-            const normalizedCompanions = allCompPets
+            const normalizedCompanions = compList
               .filter((cp: any) => !existingIds.has(cp.id) && !existingIds.has(cp.original_dog_id))
               .map((cp: any) => ({
                 ...cp,
@@ -233,6 +206,7 @@ export const petService = {
                 status: cp.status || "companion",
               }));
             collected.push(...normalizedCompanions);
+            totalCount += compBody?.meta?.total ?? compList.length;
           }
         } catch {
           /* ignore companion pets fetch failure */
@@ -241,7 +215,7 @@ export const petService = {
         return {
           success: true,
           data: collected,
-          meta: { total: collected.length },
+          meta: { ...firstBody?.meta, total: totalCount },
         };
       } catch (err) {
         console.error("petService.getAllDogs Error:", err);
@@ -414,6 +388,24 @@ export const petService = {
   // Pass forceReissue=true to force re-issuance (POST /dogs/{dog_id}/safety-tag?force_reissue=true)
   provisionSafetyTag: async (dogId: string, forceReissue = false) => {
     const cleanId = String(dogId || "").trim();
+    if (!cleanId) throw new Error("Dog ID is required.");
+
+    // Idempotency check: If not forcing re-issuance, check if an active Safety Tag already exists
+    if (!forceReissue) {
+      try {
+        const existingMeta = await petService.getSafetyTagMetadata(cleanId);
+        const inner = existingMeta?.data?.data || existingMeta?.data || existingMeta;
+        const isExistingActive =
+          inner?.is_active === true ||
+          String(inner?.status || "").toUpperCase() === "ACTIVE";
+        if (isExistingActive) {
+          return existingMeta;
+        }
+      } catch {
+        /* No active tag found, proceed to create */
+      }
+    }
+
     const url = forceReissue ? `/dogs/${cleanId}/safety-tag?force_reissue=true` : `/dogs/${cleanId}/safety-tag`;
     const response = await api.post(url);
     const resData = response.data;

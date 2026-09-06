@@ -26,21 +26,13 @@ export const dogService = {
     return response.data;
   },
 
-  // GET /dogs — fetch every page (the backend clamps page_size to 50).
+  // GET /dogs — fetch page 1 (or requested params) without scanning all pages sequentially
   getAllDogs: async (params?: Record<string, unknown>) => {
-    const pageSize = 50;
-    const collected: any[] = [];
-    const first = await api.get("/dogs", { params: { ...params, page: 1, page_size: pageSize } });
-    const firstBody = first.data;
-    const firstList = Array.isArray(firstBody?.data) ? firstBody.data : Array.isArray(firstBody) ? firstBody : [];
-    collected.push(...firstList);
-    const totalPages = firstBody?.meta?.total_pages ?? 1;
-    for (let p = 2; p <= totalPages; p++) {
-      const page = await api.get("/dogs", { params: { ...params, page: p, page_size: pageSize } });
-      const list = Array.isArray(page.data?.data) ? page.data.data : [];
-      collected.push(...list);
-    }
-    return { success: true, data: collected, meta: firstBody?.meta };
+    const pageSize = (params?.page_size as number) || 50;
+    const response = await api.get("/dogs", { params: { page: 1, page_size: pageSize, ...params } });
+    const body = response.data;
+    const list = Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
+    return { success: true, data: list, meta: body?.meta };
   },
 
   // POST /dogs

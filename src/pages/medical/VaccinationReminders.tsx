@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import DataTable from "../../components/common/DataTable";
 import type { Column } from "../../components/common/DataTable";
 import StatCard from "../../components/dashboard/StatCard";
@@ -14,12 +14,16 @@ import {
   FaPaperPlane,
   FaPlus,
   FaRedoAlt,
+  FaSearch,
+  FaDog,
+  FaEye,
 } from "react-icons/fa";
 import reminderService from "../../services/reminderService";
 import dogService from "../../services/dogService";
+import petService from "../../services/petService";
 import notificationService from "../../services/notificationService";
 import { notifyDataChanged, useDataSync } from "../../utils/dataSync";
-import { getCurrentUserRole } from "../../utils/roleUtils";
+import { formatDateTime } from "../../utils/dateUtils";
 
 type Row = Record<string, unknown>;
 
@@ -54,9 +58,8 @@ const badge = (bg: string, color: string): React.CSSProperties => ({
   fontSize: "12px",
   fontWeight: 700,
   display: "inline-block",
+  whiteSpace: "nowrap",
 });
-
-import { formatDateTime } from "../../utils/dateUtils";
 
 const formatDate = (v: unknown): string => formatDateTime(v as string);
 
@@ -94,34 +97,56 @@ const dueCell = (v: unknown): React.ReactNode => {
   );
 };
 
-const boolBadge = (value: unknown, activeBg: string, activeColor: string, inactiveBg: string, inactiveColor: string, activeLabel: string, inactiveLabel: string): React.ReactNode =>
+const boolBadge = (
+  value: unknown,
+  activeBg: string,
+  activeColor: string,
+  inactiveBg: string,
+  inactiveColor: string,
+  activeLabel: string,
+  inactiveLabel: string
+): React.ReactNode =>
   value ? (
     <span style={badge(activeBg, activeColor)}>{activeLabel}</span>
   ) : (
     <span style={badge(inactiveBg, inactiveColor)}>{inactiveLabel}</span>
   );
 
+const getDogCanonicalId = (d: Row): string =>
+  String(pick(d, "id", "dog_id", "pet_id", "original_dog_id") || "").trim();
+
+const matchDogRecord = (row: Row, dog: Row): boolean => {
+  const dId = getDogCanonicalId(dog);
+  const dReg = String(pick(dog, "registration_number") || "").trim();
+  const rId = String(
+    pick(row, "dog_id", "pet_id", "dogId", "petId", "animal_id", "original_dog_id") || ""
+  ).trim();
+  if (!rId) return false;
+  if (rId === dId) return true;
+  if (dReg && rId === dReg) return true;
+  return false;
+};
+
 const VaccinationReminders = () => {
   const [dogs, setDogs] = useState<Row[]>([]);
-  const [dogsLoading, setDogsLoading] = useState(true);
-  const [dogsError, setDogsError] = useState<string | null>(null);
-  const [dogId, setDogId] = useState("");
+  const [allVaccinations, setAllVaccinations] = useState<Row[]>([]);
+  const [allPrescriptions, setAllPrescriptions] = useState<Row[]>([]);
+  const [allReminders, setAllReminders] = useState<Row[]>([]);
 
-  const [vaccinations, setVaccinations] = useState<Row[]>([]);
-  const [vaccLoading, setVaccLoading] = useState(false);
-  const [vaccError, setVaccError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [prescriptions, setPrescriptions] = useState<Row[]>([]);
-  const [rxLoading, setRxLoading] = useState(false);
-  const [rxError, setRxError] = useState<string | null>(null);
+  // Search & Filters
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedDogFilter, setSelectedDogFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "overdue" | "active_meds" | "no_records" | "has_records">("all");
 
-  const [administrations, setAdministrations] = useState<Row[]>([]);
+  // Selected Dog Detail Modal View
+  const [selectedDogDetail, setSelectedDogDetail] = useState<Row | null>(null);
+  const [detailTab, setDetailTab] = useState<"vaccination" | "medication" | "reminders">("vaccination");
 
-  const [activeTab, setActiveTab] = useState<"vaccination" | "medication" | "reminders">("vaccination");
-  const [reminders, setReminders] = useState<Row[]>([]);
-  const [remLoading, setRemLoading] = useState(false);
-  const [remError, setRemError] = useState<string | null>(null);
-
+  // Action Modals & States
+  const [targetDogForModal, setTargetDogForModal] = useState<Row | null>(null);
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [reminderForm, setReminderForm] = useState({
     kind: "vaccination" as "vaccination" | "medication",
@@ -132,116 +157,310 @@ const VaccinationReminders = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [notifyTarget, setNotifyTarget] = useState<Row | null>(null);
+  const [notifyTarget, setNotifyTarget] = useState<{ row: Row; dogName: string } | null>(null);
   const [isNotifying, setIsNotifying] = useState(false);
 
-  const [deleteTarget, setDeleteTarget] = useState<Row | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ row: Row; dogId: string; dogName: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const [togglingRxId, setTogglingRxId] = useState<string | null>(null);
 
   const { addToast } = useToast();
 
-  const selectedDog = dogs.find((d) => pick(d, "id") === dogId) || null;
-  const dogLabel = selectedDog
-    ? str(pick(selectedDog, "name")) +
-      (str(pick(selectedDog, "breed")) ? ` (${str(pick(selectedDog, "breed"))})` : "")
-    : "";
-
-  const fetchDogs = useCallback(async () => {
+  const fetchAllData = useCallback(async () => {
     try {
-      setDogsLoading(true);
-      setDogsError(null);
-      const res = await dogService.getAllDogs();
-      const list = Array.isArray(res?.data) ? res.data : [];
-      setDogs(list);
-      if (!dogId && list.length > 0) {
-        setDogId(String(pick(list[0], "id") ?? ""));
+      setLoading(true);
+      setError(null);
+
+      const [dogsRes, vaccRes, rxRes] = await Promise.allSettled([
+        petService.getAllDogs().catch(() => dogService.getAllDogs()),
+        reminderService.getVaccinations({ page: 1, page_size: 100 }),
+        reminderService.getPrescriptions({ page: 1, page_size: 100 }),
+      ]);
+
+      const dogList = dogsRes.status === "fulfilled" && Array.isArray(dogsRes.value?.data) ? dogsRes.value.data : [];
+      const vaccList = vaccRes.status === "fulfilled" && Array.isArray(vaccRes.value?.data) ? vaccRes.value.data : [];
+      const rxList = rxRes.status === "fulfilled" && Array.isArray(rxRes.value?.data) ? rxRes.value.data : [];
+
+      setDogs(dogList);
+      setAllVaccinations(vaccList);
+      setAllPrescriptions(rxList);
+
+      if (dogList.length > 0) {
+        const topDogs = dogList.slice(0, 30);
+        Promise.allSettled(
+          topDogs.map((d: Row) => reminderService.getPetReminders(getDogCanonicalId(d)))
+        ).then((results) => {
+          const collectedRem: Row[] = [];
+          results.forEach((res, idx) => {
+            if (res.status === "fulfilled" && Array.isArray(res.value?.data)) {
+              const dId = getDogCanonicalId(topDogs[idx]);
+              res.value.data.forEach((r: Row) => {
+                collectedRem.push({ ...r, dog_id: dId });
+              });
+            }
+          });
+          setAllReminders(collectedRem);
+        });
       }
     } catch (err) {
-      setDogsError(toErrorMessage(err, "Failed to load dogs."));
+      setError(toErrorMessage(err, "Failed to load medical reminder data."));
     } finally {
-      setDogsLoading(false);
+      setLoading(false);
     }
-  }, [dogId]);
+  }, []);
 
-  const fetchData = useCallback(async () => {
-    if (!dogId) return;
-    try {
-      setVaccLoading(true);
-      setVaccError(null);
-      setRxLoading(true);
-      setRxError(null);
-      setRemLoading(true);
-      setRemError(null);
-      const isShelterManager = getCurrentUserRole() === "shelter_manager";
-      const [vacc, rx, admin, rem] = await Promise.all([
-        reminderService.getVaccinations({ dog_id: dogId, page: 1, page_size: 20 }),
-        reminderService.getPrescriptions({ dog_id: dogId, page: 1, page_size: 20 }),
-        reminderService.getDogAdministrations(dogId),
-        isShelterManager
-          ? reminderService.getPetReminders(dogId).catch(() => ({ data: [] }))
-          : reminderService.getPetReminders(dogId),
-      ]);
-      setVaccinations(Array.isArray(vacc?.data) ? vacc.data : []);
-      setPrescriptions(Array.isArray(rx?.data) ? rx.data : []);
-      setAdministrations(Array.isArray(admin?.data) ? admin.data : []);
-      setReminders(Array.isArray(rem?.data) ? rem.data : []);
-    } catch (err) {
-      const msg = toErrorMessage(err, "Failed to load reminders.");
-      setVaccError(msg);
-      setRxError(msg);
-      setRemError(msg);
-    } finally {
-      setVaccLoading(false);
-      setRxLoading(false);
-      setRemLoading(false);
-    }
-  }, [dogId]);
-
-  useDataSync(fetchData);
+  useDataSync(fetchAllData);
 
   useEffect(() => {
-    void fetchDogs();
-  }, [fetchDogs]);
+    void fetchAllData();
+  }, [fetchAllData]);
 
-  useEffect(() => {
-    if (dogId) void fetchData();
-  }, [dogId, fetchData]);
+  // Derived Stats across ALL dogs
+  const nowMs = Date.now();
+  const totalDogsCount = dogs.length;
+  const upcomingVaccinationsCount = allVaccinations.filter(
+    (v) => dueStateOf(pick(v, "next_due_at")) === "upcoming" || dueStateOf(pick(v, "next_due_at")) === "due_soon"
+  ).length;
+  const overdueVaccinationsCount = allVaccinations.filter(
+    (v) => dueStateOf(pick(v, "next_due_at")) === "overdue"
+  ).length;
+  const activePrescriptionsCount = allPrescriptions.filter((p) => {
+    const end = parseTime(pick(p, "end_at"));
+    return Boolean(pick(p, "is_active")) && (end === null || end >= nowMs);
+  }).length;
+  const activeRemindersCount = allReminders.filter((r) => Boolean(pick(r, "is_active"))).length;
 
-  const openReminderModal = (kind: "vaccination" | "medication", row: Row, petId: string) => {
-    const due = kind === "vaccination" ? pick(row, "next_due_at") : pick(row, "end_at");
-    const subject =
-      kind === "vaccination" ? str(pick(row, "vaccine_name")) : str(pick(row, "drug_name"));
+  const stats = [
+    {
+      title: "Registered Dogs",
+      value: `${totalDogsCount}`,
+      trend: "Total in care",
+      color: "#0F172A",
+      icon: <FaDog />,
+    },
+    {
+      title: "Upcoming Vaccinations",
+      value: `${upcomingVaccinationsCount}`,
+      trend: "Due in future",
+      color: "#2563EB",
+      icon: <FaBell />,
+    },
+    {
+      title: "Overdue Vaccinations",
+      value: `${overdueVaccinationsCount}`,
+      trend: "Action required",
+      color: "#EF4444",
+      icon: <FaExclamationTriangle />,
+      onClick: () => setStatusFilter("overdue"),
+    },
+    {
+      title: "Active Medication Plans",
+      value: `${activePrescriptionsCount}`,
+      trend: "Prescriptions",
+      color: "#F59E0B",
+      icon: <FaPills />,
+      onClick: () => setStatusFilter("active_meds"),
+    },
+    {
+      title: "Active Reminders",
+      value: `${activeRemindersCount}`,
+      trend: "Pet reminders",
+      color: "#10B981",
+      icon: <FaSyringe />,
+    },
+  ];
+
+  // Process rows for Compact All-Dogs Registry Table
+  const tableData = useMemo(() => {
+    return dogs
+      .map((d) => {
+        const dId = getDogCanonicalId(d);
+        const dName = str(pick(d, "name")) || "Unnamed Dog";
+        const dBreed = str(pick(d, "breed")) || "-";
+        const dGender = str(pick(d, "gender")) || "";
+        const dReg = str(pick(d, "registration_number"));
+
+        const dogVaccs = allVaccinations.filter((v) => matchDogRecord(v, d));
+        const dogRxs = allPrescriptions.filter((p) => matchDogRecord(p, d));
+        const dogReminders = allReminders.filter((r) => matchDogRecord(r, d));
+
+        const overdueVaccs = dogVaccs.filter((v) => dueStateOf(pick(v, "next_due_at")) === "overdue");
+        const upcomingVaccs = dogVaccs.filter(
+          (v) => dueStateOf(pick(v, "next_due_at")) === "upcoming" || dueStateOf(pick(v, "next_due_at")) === "due_soon"
+        );
+        const activeRxs = dogRxs.filter((p) => Boolean(pick(p, "is_active")));
+        const activeRems = dogReminders.filter((r) => Boolean(pick(r, "is_active")));
+
+        const hasOverdue = overdueVaccs.length > 0;
+        const hasActiveMeds = activeRxs.length > 0;
+        const hasRecords = dogVaccs.length > 0 || dogRxs.length > 0 || dogReminders.length > 0;
+
+        return {
+          _rawDog: d,
+          id: dId,
+          dog_name: dName,
+          dog_id: dId,
+          registration_number: dReg,
+          breed: dBreed,
+          gender: dGender,
+          breed_gender: `${dBreed}${dGender ? ` • ${dGender}` : ""}`,
+          vaccs_count: dogVaccs.length,
+          overdue_vaccs_count: overdueVaccs.length,
+          upcoming_vaccs_count: upcomingVaccs.length,
+          rxs_count: dogRxs.length,
+          active_rxs_count: activeRxs.length,
+          reminders_count: dogReminders.length,
+          active_reminders_count: activeRems.length,
+          has_overdue: hasOverdue,
+          has_active_meds: hasActiveMeds,
+          has_records: hasRecords,
+          dogVaccs,
+          dogRxs,
+          dogReminders,
+        };
+      })
+      .filter((row) => {
+        // Single dog filter
+        if (selectedDogFilter && row.id !== selectedDogFilter) return false;
+
+        // Search query
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase().trim();
+          const matches =
+            row.dog_name.toLowerCase().includes(q) ||
+            row.breed.toLowerCase().includes(q) ||
+            row.id.toLowerCase().includes(q) ||
+            row.registration_number.toLowerCase().includes(q);
+          if (!matches) return false;
+        }
+
+        // Status filter
+        if (statusFilter === "overdue") return row.has_overdue;
+        if (statusFilter === "active_meds") return row.has_active_meds;
+        if (statusFilter === "no_records") return !row.has_records;
+        if (statusFilter === "has_records") return row.has_records;
+
+        return true;
+      });
+  }, [dogs, searchQuery, statusFilter, selectedDogFilter, allVaccinations, allPrescriptions, allReminders]);
+
+  // Table Columns definition for Registry
+  const registryColumns: Column<typeof tableData[0]>[] = [
+    {
+      key: "dog_name",
+      title: "Dog",
+      render: (_, r) => (
+        <div>
+          <div style={{ fontWeight: 700, color: "#0F172A", fontSize: "14px" }}>{r.dog_name}</div>
+          <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#64748B", marginTop: "2px" }}>
+            ID: {r.id || r.registration_number || "Unassigned"}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "breed_gender",
+      title: "Breed / Gender",
+      render: (v) => <span style={{ fontSize: "13px", color: "#334155" }}>{v}</span>,
+    },
+    {
+      key: "vaccination_status",
+      title: "Vaccination Status",
+      render: (_, r) => {
+        if (r.overdue_vaccs_count > 0) {
+          return <span style={badge("#FEF2F2", "#EF4444")}>⚠️ {r.overdue_vaccs_count} Overdue</span>;
+        }
+        if (r.upcoming_vaccs_count > 0) {
+          return <span style={badge("#EFF6FF", "#2563EB")}>💉 {r.upcoming_vaccs_count} Upcoming</span>;
+        }
+        if (r.vaccs_count > 0) {
+          return <span style={badge("#ECFDF5", "#10B981")}>Up to date ({r.vaccs_count})</span>;
+        }
+        return <span style={badge("#F1F5F9", "#94A3B8")}>No Vaccinations</span>;
+      },
+    },
+    {
+      key: "medication_status",
+      title: "Medication Status",
+      render: (_, r) => {
+        if (r.active_rxs_count > 0) {
+          return <span style={badge("#FFFBEB", "#D97706")}>💊 {r.active_rxs_count} Active Rx</span>;
+        }
+        if (r.rxs_count > 0) {
+          return <span style={badge("#F1F5F9", "#64748B")}>Completed ({r.rxs_count})</span>;
+        }
+        return <span style={badge("#F1F5F9", "#94A3B8")}>No Medications</span>;
+      },
+    },
+    {
+      key: "reminder_status",
+      title: "Reminder Status",
+      render: (_, r) => {
+        if (r.active_reminders_count > 0) {
+          return <span style={badge("#EFF6FF", "#2563EB")}>🔔 {r.active_reminders_count} Active</span>;
+        }
+        return <span style={badge("#F1F5F9", "#94A3B8")}>0 Reminders</span>;
+      },
+    },
+    {
+      key: "overall_status",
+      title: "Overall Status",
+      render: (_, r) => {
+        if (r.has_overdue) {
+          return <span style={badge("#FEF2F2", "#DC2626")}>Action Required</span>;
+        }
+        if (r.has_active_meds || r.active_reminders_count > 0) {
+          return <span style={badge("#FFFBEB", "#D97706")}>Active Care</span>;
+        }
+        if (r.has_records) {
+          return <span style={badge("#ECFDF5", "#059669")}>Healthy / Tracked</span>;
+        }
+        return <span style={badge("#F1F5F9", "#64748B")}>No Records</span>;
+      },
+    },
+  ];
+
+  // Actions for detail view
+  const openReminderModalForDog = (kind: "vaccination" | "medication", row: Row | null, dog: Row) => {
+    const dId = getDogCanonicalId(dog);
+    const dName = str(pick(dog, "name")) || "Dog";
+    setTargetDogForModal(dog);
+
+    const due = row ? (kind === "vaccination" ? pick(row, "next_due_at") : pick(row, "end_at")) : "";
+    const subject = row ? (kind === "vaccination" ? str(pick(row, "vaccine_name")) : str(pick(row, "drug_name"))) : "";
+
     setReminderForm({
       kind,
-      title: subject ? `${subject} — due` : `${kind === "vaccination" ? "Vaccination" : "Medication"} due`,
+      title: subject ? `${dName} — ${subject} due` : `${dName} — ${kind === "vaccination" ? "Vaccination" : "Medication"} due`,
       due_at: str(due),
-      details: kind === "vaccination" ? "Vaccination booster due for this dog." : "Medication follow-up due for this dog.",
-      source_key: `${kind}:${petId}`,
+      details: kind === "vaccination" ? `Vaccination booster due for ${dName}.` : `Medication follow-up due for ${dName}.`,
+      source_key: `${kind}:${dId}`,
     });
     setIsReminderModalOpen(true);
   };
 
   const handleCreateReminder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dogId || !reminderForm.title.trim() || !reminderForm.due_at) {
+    if (!targetDogForModal) return;
+    const dId = getDogCanonicalId(targetDogForModal);
+    if (!dId || !reminderForm.title.trim() || !reminderForm.due_at) {
       addToast("Reminder title and due date are required", "error");
       return;
     }
     try {
       setIsSubmitting(true);
       const dueIso = new Date(reminderForm.due_at).toISOString();
-      await reminderService.createPetReminder(dogId, {
+      await reminderService.createPetReminder(dId, {
         kind: reminderForm.kind,
         title: reminderForm.title.trim(),
         due_at: dueIso,
         details: reminderForm.details.trim() || undefined,
         source_key: reminderForm.source_key,
       });
-      addToast("Reminder created.", "success");
+      addToast("Reminder created successfully.", "success");
       setIsReminderModalOpen(false);
-      void fetchData();
+      void fetchAllData();
       notifyDataChanged();
     } catch (err) {
       addToast(toErrorMessage(err, "Failed to create reminder."), "error");
@@ -251,14 +470,14 @@ const VaccinationReminders = () => {
   };
 
   const handleSendReminderNotification = async () => {
-    if (!notifyTarget || !dogId) return;
+    if (!notifyTarget) return;
     try {
       setIsNotifying(true);
       await notificationService.sendBroadcastNotification({
-        title: `Reminder: ${str(pick(notifyTarget, "title"))}`,
-        message: `${dogLabel} — ${str(pick(notifyTarget, "kind"))} "${str(pick(notifyTarget, "title"))}" is due ${formatDate(
-          pick(notifyTarget, "due_at")
-        )}.`,
+        title: `Reminder: ${str(pick(notifyTarget.row, "title"))}`,
+        message: `${notifyTarget.dogName} — ${str(pick(notifyTarget.row, "kind"))} "${str(
+          pick(notifyTarget.row, "title")
+        )}" is due ${formatDate(pick(notifyTarget.row, "due_at"))}.`,
         type: "medical",
         targetRoles: ["super_admin", "rescue_centre_admin", "veterinarian", "shelter_manager"],
       });
@@ -273,14 +492,14 @@ const VaccinationReminders = () => {
   };
 
   const handleDeleteReminder = async () => {
-    if (!deleteTarget || !dogId) return;
-    const reminderId = str(pick(deleteTarget, "id"));
+    if (!deleteTarget) return;
+    const reminderId = str(pick(deleteTarget.row, "id"));
     try {
       setIsDeleting(true);
-      await reminderService.deletePetReminder(dogId, reminderId);
+      await reminderService.deletePetReminder(deleteTarget.dogId, reminderId);
       addToast("Reminder removed.", "success");
       setDeleteTarget(null);
-      void fetchData();
+      void fetchAllData();
       notifyDataChanged();
     } catch (err) {
       addToast(toErrorMessage(err, "Failed to delete reminder."), "error");
@@ -296,7 +515,7 @@ const VaccinationReminders = () => {
       setTogglingRxId(rxId);
       await reminderService.updatePrescriptionStatus(rxId, nextActive);
       addToast(`Prescription marked ${nextActive ? "active" : "inactive"}.`, "success");
-      void fetchData();
+      void fetchAllData();
       notifyDataChanged();
     } catch (err) {
       addToast(toErrorMessage(err, "Failed to update prescription status."), "error");
@@ -305,76 +524,15 @@ const VaccinationReminders = () => {
     }
   };
 
-  // ---- Derived stats ----
-  const nowMs = Date.now();
-  const upcomingVaccinations = vaccinations.filter(
-    (v) => dueStateOf(pick(v, "next_due_at")) === "upcoming" || dueStateOf(pick(v, "next_due_at")) === "due_soon"
-  ).length;
-  const overdueVaccinations = vaccinations.filter(
-    (v) => dueStateOf(pick(v, "next_due_at")) === "overdue"
-  ).length;
-  const activePrescriptions = prescriptions.filter((p) => {
-    const end = parseTime(pick(p, "end_at"));
-    return Boolean(pick(p, "is_active")) && (end === null || end >= nowMs);
-  }).length;
-  const activeReminders = reminders.filter((r) => Boolean(pick(r, "is_active"))).length;
-
-  const stats = [
-    {
-      title: "Upcoming Vaccinations",
-      value: `${upcomingVaccinations}`,
-      trend: "Due in future",
-      color: "#2563EB",
-      icon: <FaBell />,
-      onClick: () => {
-        setActiveTab("vaccination");
-        document.getElementById("vaccination-tab-section")?.scrollIntoView({ behavior: "smooth" });
-      },
-    },
-    {
-      title: "Overdue Vaccinations",
-      value: `${overdueVaccinations}`,
-      trend: "Action required",
-      color: "#EF4444",
-      icon: <FaExclamationTriangle />,
-      onClick: () => {
-        setActiveTab("vaccination");
-        document.getElementById("vaccination-tab-section")?.scrollIntoView({ behavior: "smooth" });
-      },
-    },
-    {
-      title: "Active Medication Plans",
-      value: `${activePrescriptions}`,
-      trend: "Prescriptions",
-      color: "#F59E0B",
-      icon: <FaPills />,
-      onClick: () => {
-        setActiveTab("medication");
-        document.getElementById("medication-tab-section")?.scrollIntoView({ behavior: "smooth" });
-      },
-    },
-    {
-      title: "Active Reminders",
-      value: `${activeReminders}`,
-      trend: "Pet reminders",
-      color: "#10B981",
-      icon: <FaSyringe />,
-      onClick: () => {
-        setActiveTab("reminders");
-        document.getElementById("reminders-tab-section")?.scrollIntoView({ behavior: "smooth" });
-      },
-    },
-  ];
-
-  // ---- Tables ----
-  const vaccinationColumns: Column[] = [
+  // Detail Modal Columns
+  const detailVaccinationColumns: Column[] = [
     { key: "vaccine_name", title: "Vaccine" },
     { key: "administered_at", title: "Administered", render: (v) => <span>{formatDate(v)}</span> },
     { key: "next_due_at", title: "Next Due", render: (v) => dueCell(v) },
     { key: "lot_number", title: "Lot Number" },
   ];
 
-  const prescriptionColumns: Column[] = [
+  const detailPrescriptionColumns: Column[] = [
     { key: "drug_name", title: "Medication" },
     { key: "dosage", title: "Dosage" },
     { key: "route", title: "Route" },
@@ -390,7 +548,7 @@ const VaccinationReminders = () => {
     },
   ];
 
-  const reminderColumns: Column[] = [
+  const detailReminderColumns: Column[] = [
     { key: "title", title: "Reminder" },
     {
       key: "kind",
@@ -404,79 +562,148 @@ const VaccinationReminders = () => {
     },
     { key: "due_at", title: "Due", render: (v) => dueCell(v) },
     { key: "details", title: "Details" },
-    { key: "source_key", title: "Source" },
-    {
-      key: "is_active",
-      title: "Reminder Status",
-      render: (v) =>
-        boolBadge(v, "#ECFDF5", "#10B981", "#F1F5F9", "#94A3B8", "Active", "Resolved"),
-    },
   ];
-
-  const administrationColumns: Column[] = [
-    { key: "medication_name", title: "Medication" },
-    { key: "dosage", title: "Dosage" },
-    { key: "route", title: "Route" },
-    { key: "administered_at", title: "Administered", render: (v) => <span>{formatDate(v)}</span> },
-    { key: "notes", title: "Notes" },
-  ];
-
-  const sectionTitle = (title: string, subtitle: string) => (
-    <div style={{ marginBottom: "12px" }}>
-      <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 700, color: "#0F172A" }}>{title}</h3>
-      <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#64748B" }}>{subtitle}</p>
-    </div>
-  );
 
   const goToNotifications = () => {
     window.location.href = "/notifications";
   };
 
+  // Selected Dog Detail calculations
+  const detailDogVaccs = useMemo(() => {
+    if (!selectedDogDetail) return [];
+    return allVaccinations.filter((v) => matchDogRecord(v, selectedDogDetail));
+  }, [selectedDogDetail, allVaccinations]);
+
+  const detailDogRxs = useMemo(() => {
+    if (!selectedDogDetail) return [];
+    return allPrescriptions.filter((p) => matchDogRecord(p, selectedDogDetail));
+  }, [selectedDogDetail, allPrescriptions]);
+
+  const detailDogReminders = useMemo(() => {
+    if (!selectedDogDetail) return [];
+    return allReminders.filter((r) => matchDogRecord(r, selectedDogDetail));
+  }, [selectedDogDetail, allReminders]);
+
   return (
     <div>
-      <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
-        <h1 style={{ margin: 0, fontSize: "28px", fontWeight: 800 }}>Smart Vaccination & Medication Reminders</h1>
+      {/* Header Banner */}
+      <div
+        style={{
+          marginBottom: "24px",
+          background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)",
+          padding: "24px",
+          borderRadius: "16px",
+          color: "#fff",
+        }}
+      >
+        <h1 style={{ margin: 0, fontSize: "28px", fontWeight: 800 }}>
+          Smart Vaccination & Medication Reminders
+        </h1>
         <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-          Track vaccination due dates, medication schedules and pet reminders, then notify staff through the Notifications module.
+          Shelter-wide medical registry tracking vaccination schedules, medication plans and reminders for all registered dogs.
         </p>
       </div>
 
-      {/* Dog picker */}
+      {/* KPI Stat Cards */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+          gap: "16px",
+          marginBottom: "24px",
+        }}
+      >
+        {stats.map((s) => (
+          <StatCard key={s.title} {...s} />
+        ))}
+      </div>
+
+      {/* Filter and Search Controls */}
       <div className="soft-card" style={{ padding: "20px", marginBottom: "24px" }}>
-        <div style={{ display: "flex", gap: "14px", alignItems: "flex-end", flexWrap: "wrap" }}>
-          <div style={{ flex: "1 1 320px" }}>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
-              Dog *
-            </label>
-            <select
-              value={dogId}
-              onChange={(e) => setDogId(e.target.value)}
-              style={inputStyle}
-              disabled={dogsLoading}
-            >
-              <option value="">{dogsLoading ? "Loading dogs..." : "Select a dog..."}</option>
-              {dogs.map((d) => (
-                <option key={str(pick(d, "id"))} value={str(pick(d, "id"))}>
-                  {str(pick(d, "name"))}
-                  {str(pick(d, "breed")) ? ` (${str(pick(d, "breed"))})` : ""} — {str(pick(d, "id"))}
-                </option>
-              ))}
-            </select>
-            {dogsError && <p style={{ margin: "8px 0 0", fontSize: "12.5px", color: "#DC2626" }}>{dogsError}</p>}
+        <div style={{ display: "flex", gap: "14px", alignItems: "center", flexWrap: "wrap" }}>
+          {/* Search Input */}
+          <div style={{ flex: "1 1 260px", position: "relative" }}>
+            <FaSearch style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }} />
+            <input
+              type="text"
+              placeholder="Search by dog name, breed, or ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{ ...inputStyle, paddingLeft: "36px" }}
+            />
           </div>
-          <div>
+
+          {/* Dog Selector Filter */}
+          <div style={{ flex: "1 1 220px" }}>
+            <select
+              value={selectedDogFilter}
+              onChange={(e) => setSelectedDogFilter(e.target.value)}
+              style={inputStyle}
+            >
+              <option value="">All Dogs ({dogs.length})</option>
+              {dogs.map((d) => {
+                const dId = getDogCanonicalId(d);
+                const dName = str(pick(d, "name"));
+                const dBreed = str(pick(d, "breed"));
+                return (
+                  <option key={dId} value={dId}>
+                    {dName}{dBreed ? ` (${dBreed})` : ""} — {dId}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          {/* Status Filter */}
+          <div style={{ flex: "1 1 200px" }}>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              style={inputStyle}
+            >
+              <option value="all">All Medical Statuses</option>
+              <option value="overdue">Overdue Vaccinations</option>
+              <option value="active_meds">Active Medications</option>
+              <option value="has_records">With Medical Records</option>
+              <option value="no_records">No Medical Records</option>
+            </select>
+          </div>
+
+          {/* Refresh & Action Buttons */}
+          <div style={{ display: "flex", gap: "10px" }}>
             <button
-              onClick={() => dogId && void fetchData()}
-              disabled={!dogId}
-              style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "10px 18px", borderRadius: "9px", border: "1px solid #CBD5E1", background: "#FFFFFF", color: dogId ? "#0F172A" : "#94A3B8", fontWeight: 600, fontSize: "13px", cursor: dogId ? "pointer" : "not-allowed" }}
+              onClick={() => void fetchAllData()}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "10px 18px",
+                borderRadius: "9px",
+                border: "1px solid #CBD5E1",
+                background: "#FFFFFF",
+                color: "#0F172A",
+                fontWeight: 600,
+                fontSize: "13px",
+                cursor: "pointer",
+              }}
             >
               <FaRedoAlt size={12} /> Refresh
             </button>
-          </div>
-          <div>
             <button
               onClick={goToNotifications}
-              style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "10px 18px", borderRadius: "9px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "10px 18px",
+                borderRadius: "9px",
+                border: "none",
+                background: "#2563EB",
+                color: "#FFF",
+                fontWeight: 600,
+                fontSize: "13px",
+                cursor: "pointer",
+              }}
             >
               <FaBell size={13} /> View Notifications
             </button>
@@ -484,205 +711,300 @@ const VaccinationReminders = () => {
         </div>
       </div>
 
-      {!dogId && !dogsLoading && (
-        <div className="soft-card" style={{ padding: "40px", textAlign: "center", color: "#94A3B8" }}>
-          <FaSyringe size={36} style={{ opacity: 0.4, marginBottom: 12 }} />
-          <p style={{ margin: 0, fontSize: "15px" }}>Select a dog to view its vaccination schedule, medication plans and reminders.</p>
+      {error ? (
+        <div style={{ marginBottom: "16px", padding: "12px 16px", borderRadius: "10px", backgroundColor: "#FEF2F2", border: "1px solid #FECACA", color: "#991B1B", fontSize: "13px" }}>
+          {error}
         </div>
-      )}
+      ) : null}
 
-      {dogId && dogsLoading && (
-        <div style={{ textAlign: "center", padding: "30px", color: "#64748B" }}>Loading dogs...</div>
-      )}
-
-      {dogId && !dogsLoading && (
-        <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-            {stats.map((s) => (
-              <StatCard key={s.title} {...s} />
-            ))}
+      {/* Main Compact All-Dogs Medical Registry Table */}
+      <div className="soft-card" style={{ padding: "20px", marginBottom: "24px" }}>
+        <div style={{ marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
+              Shelter Medical Registry ({tableData.length})
+            </h3>
+            <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#64748B" }}>
+              Compact registry of all registered dogs and their current medical/vaccination statuses.
+            </p>
           </div>
+        </div>
 
-          {vaccError || rxError || remError ? (
-            <div style={{ marginBottom: "16px", padding: "12px 16px", borderRadius: "10px", backgroundColor: "#FEF2F2", border: "1px solid #FECACA", color: "#991B1B", fontSize: "13px" }}>
-              {(vaccError || rxError || remError) && <div>{vaccError || rxError || remError}</div>}
-            </div>
-          ) : null}
-
-          <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
-            <button
-              onClick={() => setActiveTab("vaccination")}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "9px 18px",
-                borderRadius: "8px",
-                border: "1px solid #CBD5E1",
-                background: activeTab === "vaccination" ? "#2563EB" : "#FFFFFF",
-                color: activeTab === "vaccination" ? "#FFFFFF" : "#475569",
-                fontWeight: 600,
-                fontSize: "13px",
-                cursor: "pointer",
-              }}
-            >
-              <FaSyringe /> Vaccination Schedule
-            </button>
-            <button
-              onClick={() => setActiveTab("medication")}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "9px 18px",
-                borderRadius: "8px",
-                border: "1px solid #CBD5E1",
-                background: activeTab === "medication" ? "#2563EB" : "#FFFFFF",
-                color: activeTab === "medication" ? "#FFFFFF" : "#475569",
-                fontWeight: 600,
-                fontSize: "13px",
-                cursor: "pointer",
-              }}
-            >
-              <FaPills /> Medication Schedule
-            </button>
-            <button
-              onClick={() => setActiveTab("reminders")}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "9px 18px",
-                borderRadius: "8px",
-                border: "1px solid #CBD5E1",
-                background: activeTab === "reminders" ? "#2563EB" : "#FFFFFF",
-                color: activeTab === "reminders" ? "#FFFFFF" : "#475569",
-                fontWeight: 600,
-                fontSize: "13px",
-                cursor: "pointer",
-              }}
-            >
-              <FaBell /> Pet Reminders
-            </button>
-          </div>
-
-          {activeTab === "vaccination" && (
-            <div id="vaccination-tab-section" className="soft-card" style={{ padding: "20px", marginBottom: "24px" }}>
-              {sectionTitle("Vaccination Schedule", `Booster due dates derived from administered vaccines for ${dogLabel}.`)}
-              <DataTable
-                columns={vaccinationColumns}
-                data={vaccinations}
-                module="medical"
-                loading={vaccLoading}
-                emptyMessage="No vaccination records for this dog yet."
-                renderRowActions={(row) => (
-                  <Can permission="create_medical">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openReminderModal("vaccination", row, dogId);
-                      }}
-                      style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "7px 12px", borderRadius: "8px", border: "1px solid #BFDBFE", background: "#EFF6FF", color: "#2563EB", fontWeight: 600, fontSize: "12px", cursor: "pointer", marginRight: "6px" }}
-                    >
-                      <FaPlus size={11} /> Create reminder
-                    </button>
-                  </Can>
-                )}
-              />
+        <DataTable
+          columns={registryColumns}
+          data={tableData}
+          pageSize={10}
+          loading={loading}
+          module="medical"
+          emptyMessage="No registered dogs match your search or filter criteria."
+          renderRowActions={(r) => (
+            <div style={{ display: "flex", gap: "6px" }}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedDogDetail(r._rawDog);
+                }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "6px 12px",
+                  borderRadius: "7px",
+                  border: "1px solid #CBD5E1",
+                  background: "#FFFFFF",
+                  color: "#0F172A",
+                  fontWeight: 600,
+                  fontSize: "12px",
+                  cursor: "pointer",
+                }}
+              >
+                <FaEye size={12} /> View Details
+              </button>
+              <Can permission="create_medical">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openReminderModalForDog("vaccination", null, r._rawDog);
+                  }}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                    padding: "6px 12px",
+                    borderRadius: "7px",
+                    border: "1px solid #BFDBFE",
+                    background: "#EFF6FF",
+                    color: "#2563EB",
+                    fontWeight: 600,
+                    fontSize: "12px",
+                    cursor: "pointer",
+                  }}
+                >
+                  <FaPlus size={10} /> Reminder
+                </button>
+              </Can>
             </div>
           )}
+        />
+      </div>
 
-          {activeTab === "medication" && (
-            <div id="medication-tab-section" className="soft-card" style={{ padding: "20px", marginBottom: "24px" }}>
-              {sectionTitle("Medication Schedule", `Prescription windows (start/end) and administration log for ${dogLabel}.`)}
-              <DataTable
-                columns={prescriptionColumns}
-                data={prescriptions}
-                module="medical"
-                loading={rxLoading}
-                emptyMessage="No medication prescriptions for this dog."
-                renderRowActions={(row) => (
-                  <>
-                    <Can permission="create_medical">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openReminderModal("medication", row, dogId);
-                        }}
-                        style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "7px 12px", borderRadius: "8px", border: "1px solid #BFDBFE", background: "#EFF6FF", color: "#2563EB", fontWeight: 600, fontSize: "12px", cursor: "pointer", marginRight: "6px" }}
-                      >
-                        <FaPlus size={11} /> Create reminder
-                      </button>
-                    </Can>
-                    <Can permission="edit_medical">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleTogglePrescription(row);
-                        }}
-                        disabled={togglingRxId === str(pick(row, "id"))}
-                        style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "7px 12px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#F8FAFC", color: "#475569", fontWeight: 600, fontSize: "12px", cursor: "pointer", marginRight: "6px" }}
-                      >
-                        {pick(row, "is_active") ? "Mark Inactive" : "Mark Active"}
-                      </button>
-                    </Can>
-                  </>
-                )}
-              />
-              {administrations.length > 0 ? (
-                <div style={{ marginTop: "20px" }}>
-                  <p style={{ margin: "0 0 10px", fontSize: "13px", fontWeight: 700, color: "#334155" }}>
-                    Administration Log ({administrations.length})
-                  </p>
-                  <DataTable columns={administrationColumns} data={administrations} emptyMessage="No administrations logged." />
+      {/* Row-Level "View Details" Modal */}
+      <Modal
+        isOpen={selectedDogDetail !== null}
+        onClose={() => setSelectedDogDetail(null)}
+        title={`Medical Overview — ${selectedDogDetail ? str(pick(selectedDogDetail, "name")) : "Dog"}`}
+        maxWidth="820px"
+      >
+        {selectedDogDetail && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            {/* Dog Metadata Header */}
+            <div style={{ background: "#F8FAFC", padding: "16px", borderRadius: "10px", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ width: "40px", height: "40px", borderRadius: "10px", background: "#EFF6FF", color: "#2563EB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" }}>
+                  <FaDog />
                 </div>
-              ) : null}
+                <div>
+                  <div style={{ fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
+                    {str(pick(selectedDogDetail, "name"))}
+                    {str(pick(selectedDogDetail, "breed")) ? ` (${str(pick(selectedDogDetail, "breed"))})` : ""}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px", fontFamily: "monospace" }}>
+                    ID: {getDogCanonicalId(selectedDogDetail) || "Unassigned"}
+                  </div>
+                </div>
+              </div>
+              <Can permission="create_medical">
+                <button
+                  onClick={() => openReminderModalForDog("vaccination", null, selectedDogDetail)}
+                  style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "8px 14px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
+                >
+                  <FaPlus size={11} /> Create Reminder
+                </button>
+              </Can>
             </div>
-          )}
 
-          {activeTab === "reminders" && (
-            <div id="reminders-tab-section" className="soft-card" style={{ padding: "20px", marginBottom: "24px" }}>
-              {sectionTitle("Pet Reminders", `Active vaccination / medication reminders for ${dogLabel}.`)}
-              <DataTable
-                columns={reminderColumns}
-                data={reminders}
-                module="medical"
-                loading={remLoading}
-                emptyMessage="No reminders created for this dog."
-                renderRowActions={(row) => (
-                  <>
+            {/* Detail Tabs */}
+            <div style={{ display: "flex", gap: "8px", borderBottom: "1px solid #E2E8F0", paddingBottom: "10px" }}>
+              <button
+                onClick={() => setDetailTab("vaccination")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "8px 14px",
+                  borderRadius: "7px",
+                  border: "none",
+                  background: detailTab === "vaccination" ? "#2563EB" : "#F1F5F9",
+                  color: detailTab === "vaccination" ? "#FFFFFF" : "#475569",
+                  fontWeight: 600,
+                  fontSize: "13px",
+                  cursor: "pointer",
+                }}
+              >
+                <FaSyringe /> Vaccination Schedule ({detailDogVaccs.length})
+              </button>
+              <button
+                onClick={() => setDetailTab("medication")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "8px 14px",
+                  borderRadius: "7px",
+                  border: "none",
+                  background: detailTab === "medication" ? "#2563EB" : "#F1F5F9",
+                  color: detailTab === "medication" ? "#FFFFFF" : "#475569",
+                  fontWeight: 600,
+                  fontSize: "13px",
+                  cursor: "pointer",
+                }}
+              >
+                <FaPills /> Medication Schedule ({detailDogRxs.length})
+              </button>
+              <button
+                onClick={() => setDetailTab("reminders")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "8px 14px",
+                  borderRadius: "7px",
+                  border: "none",
+                  background: detailTab === "reminders" ? "#2563EB" : "#F1F5F9",
+                  color: detailTab === "reminders" ? "#FFFFFF" : "#475569",
+                  fontWeight: 600,
+                  fontSize: "13px",
+                  cursor: "pointer",
+                }}
+              >
+                <FaBell /> Pet Reminders ({detailDogReminders.length})
+              </button>
+            </div>
+
+            {/* Tab Contents */}
+            {detailTab === "vaccination" && (
+              <div>
+                <DataTable
+                  columns={detailVaccinationColumns}
+                  data={detailDogVaccs}
+                  module="medical"
+                  emptyMessage={`No vaccination records logged for ${str(pick(selectedDogDetail, "name"))} yet.`}
+                  renderRowActions={(row) => (
                     <Can permission="create_medical">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          setNotifyTarget(row);
+                          openReminderModalForDog("vaccination", row, selectedDogDetail);
                         }}
-                        style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "7px 12px", borderRadius: "8px", border: "1px solid #BFDBFE", background: "#EFF6FF", color: "#2563EB", fontWeight: 600, fontSize: "12px", cursor: "pointer", marginRight: "6px" }}
+                        style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "5px 10px", borderRadius: "6px", border: "1px solid #BFDBFE", background: "#EFF6FF", color: "#2563EB", fontWeight: 600, fontSize: "11px", cursor: "pointer" }}
                       >
-                        <FaPaperPlane size={11} /> Send reminder
+                        <FaPlus size={10} /> Create Reminder
                       </button>
                     </Can>
-                    <Can permission="delete_medical">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteTarget(row);
-                        }}
-                        style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "7px 12px", borderRadius: "8px", border: "1px solid #FECACA", background: "#FEF2F2", color: "#EF4444", fontWeight: 600, fontSize: "12px", cursor: "pointer" }}
-                      >
-                        <FaTrash size={11} /> Delete
-                      </button>
-                    </Can>
-                  </>
-                )}
-              />
+                  )}
+                />
+              </div>
+            )}
+
+            {detailTab === "medication" && (
+              <div>
+                <DataTable
+                  columns={detailPrescriptionColumns}
+                  data={detailDogRxs}
+                  module="medical"
+                  emptyMessage={`No medication prescriptions logged for ${str(pick(selectedDogDetail, "name"))}.`}
+                  renderRowActions={(row) => (
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <Can permission="create_medical">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openReminderModalForDog("medication", row, selectedDogDetail);
+                          }}
+                          style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "5px 10px", borderRadius: "6px", border: "1px solid #FDE68A", background: "#FFFBEB", color: "#D97706", fontWeight: 600, fontSize: "11px", cursor: "pointer" }}
+                        >
+                          <FaPlus size={10} /> Reminder
+                        </button>
+                      </Can>
+                      <Can permission="edit_medical">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleTogglePrescription(row);
+                          }}
+                          disabled={togglingRxId === str(pick(row, "id"))}
+                          style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "5px 10px", borderRadius: "6px", border: "1px solid #E2E8F0", background: "#F8FAFC", color: "#475569", fontWeight: 600, fontSize: "11px", cursor: "pointer" }}
+                        >
+                          {pick(row, "is_active") ? "Mark Inactive" : "Mark Active"}
+                        </button>
+                      </Can>
+                    </div>
+                  )}
+                />
+              </div>
+            )}
+
+            {detailTab === "reminders" && (
+              <div>
+                <DataTable
+                  columns={detailReminderColumns}
+                  data={detailDogReminders}
+                  module="medical"
+                  emptyMessage={`No active reminders created for ${str(pick(selectedDogDetail, "name"))}.`}
+                  renderRowActions={(row) => (
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <Can permission="create_medical">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setNotifyTarget({ row, dogName: str(pick(selectedDogDetail, "name")) });
+                          }}
+                          style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "5px 10px", borderRadius: "6px", border: "1px solid #BFDBFE", background: "#EFF6FF", color: "#2563EB", fontWeight: 600, fontSize: "11px", cursor: "pointer" }}
+                        >
+                          <FaPaperPlane size={10} /> Send
+                        </button>
+                      </Can>
+                      <Can permission="delete_medical">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteTarget({
+                              row,
+                              dogId: getDogCanonicalId(selectedDogDetail),
+                              dogName: str(pick(selectedDogDetail, "name")),
+                            });
+                          }}
+                          style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "5px 10px", borderRadius: "6px", border: "1px solid #FECACA", background: "#FEF2F2", color: "#EF4444", fontWeight: 600, fontSize: "11px", cursor: "pointer" }}
+                        >
+                          <FaTrash size={10} /> Delete
+                        </button>
+                      </Can>
+                    </div>
+                  )}
+                />
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "8px" }}>
+              <button
+                type="button"
+                onClick={() => setSelectedDogDetail(null)}
+                style={{ padding: "10px 20px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9", color: "#334155", fontWeight: 600, cursor: "pointer" }}
+              >
+                Close
+              </button>
             </div>
-          )}
-        </>
-      )}
+          </div>
+        )}
+      </Modal>
 
       {/* Create Reminder Modal */}
-      <Modal isOpen={isReminderModalOpen} onClose={() => setIsReminderModalOpen(false)} title="Create Vaccination / Medication Reminder" maxWidth="560px">
+      <Modal
+        isOpen={isReminderModalOpen}
+        onClose={() => setIsReminderModalOpen(false)}
+        title={`Create Reminder for ${targetDogForModal ? str(pick(targetDogForModal, "name")) : "Dog"}`}
+        maxWidth="560px"
+      >
         <form onSubmit={handleCreateReminder} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
             <div>
@@ -747,10 +1069,10 @@ const VaccinationReminders = () => {
           </p>
           <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "14px" }}>
             <div style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A" }}>
-              {notifyTarget ? str(pick(notifyTarget, "title")) : ""}
+              {notifyTarget ? str(pick(notifyTarget.row, "title")) : ""}
             </div>
             <div style={{ fontSize: "13px", color: "#475569", marginTop: 6 }}>
-              {dogLabel} — {notifyTarget ? str(pick(notifyTarget, "kind")) : ""} due {notifyTarget ? formatDate(pick(notifyTarget, "due_at")) : ""}
+              {notifyTarget?.dogName} — {notifyTarget ? str(pick(notifyTarget.row, "kind")) : ""} due {notifyTarget ? formatDate(pick(notifyTarget.row, "due_at")) : ""}
             </div>
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
@@ -764,7 +1086,7 @@ const VaccinationReminders = () => {
       <Modal isOpen={deleteTarget !== null} onClose={() => setDeleteTarget(null)} title="Delete Reminder" maxWidth="450px">
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <p style={{ margin: 0, color: "#334155" }}>
-            Are you sure you want to delete the reminder <strong>{deleteTarget ? str(pick(deleteTarget, "title")) : ""}</strong> for {dogLabel}?
+            Are you sure you want to delete the reminder <strong>{deleteTarget ? str(pick(deleteTarget.row, "title")) : ""}</strong> for {deleteTarget?.dogName}?
           </p>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
             <button type="button" onClick={() => setDeleteTarget(null)} style={{ padding: "10px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}>Cancel</button>

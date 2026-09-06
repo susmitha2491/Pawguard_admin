@@ -25,7 +25,6 @@ import shelterService from "../../services/shelterService";
 import vetService from "../../services/vetService";
 import medicalService from "../../services/medicalService";
 import userService from "../../services/userService";
-import storageService from "../../services/storageService";
 import adoptionService from "../../services/adoptionService";
 import { getCurrentUserRole } from "../../utils/roleUtils";
 import { useDataSync, notifyDataChanged } from "../../utils/dataSync";
@@ -173,7 +172,7 @@ const ShelterDogs = () => {
   const [facilityFilter, setFacilityFilter] = useState("");
 
   // Backend-persisted photo URL map: dogId → presigned download URL
-  const [dogPhotoMap, setDogPhotoMap] = useState<Record<string, string>>({});
+  const [dogPhotoMap] = useState<Record<string, string>>({});
 
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
@@ -682,26 +681,25 @@ const ShelterDogs = () => {
     }
   };
 
-  /**
-   * Load the persistent photo URL map from backend storage for all dogs.
-   */
-  const loadDogPhotoMap = async () => {
-    try {
-      const map = await storageService.buildPhotoMapForDogs();
-      if (Object.keys(map).length > 0) {
-        setDogPhotoMap(map);
-      }
-    } catch (err) {
-      console.warn("Could not load dog photo map:", err);
-    }
-  };
-
   useDataSync(fetchShelterDogsData);
 
   useEffect(() => {
     fetchShelterDogsData();
-    loadDogPhotoMap();
   }, [page, statusFilter, facilityFilter]);
+
+  // Helper to extract nested backend payloads
+  const extractTagData = (res: any) => {
+    if (!res) return null;
+    let cur = res;
+    if (cur.data && typeof cur.data === "object" && !Array.isArray(cur.data)) {
+      if (cur.data.data && typeof cur.data.data === "object" && !Array.isArray(cur.data.data)) {
+        cur = cur.data.data;
+      } else {
+        cur = cur.data;
+      }
+    }
+    return cur;
+  };
 
   // Safety Tag Modal Handlers
   const openQrModal = async (dog: any) => {
@@ -739,25 +737,33 @@ const ShelterDogs = () => {
           }
         }
 
-        const metaData = metaRes?.data || metaRes;
-        if (metaData) {
+        const metaData = extractTagData(metaRes);
+        if (metaData && typeof metaData === "object") {
           setTagMetadata(metaData);
-          activeState = metaData.is_active === true || String(metaData.status || "").toUpperCase() === "ACTIVE";
-          if (!activeState) {
+          const stUpper = String(metaData.status || metaData.state || "").toUpperCase();
+          const isExplicitInactive = stUpper === "INACTIVE" || stUpper === "REVOKED" || stUpper === "DEACTIVATED" || metaData.is_active === false;
+
+          activeState = !isExplicitInactive && (
+            metaData.is_active === true ||
+            stUpper === "ACTIVE" ||
+            Boolean(metaData.public_scan_url || metaData.public_scan_path || metaData.raw_token || metaData.token || metaData.id)
+          );
+
+          if (activeState) {
+            setTagStatus("ACTIVE");
+            const rawScanUrl = metaData.public_scan_url || metaData.public_scan_path;
+            if (rawScanUrl && typeof rawScanUrl === "string" && rawScanUrl.trim()) {
+              const cleanUrl = rawScanUrl.trim();
+              const publicWebBase = (import.meta.env.VITE_PUBLIC_FRONTEND_URL as string) || "https://pawguard-public-web.vercel.app";
+              authoritativeScanUrl = cleanUrl.startsWith("http")
+                ? cleanUrl
+                : `${publicWebBase.replace(/\/+$/, "")}${cleanUrl.startsWith("/") ? "" : "/"}${cleanUrl}`;
+            }
+          } else {
             setTagStatus("INACTIVE");
             setQrImageUrl(null);
             setQrBlob(null);
             return;
-          }
-          setTagStatus("ACTIVE");
-
-          const rawScanUrl = metaData.public_scan_url || metaData.public_scan_path;
-          if (rawScanUrl && typeof rawScanUrl === "string" && rawScanUrl.trim()) {
-            const cleanUrl = rawScanUrl.trim();
-            const publicWebBase = (import.meta.env.VITE_PUBLIC_FRONTEND_URL as string) || "https://pawguard-public-web.vercel.app";
-            authoritativeScanUrl = cleanUrl.startsWith("http")
-              ? cleanUrl
-              : `${publicWebBase.replace(/\/+$/, "")}${cleanUrl.startsWith("/") ? "" : "/"}${cleanUrl}`;
           }
         }
       } catch (metaErr: unknown) {
@@ -787,12 +793,14 @@ const ShelterDogs = () => {
         const blob = await generateQrBlob(authoritativeScanUrl);
         setQrImageUrl(qrUrl);
         setQrBlob(blob);
+        setTagStatus("ACTIVE");
       } else if (activeState && !isCompanion) {
         try {
           const qrBlobData = await petService.getDogQrImage(id);
           const qrUrlData = URL.createObjectURL(qrBlobData);
           setQrImageUrl(qrUrlData);
           setQrBlob(qrBlobData);
+          setTagStatus("ACTIVE");
         } catch {
           setQrImageUrl(null);
           setQrBlob(null);
@@ -805,8 +813,9 @@ const ShelterDogs = () => {
         const blob = await generateQrBlob(fallbackScanUrl);
         setQrImageUrl(qrUrl);
         setQrBlob(blob);
+        setTagStatus("ACTIVE");
       }
-    } catch (err: any) {
+    } catch {
       setQrError("Failed to load Safety Tag metadata.");
     } finally {
       setQrLoading(false);
@@ -827,8 +836,8 @@ const ShelterDogs = () => {
     setIsProvisioning(true);
     try {
       const res = await petService.provisionSafetyTag(id, forceReissue);
-      const data = res?.data || res || {};
-      const scanUrl = data.public_scan_url || `/api/v1/dogs/${id}/public-scan`;
+      const data = extractTagData(res) || {};
+      const scanUrl = data.public_scan_url || data.public_scan_path || `/api/v1/dogs/${id}/public-scan`;
       const publicWebBase = (import.meta.env.VITE_PUBLIC_FRONTEND_URL as string) || "https://pawguard-public-web.vercel.app";
       const fullUrl = scanUrl.startsWith("http") ? scanUrl : `${publicWebBase.replace(/\/+$/, "")}${scanUrl.startsWith("/") ? "" : "/"}${scanUrl}`;
 
@@ -839,10 +848,11 @@ const ShelterDogs = () => {
       setQrBlob(blob);
       setTagStatus("ACTIVE");
       setTagMetadata({
+        ...data,
         token_prefix: data.token_prefix || String(fullUrl).slice(-8),
         status: "ACTIVE",
-        created_at: new Date().toISOString(),
-        scans_count: 0,
+        is_active: true,
+        created_at: data.created_at || new Date().toISOString(),
       });
 
       setIsReProvisionConfirmOpen(false);

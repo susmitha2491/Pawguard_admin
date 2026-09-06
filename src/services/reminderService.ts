@@ -7,10 +7,21 @@ const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 
 const unwrapList = (res: unknown): Row[] => {
-  const body = asRecord(res).data;
+  const obj = asRecord(res);
+  const body = obj.data !== undefined ? obj.data : res;
   if (Array.isArray(body)) return body as Row[];
-  const inner = asRecord(body).data;
-  return Array.isArray(inner) ? (inner as Row[]) : [];
+  if (body && typeof body === "object") {
+    const rec = body as Record<string, unknown>;
+    if (Array.isArray(rec.data)) return rec.data as Row[];
+    if (Array.isArray(rec.items)) return rec.items as Row[];
+    if (Array.isArray(rec.vaccinations)) return rec.vaccinations as Row[];
+    if (Array.isArray(rec.prescriptions)) return rec.prescriptions as Row[];
+    if (Array.isArray(rec.administrations)) return rec.administrations as Row[];
+    if (Array.isArray(rec.reminders)) return rec.reminders as Row[];
+    if (Array.isArray(rec.records)) return rec.records as Row[];
+    if (Array.isArray(rec.results)) return rec.results as Row[];
+  }
+  return [];
 };
 
 const unwrapData = (res: unknown): Row => asRecord(asRecord(res).data);
@@ -26,13 +37,15 @@ export const reminderService = {
   // GET /medical/vaccinations?dog_id=... - vaccination records including next_due_at
   getVaccinations: async (params?: Record<string, unknown>) => {
     const response: unknown = await api.get("/medical/vaccinations", { params });
-    return { data: unwrapList(response), meta: asRecord(response).meta };
+    const meta = asRecord(asRecord(response).data).meta || asRecord(response).meta;
+    return { data: unwrapList(response), meta };
   },
 
   // GET /medical/prescriptions?dog_id=... - medication prescriptions (start_at/end_at/is_active)
   getPrescriptions: async (params?: Record<string, unknown>) => {
     const response: unknown = await api.get("/medical/prescriptions", { params });
-    return { data: unwrapList(response), meta: asRecord(response).meta };
+    const meta = asRecord(asRecord(response).data).meta || asRecord(response).meta;
+    return { data: unwrapList(response), meta };
   },
 
   // GET /medical/vaccine-protocols - vaccination protocol reference

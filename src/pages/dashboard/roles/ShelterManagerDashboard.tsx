@@ -498,7 +498,7 @@ const ShelterManagerDashboard = () => {
   };
 
   const formatDog = (dog: any) => {
-    const hasActiveTag = !!(dog.safety_tag_status === "ACTIVE" || dog.safety_tag_active === true || dog.is_active === true);
+    const hasActiveTag = !!(dog.safety_tag_status === "ACTIVE" || dog.safety_tag_active === true || dog.is_safety_tag_active === true || dog.safety_tag?.is_active === true);
 
     return {
       ...dog,
@@ -678,20 +678,6 @@ const ShelterManagerDashboard = () => {
 
 
   /**
-   * Load the persistent photo URL map from backend storage for all dogs.
-   */
-  const loadDogPhotoMap = async () => {
-    try {
-      const map = await storageService.buildPhotoMapForDogs();
-      if (Object.keys(map).length > 0) {
-        setDogPhotoMap(map);
-      }
-    } catch (err) {
-      console.warn("Could not load dog photo map:", err);
-    }
-  };
-
-  /**
    * Refresh the photo URL for a single dog in the dogPhotoMap.
    * Called after a successful photo upload so the profile refreshes immediately.
    */
@@ -717,7 +703,6 @@ const ShelterManagerDashboard = () => {
 
   useEffect(() => {
     fetchDashboard();
-    loadDogPhotoMap();
   }, []);
 
   // Handlers for Rescued Dog Registration
@@ -900,12 +885,24 @@ const ShelterManagerDashboard = () => {
     }
   };
 
+  // Helper to extract nested backend payloads
+  const extractTagData = (res: any) => {
+    if (!res) return null;
+    let cur = res;
+    if (cur.data && typeof cur.data === "object" && !Array.isArray(cur.data)) {
+      if (cur.data.data && typeof cur.data.data === "object" && !Array.isArray(cur.data.data)) {
+        cur = cur.data.data;
+      } else {
+        cur = cur.data;
+      }
+    }
+    return cur;
+  };
+
   // Safety Tag & QR Modal Handlers
   const openQrModal = async (dog: any) => {
     const id = dogId(dog);
     if (!id) return;
-    setQrDog(dog);
-    setQrBlob(null);
     setQrDog(dog);
     setQrBlob(null);
     setQrImageUrl(null);
@@ -937,10 +934,18 @@ const ShelterManagerDashboard = () => {
           }
         }
 
-        const metaData = metaRes?.data || metaRes;
-        if (metaData) {
+        const metaData = extractTagData(metaRes);
+        if (metaData && typeof metaData === "object") {
           setTagMetadata(metaData);
-          activeState = metaData.is_active === true || String(metaData.status || "").toUpperCase() === "ACTIVE";
+          const stUpper = String(metaData.status || metaData.state || "").toUpperCase();
+          const isExplicitInactive = stUpper === "INACTIVE" || stUpper === "REVOKED" || stUpper === "DEACTIVATED" || metaData.is_active === false;
+
+          activeState = !isExplicitInactive && (
+            metaData.is_active === true ||
+            stUpper === "ACTIVE" ||
+            Boolean(metaData.public_scan_url || metaData.public_scan_path || metaData.raw_token || metaData.token || metaData.id)
+          );
+
           if (activeState) {
             setTagStatus("ACTIVE");
             const rawScanUrl = metaData.public_scan_url || metaData.public_scan_path;
@@ -1028,8 +1033,8 @@ const ShelterManagerDashboard = () => {
     setIsProvisioning(true);
     try {
       const res = await petService.provisionSafetyTag(id, forceReissue);
-      const data = res?.data || res || {};
-      const scanUrl = data.public_scan_url || `/api/v1/dogs/${id}/public-scan`;
+      const data = extractTagData(res) || {};
+      const scanUrl = data.public_scan_url || data.public_scan_path || `/api/v1/dogs/${id}/public-scan`;
       const publicWebBase = (import.meta.env.VITE_PUBLIC_FRONTEND_URL as string) || "https://pawguard-public-web.vercel.app";
       const fullUrl = scanUrl.startsWith("http") ? scanUrl : `${publicWebBase.replace(/\/+$/, "")}${scanUrl.startsWith("/") ? "" : "/"}${scanUrl}`;
 
@@ -1040,10 +1045,11 @@ const ShelterManagerDashboard = () => {
       setQrBlob(blob);
       setTagStatus("ACTIVE");
       setTagMetadata({
+        ...data,
         token_prefix: data.token_prefix || String(fullUrl).slice(-8),
         status: "ACTIVE",
-        created_at: new Date().toISOString(),
-        scans_count: 0,
+        is_active: true,
+        created_at: data.created_at || new Date().toISOString(),
       });
 
       setIsReProvisionConfirmOpen(false);
@@ -1701,47 +1707,278 @@ const ShelterManagerDashboard = () => {
       <Modal
         isOpen={isRescueDetailsModalOpen}
         onClose={() => { setIsRescueDetailsModalOpen(false); setSelectedRescueForDetails(null); }}
-        title={`Rescue Details — ${selectedRescueForDetails?.ticket_number || selectedRescueForDetails?.id || ""}`}
-        maxWidth="600px"
+        title={`Rescue Case Details — ${selectedRescueForDetails?.ticket_number || selectedRescueForDetails?.id || ""}`}
+        maxWidth="540px"
       >
         {selectedRescueForDetails && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", fontSize: "13px", color: "#334155" }}>
-              <div><strong>Rescue Case ID:</strong><br /><span style={{ fontFamily: "monospace", color: "#1E3A8A" }}>{selectedRescueForDetails.ticket_number || selectedRescueForDetails.id}</span></div>
-              <div><strong>Status:</strong><br /><span style={{ textTransform: "capitalize", fontWeight: 600 }}>{selectedRescueForDetails.status || "-"}</span></div>
-              <div><strong>Rescue Date:</strong><br />{formatDateOnly(selectedRescueForDetails.created_at)}</div>
-              <div><strong>Priority / Severity:</strong><br /><span style={{ textTransform: "capitalize" }}>{selectedRescueForDetails.severity || "-"}</span></div>
-              <div><strong>Rescue Location:</strong><br />{selectedRescueForDetails.location_address || "-"}</div>
-              {(selectedRescueForDetails.latitude && selectedRescueForDetails.longitude) && (
-                <div><strong>GPS:</strong><br />{String(selectedRescueForDetails.latitude)}, {String(selectedRescueForDetails.longitude)}</div>
-              )}
-              <div><strong>Reporter:</strong><br />{selectedRescueForDetails.reporter_name || "-"}{selectedRescueForDetails.reporter_phone ? ` · ${selectedRescueForDetails.reporter_phone}` : ""}</div>
-              <div><strong>Rescue Agent:</strong><br />{getRescueAgentName(selectedRescueForDetails) || "-"}</div>
-              {selectedRescueForDetails.dispatch?.assigned_vehicle_id && (
-                <div><strong>Assigned Vehicle:</strong><br /><span style={{ fontFamily: "monospace", fontSize: "12px" }}>{selectedRescueForDetails.dispatch.assigned_vehicle_id}</span></div>
-              )}
-              {selectedRescueForDetails.reporter_notes && (
-                <div style={{ gridColumn: "1 / -1" }}><strong>Reporter Notes:</strong><br /><span style={{ fontStyle: "italic", color: "#64748B" }}>{selectedRescueForDetails.reporter_notes}</span></div>
-              )}
-            </div>
-            {Array.isArray(selectedRescueForDetails.media_evidence || selectedRescueForDetails.media_urls) &&
-              ((selectedRescueForDetails.media_evidence || selectedRescueForDetails.media_urls) as string[]).length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            {/* Structured 2-column grid layout */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "10px 14px",
+                background: "#F8FAFC",
+                border: "1px solid #E2E8F0",
+                borderRadius: "8px",
+                padding: "12px 14px",
+              }}
+            >
+              {/* Rescue Case ID */}
               <div>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "#334155", marginBottom: "8px" }}>Evidence Photos</div>
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                  {((selectedRescueForDetails.media_evidence || selectedRescueForDetails.media_urls) as string[]).map((url: string, idx: number) => (
-                    <a key={idx} href={url} target="_blank" rel="noopener noreferrer">
-                      <img src={url} alt={`Evidence ${idx + 1}`} style={{ width: "90px", height: "90px", objectFit: "cover", borderRadius: "8px", border: "1px solid #E2E8F0" }} />
-                    </a>
-                  ))}
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: "2px" }}>
+                  Rescue Case ID
+                </div>
+                <span
+                  style={{
+                    fontFamily: "monospace",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    color: "#1E3A8A",
+                    background: "#EFF6FF",
+                    padding: "2px 6px",
+                    borderRadius: "4px",
+                    display: "inline-block",
+                    border: "1px solid #BFDBFE",
+                  }}
+                >
+                  {selectedRescueForDetails.ticket_number || selectedRescueForDetails.id}
+                </span>
+              </div>
+
+              {/* Status */}
+              <div>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: "2px" }}>
+                  Status
+                </div>
+                {(() => {
+                  const status = (selectedRescueForDetails.status || "-").toLowerCase();
+                  let bg = "#F1F5F9";
+                  let color = "#475569";
+                  let border = "#CBD5E1";
+                  if (status.includes("rescued") || status.includes("completed") || status.includes("admitted") || status.includes("shelter")) {
+                    bg = "#F0FDF4"; color = "#15803D"; border = "#BBF7D0";
+                  } else if (status.includes("dispatch") || status.includes("enroute") || status.includes("progress")) {
+                    bg = "#EFF6FF"; color = "#1D4ED8"; border = "#BFDBFE";
+                  } else if (status.includes("pending") || status.includes("new") || status.includes("reported")) {
+                    bg = "#FFFBEB"; color = "#B45309"; border = "#FDE68A";
+                  }
+                  return (
+                    <span
+                      style={{
+                        display: "inline-block",
+                        fontSize: "11.5px",
+                        fontWeight: 700,
+                        textTransform: "capitalize",
+                        padding: "2px 8px",
+                        borderRadius: "999px",
+                        background: bg,
+                        color: color,
+                        border: `1px solid ${border}`,
+                      }}
+                    >
+                      {selectedRescueForDetails.status || "-"}
+                    </span>
+                  );
+                })()}
+              </div>
+
+              {/* Rescue Date */}
+              <div>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: "2px" }}>
+                  Rescue Date
+                </div>
+                <div style={{ fontSize: "12.5px", fontWeight: 600, color: "#0F172A" }}>
+                  {formatDateOnly(selectedRescueForDetails.created_at)}
                 </div>
               </div>
-            )}
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "4px" }}>
+
+              {/* Priority / Severity */}
+              <div>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: "2px" }}>
+                  Priority / Severity
+                </div>
+                {(() => {
+                  const severity = (selectedRescueForDetails.severity || "-").toLowerCase();
+                  let bg = "#F1F5F9";
+                  let color = "#475569";
+                  let border = "#CBD5E1";
+                  if (severity.includes("critical") || severity.includes("high") || severity.includes("urgent")) {
+                    bg = "#FEF2F2"; color = "#DC2626"; border = "#FECACA";
+                  } else if (severity.includes("medium") || severity.includes("moderate")) {
+                    bg = "#FFFBEB"; color = "#B45309"; border = "#FDE68A";
+                  } else if (severity.includes("low")) {
+                    bg = "#F0FDF4"; color = "#15803D"; border = "#BBF7D0";
+                  }
+                  return (
+                    <span
+                      style={{
+                        display: "inline-block",
+                        fontSize: "11.5px",
+                        fontWeight: 700,
+                        textTransform: "capitalize",
+                        padding: "2px 8px",
+                        borderRadius: "999px",
+                        background: bg,
+                        color: color,
+                        border: `1px solid ${border}`,
+                      }}
+                    >
+                      {selectedRescueForDetails.severity || "-"}
+                    </span>
+                  );
+                })()}
+              </div>
+
+              {/* Rescue Location */}
+              <div style={{ gridColumn: "1 / -1" }}>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: "2px" }}>
+                  Rescue Location
+                </div>
+                <div style={{ fontSize: "12.5px", fontWeight: 600, color: "#0F172A", wordBreak: "break-word" }}>
+                  {selectedRescueForDetails.location_address || "-"}
+                </div>
+              </div>
+
+              {/* GPS Coordinates (if present) */}
+              {(selectedRescueForDetails.latitude && selectedRescueForDetails.longitude) && (
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: "2px" }}>
+                    GPS Coordinates
+                  </div>
+                  <span style={{ fontFamily: "monospace", fontSize: "11.5px", color: "#475569", background: "#F1F5F9", padding: "2px 6px", borderRadius: "4px" }}>
+                    {String(selectedRescueForDetails.latitude)}, {String(selectedRescueForDetails.longitude)}
+                  </span>
+                </div>
+              )}
+
+              {/* Reporter */}
+              <div>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: "2px" }}>
+                  Reporter
+                </div>
+                <div style={{ fontSize: "12.5px", fontWeight: 600, color: "#0F172A" }}>
+                  {selectedRescueForDetails.reporter_name || "-"}
+                  {selectedRescueForDetails.reporter_phone ? (
+                    <span style={{ fontWeight: 500, color: "#64748B", display: "block", fontSize: "11.5px" }}>
+                      {selectedRescueForDetails.reporter_phone}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* Rescue Agent */}
+              <div>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: "2px" }}>
+                  Rescue Agent
+                </div>
+                <div style={{ fontSize: "12.5px", fontWeight: 600, color: "#0F172A" }}>
+                  {getRescueAgentName(selectedRescueForDetails) || "-"}
+                </div>
+              </div>
+
+              {/* Assigned Vehicle (if present) */}
+              {selectedRescueForDetails.dispatch?.assigned_vehicle_id && (
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: "2px" }}>
+                    Assigned Vehicle
+                  </div>
+                  <span style={{ fontFamily: "monospace", fontSize: "11.5px", fontWeight: 600, color: "#1E3A8A" }}>
+                    {String(selectedRescueForDetails.dispatch.assigned_vehicle_id)}
+                  </span>
+                </div>
+              )}
+
+              {/* Reporter Notes (if present) */}
+              {selectedRescueForDetails.reporter_notes && (
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: "2px" }}>
+                    Reporter Notes
+                  </div>
+                  <div style={{ fontStyle: "italic", fontSize: "12px", color: "#475569", background: "#FFFFFF", padding: "6px 10px", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                    "{selectedRescueForDetails.reporter_notes}"
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Evidence Photos Section */}
+            {(() => {
+              const rawEvidence = selectedRescueForDetails.media_evidence || selectedRescueForDetails.media_urls;
+              const evidenceList = Array.isArray(rawEvidence)
+                ? (rawEvidence as string[]).filter((u): u is string => typeof u === "string" && Boolean(u.trim()))
+                : typeof rawEvidence === "string" && rawEvidence.trim()
+                ? [rawEvidence.trim()]
+                : [];
+              if (evidenceList.length === 0) return null;
+              return (
+                <div style={{ marginTop: "4px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: "6px" }}>
+                    Evidence Photos ({evidenceList.length})
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                    {evidenceList.map((url: string, idx: number) => (
+                      <a
+                        key={idx}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`View Evidence Photo ${idx + 1}`}
+                        style={{ display: "inline-block", position: "relative", textDecoration: "none" }}
+                      >
+                        <img
+                          src={url}
+                          alt={`Evidence Photo ${idx + 1}`}
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
+                            if (e.currentTarget.parentElement) {
+                              const fallback = document.createElement("span");
+                              fallback.innerText = `Photo ${idx + 1}`;
+                              fallback.style.cssText = "display:inline-flex;align-items:center;justify-content:center;width:72px;height:72px;border-radius:6px;background:#F1F5F9;border:1px solid #CBD5E1;color:#1E3A8A;font-size:11px;font-weight:600;";
+                              e.currentTarget.parentElement.appendChild(fallback);
+                            }
+                          }}
+                          style={{
+                            width: "72px",
+                            height: "72px",
+                            objectFit: "cover",
+                            borderRadius: "6px",
+                            border: "1px solid #CBD5E1",
+                            boxShadow: "0 1px 2px rgba(15, 23, 42, 0.05)",
+                            transition: "transform 0.15s ease, border-color 0.15s ease",
+                          }}
+                        />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Footer Action Bar */}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "6px", paddingTop: "10px", borderTop: "1px solid #F1F5F9" }}>
               <button
                 type="button"
                 onClick={() => { setIsRescueDetailsModalOpen(false); setSelectedRescueForDetails(null); }}
-                style={{ padding: "8px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9", color: "#334155", fontWeight: 600, cursor: "pointer", fontSize: "13px" }}
+                style={{
+                  padding: "7px 16px",
+                  borderRadius: "6px",
+                  border: "1px solid #CBD5E1",
+                  background: "#FFFFFF",
+                  color: "#334155",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontSize: "12px",
+                  transition: "all 0.15s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#F8FAFC";
+                  e.currentTarget.style.borderColor = "#94A3B8";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#FFFFFF";
+                  e.currentTarget.style.borderColor = "#CBD5E1";
+                }}
               >
                 Close
               </button>
