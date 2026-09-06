@@ -570,6 +570,37 @@ const RescueAgentDashboard = () => {
     }
   };
 
+  const handleShelterHandoverClick = async (caseId: string) => {
+    try {
+      setIsSubmitting(true);
+      addToast("Checking backend handover status...", "info");
+      notifyDataChanged();
+      await fetchAssignedCases();
+      await fetchDashboard();
+
+      const refreshed = await rescueService.getRescueCaseById(caseId);
+      if (refreshed) {
+        const row = formatCaseRow(refreshed?.data || refreshed);
+        setSelectedCase(row);
+        if (row.status === "admitted" || row.status === "completed") {
+          addToast("Animal has been admitted to the shelter!", "success");
+          return;
+        }
+      }
+
+      addToast("Animal is secured and awaiting shelter intake processing by the Shelter Manager.", "info");
+
+      const role = getCurrentUserRole();
+      if (["shelter_manager", "rescue_coordinator", "rescue_centre_admin", "super_admin"].includes(role)) {
+        navigate(`/shelter-dogs?rescue_case_id=${encodeURIComponent(caseId)}`);
+      }
+    } catch {
+      addToast("Unable to fetch handover status.", "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleMarkAdmitted = async (caseId: string) => {
     try {
       setIsSubmitting(true);
@@ -958,29 +989,30 @@ const RescueAgentDashboard = () => {
         </button>
       );
     }
-    if (status === "located") {
+    if (status === "located" || status === "in_progress" || status === "arrived") {
       return (
         <button
           onClick={(e) => {
             e.stopPropagation();
             handleMarkSecured(caseId);
           }}
-          style={{ padding: "5px 10px", background: "#F59E0B", color: "#FFF", borderRadius: "6px", border: "none", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+          style={{ padding: "5px 10px", background: "#059669", color: "#FFF", borderRadius: "6px", border: "none", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
         >
-          Secured
+          🐕 Mark Dog Secured
         </button>
       );
     }
     if (status === "secured" || status === "rescued") {
       return (
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
-            handleMarkAdmitted(caseId);
+            handleShelterHandoverClick(caseId);
           }}
-          style={{ padding: "5px 10px", background: "#15803D", color: "#FFF", borderRadius: "6px", border: "none", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+          style={{ padding: "4px 8px", background: "#ECFDF5", color: "#059669", borderRadius: "6px", fontSize: "12px", fontWeight: 600, border: "1px solid #10B981", display: "inline-flex", alignItems: "center", gap: "4px", cursor: "pointer" }}
         >
-          <FaCheckCircle /> Confirm Delivery
+          <FaCheckCircle /> Dog Secured — Awaiting Shelter Handover
         </button>
       );
     }
@@ -1114,18 +1146,7 @@ const RescueAgentDashboard = () => {
           }}
         />
 
-        <QuickActionCard
-          icon={<FaAmbulance />}
-          title="Confirm Delivery"
-          subtitle="Handover to Shelter Intake"
-          color="#1E3A8A"
-          onClick={() => {
-            const rescuable = assignedCases.find((c) => ["secured", "rescued", "located"].includes(String(c.status || "").toLowerCase()));
-            if (rescuable) setDeliveryCaseId(String(rescuable.id));
-            else if (assignedCases.length > 0) setDeliveryCaseId(String(assignedCases[0].id));
-            setIsDeliveryModalOpen(true);
-          }}
-        />
+
 
         <QuickActionCard
           icon={<FaCompass />}
@@ -1354,23 +1375,24 @@ const RescueAgentDashboard = () => {
                 </button>
               )}
 
-              {String(selectedCase.status || "").toLowerCase() === "located" && (
+              {["located", "in_progress", "arrived"].includes(String(selectedCase.status || "").toLowerCase()) && (
                 <button
                   disabled={isSubmitting}
                   onClick={() => handleMarkSecured(String(selectedCase.id || ""))}
-                  style={{ padding: "8px 16px", background: "#F59E0B", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
+                  style={{ padding: "8px 16px", background: "#059669", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
                 >
-                  Mark Secured
+                  🐕 Mark Dog Secured
                 </button>
               )}
 
               {["secured", "rescued"].includes(String(selectedCase.status || "").toLowerCase()) && (
                 <button
+                  type="button"
+                  onClick={() => handleShelterHandoverClick(String(selectedCase.id || ""))}
                   disabled={isSubmitting}
-                  onClick={() => handleMarkAdmitted(String(selectedCase.id || ""))}
-                  style={{ padding: "8px 16px", background: "#15803D", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  style={{ padding: "8px 16px", background: "#ECFDF5", color: "#059669", borderRadius: "6px", border: "1px solid #10B981", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px", cursor: "pointer" }}
                 >
-                  <FaCheckCircle size={12} /> Confirm Delivery & Admit to Centre
+                  <FaCheckCircle size={12} /> Dog Secured — Awaiting Shelter Handover
                 </button>
               )}
 
@@ -1536,7 +1558,6 @@ const RescueAgentDashboard = () => {
               <option value="en_route">En Route (On the way to scene)</option>
               <option value="located">Located (Animal spotted on scene)</option>
               <option value="secured">Secured (Animal safely captured)</option>
-              <option value="admitted">Admitted (Delivered to centre intake)</option>
             </select>
           </div>
         </form>

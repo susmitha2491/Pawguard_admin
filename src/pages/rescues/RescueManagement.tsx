@@ -33,7 +33,7 @@ import RescueAssignModal from "../../components/rescue/RescueAssignModal";
 import userService from "../../services/userService";
 import vehicleService from "../../services/vehicleService";
 import { rescueStatusBadge, dispatchStage } from "../../utils/rescueStatus";
-import { notifyDataChanged } from "../../utils/dataSync";
+import { notifyDataChanged, useDataSync } from "../../utils/dataSync";
 import { getCurrentUserRole, normalizeRole } from "../../utils/roleUtils";
 import { formatDateTime } from "../../utils/dateUtils";
 import { unwrapList } from "../../utils/chartUtils";
@@ -41,6 +41,49 @@ import { unwrapList } from "../../utils/chartUtils";
 // --- HELPER FUNCTIONS FOR TYPE-SAFE STRING OPERATIONS ---
 const toSafeStr = (val: unknown): string => (val !== undefined && val !== null ? String(val) : "");
 const toSafeLower = (val: unknown): string => toSafeStr(val).toLowerCase();
+
+const getNextValidStatuses = (currentStatus?: string): { value: string; label: string }[] => {
+  const st = toSafeLower(currentStatus);
+
+  if (["dispatched", "accepted", "assigned"].includes(st)) {
+    return [
+      { value: "en_route", label: "En Route to Field Scene" },
+      { value: "in_progress", label: "Rescue In Progress" },
+      { value: "located", label: "Dog Located at Scene" },
+    ];
+  }
+  if (["en_route", "in_progress"].includes(st)) {
+    return [
+      { value: "located", label: "Dog Located at Scene" },
+      { value: "secured", label: "Dog Secured & Rescued" },
+    ];
+  }
+  if (st === "located") {
+    return [
+      { value: "secured", label: "Dog Secured & Rescued" },
+      { value: "admitted", label: "Admitted to Shelter / Vet" },
+    ];
+  }
+  if (st === "secured" || st === "rescued") {
+    return [
+      { value: "admitted", label: "Admitted to Shelter / Vet" },
+      { value: "completed", label: "Rescue Completed" },
+    ];
+  }
+  if (st === "admitted") {
+    return [
+      { value: "completed", label: "Rescue Completed" },
+    ];
+  }
+  if (["verified", "pending", "reported"].includes(st)) {
+    return [
+      { value: "dispatched", label: "Dispatched" },
+      { value: "en_route", label: "En Route to Field Scene" },
+    ];
+  }
+
+  return [];
+};
 
 // --- SEVERITY & CONDITION CONSTANTS ---
 const SEVERITY_OPTIONS = [
@@ -123,7 +166,10 @@ export interface AgentRosterItem {
   specializations: string[];
   certifications: string[];
   current_assignment?: RescueCaseTableRow | null;
+  active_cases?: RescueCaseTableRow[];
+  completed_cases?: RescueCaseTableRow[];
   rawUser: Record<string, unknown>;
+  is_active?: boolean;
 }
 
 export interface VehicleFleetItem {
@@ -157,8 +203,33 @@ export interface VehicleFleetItem {
 // Map backend case to standardized row
 const formatCaseRow = (raw: Record<string, unknown>): RescueCaseTableRow => {
   const item = raw && typeof raw === "object" ? raw : {};
-  const stage = dispatchStage({ status: item.status as string, dispatch: item.dispatch as Record<string, unknown> });
   const d = (item.dispatch as Record<string, unknown>) || null;
+
+  const reqStatus = toSafeLower(item.status);
+  const dispatchStatus = toSafeLower(d?.status);
+
+  const statusPriority: Record<string, number> = {
+    submitted: 1,
+    reported: 1,
+    verified: 2,
+    dispatched: 3,
+    accepted: 4,
+    en_route: 5,
+    in_progress: 5,
+    located: 6,
+    secured: 7,
+    rescued: 7,
+    admitted: 8,
+    completed: 9,
+    rejected: 0,
+    cancelled: 0,
+  };
+
+  const reqP = statusPriority[reqStatus] || 0;
+  const disP = statusPriority[dispatchStatus] || 0;
+  const effectiveStatus = disP > reqP ? dispatchStatus : reqStatus;
+
+  const stage = dispatchStage({ status: effectiveStatus, dispatch: d });
   const agentsList = Array.isArray(d?.agents) ? (d.agents as Record<string, unknown>[]) : [];
   
   const rawId = toSafeStr(item.id || item.request_id || item.ticket_number || "");
@@ -193,7 +264,7 @@ const formatCaseRow = (raw: Record<string, unknown>): RescueCaseTableRow => {
       : toSafeStr(item.media_evidence ?? item.media_urls ?? "-"),
     environmental_factors: toSafeStr(item.environmental_factors ?? "-"),
     reporter_notes: toSafeStr(item.reporter_notes ?? item.notes ?? "-"),
-    status: toSafeStr(item.status ?? "-"),
+    status: effectiveStatus || toSafeStr(item.status ?? "-"),
     ...(item.rejection_rationale ? { rejection_reason: toSafeStr(item.rejection_rationale) } : {}),
     created_at: item.created_at ? formatDateTime(item.created_at as string) : "-",
     updated_at: item.updated_at ? formatDateTime(item.updated_at as string) : "-",
@@ -225,6 +296,7 @@ const RescueManagement = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const currentUserRole = getCurrentUserRole();
   const isRescueCentreAdmin = currentUserRole === "rescue_centre_admin";
+  const isRescueAgent = currentUserRole === "rescue_agent";
 
   // Navigation tab: 'cases' | 'agents' | 'vehicles'
   const activeTab = (searchParams.get("tab") as "cases" | "agents" | "vehicles") || "cases";
@@ -260,6 +332,14 @@ const RescueManagement = () => {
 
   const [selectedAgent, setSelectedAgent] = useState<AgentRosterItem | null>(null);
   const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
+  const [isAddAgentModalOpen, setIsAddAgentModalOpen] = useState(false);
+  const [agentFormData, setAgentFormData] = useState({
+    full_name: "",
+    email: "",
+    password: "",
+    phone: "",
+  });
+  const [agentFormError, setAgentFormError] = useState<string | null>(null);
 
   const [selectedVehicle, setSelectedVehicle] = useState<VehicleFleetItem | null>(null);
   const [isVehicleModalOpen, setIsVehicleModalOpen] = useState(false);
@@ -291,6 +371,85 @@ const RescueManagement = () => {
     reporter_notes: "",
   });
 
+  // --- RESCUE AGENT MANAGEMENT HANDLERS ---
+  const handleCreateAgent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAgentFormError(null);
+
+    const name = agentFormData.full_name.trim();
+    const email = agentFormData.email.trim();
+    const password = agentFormData.password;
+    const phone = agentFormData.phone.trim();
+
+    if (!name) {
+      setAgentFormError("Full Name is required.");
+      return;
+    }
+    if (!email || !email.includes("@") || !email.includes(".")) {
+      setAgentFormError("Please enter a valid email address.");
+      return;
+    }
+    if (!password || password.length < 6) {
+      setAgentFormError("Password must be at least 6 characters long.");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await userService.createUser({
+        full_name: name,
+        email: email,
+        password: password,
+        phone: phone || undefined,
+        role_names: ["rescue_agent"],
+      });
+
+      addToast(`Rescue Agent "${name}" registered successfully!`, "success");
+      setIsAddAgentModalOpen(false);
+      setAgentFormData({ full_name: "", email: "", password: "", phone: "" });
+      await fetchAllData();
+      notifyDataChanged();
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string; message?: string } } };
+      const msg = e?.response?.data?.detail || e?.response?.data?.message || "Failed to register new rescue agent.";
+      setAgentFormError(msg);
+      addToast(msg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeactivateAgent = async (agent: AgentRosterItem) => {
+    if (agent.active_cases_count > 0) {
+      addToast(
+        `Cannot deactivate Rescue Agent "${agent.full_name}" while they have active rescue assignment(s). Please reassign or complete active cases first.`,
+        "error"
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to deactivate Rescue Agent "${agent.full_name}"?\n\nThis agent will be set to inactive and removed from active rescue dispatch availability.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setIsSubmitting(true);
+      await userService.updateUser(agent.id, { is_active: false });
+      addToast(`Rescue Agent "${agent.full_name}" deactivated successfully.`, "success");
+      setIsAgentModalOpen(false);
+      setSelectedAgent(null);
+      await fetchAllData();
+      notifyDataChanged();
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string; message?: string } } };
+      const msg = e?.response?.data?.detail || e?.response?.data?.message || "Failed to deactivate agent.";
+      addToast(msg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // --- FETCH DATA ---
   const fetchAllData = useCallback(async () => {
     try {
@@ -298,27 +457,47 @@ const RescueManagement = () => {
       setError(null);
 
       const isAgentRole = getCurrentUserRole() === "rescue_agent";
-      const [casesRes, usersRes, vehiclesRes] = await Promise.allSettled([
+      const [casesRes, usersRes, vehiclesRes, agentsAvailRes] = await Promise.allSettled([
         rescueService.getAllRescueCases(isAgentRole ? { assigned_to_me: true } : undefined),
         userService.getUsers(),
         vehicleService.getVehicles(),
+        rescueService.getAgentAvailability(),
       ]);
 
       // Process Cases
       if (casesRes.status === "fulfilled") {
         const rawCases = unwrapList(casesRes.value?.data ?? casesRes.value);
-        setCases((rawCases as Record<string, unknown>[]).map(formatCaseRow));
+        const formattedCases = (rawCases as Record<string, unknown>[]).map(formatCaseRow);
+        formattedCases.sort((a, b) => {
+          const rawA = (a.rawItem?.created_at || a.rawItem?.reported_at || a.rawItem?.timestamp || a.rawItem?.date || a.created_at) as string;
+          const rawB = (b.rawItem?.created_at || b.rawItem?.reported_at || b.rawItem?.timestamp || b.rawItem?.date || b.created_at) as string;
+          const timeA = new Date(rawA).getTime();
+          const timeB = new Date(rawB).getTime();
+          const validA = isNaN(timeA) ? 0 : timeA;
+          const validB = isNaN(timeB) ? 0 : timeB;
+          return validB - validA;
+        });
+        setCases(formattedCases);
       } else {
         setCases([]);
       }
 
-      // Process Users
-      if (usersRes.status === "fulfilled") {
-        const rawUsers = unwrapList(usersRes.value?.data ?? usersRes.value);
-        setUsers(rawUsers as Record<string, unknown>[]);
-      } else {
-        setUsers([]);
-      }
+      // Process Users & Agents
+      const rawUsers = usersRes.status === "fulfilled" ? unwrapList(usersRes.value?.data ?? usersRes.value) : [];
+      const agentsAvailList = agentsAvailRes.status === "fulfilled" ? unwrapList(agentsAvailRes.value?.data ?? agentsAvailRes.value) : [];
+
+      const userMap = new Map<string, Record<string, unknown>>();
+      (rawUsers as Record<string, unknown>[]).forEach((u) => {
+        const id = toSafeStr(u.id || u.email);
+        if (id) userMap.set(id, u);
+      });
+      (agentsAvailList as Record<string, unknown>[]).forEach((a) => {
+        const id = toSafeStr(a.id || a.email);
+        if (id && !userMap.has(id)) {
+          userMap.set(id, { ...a, role: a.role || "rescue_agent" });
+        }
+      });
+      setUsers(Array.from(userMap.values()));
 
       // Process Vehicles
       if (vehiclesRes.status === "fulfilled") {
@@ -338,6 +517,8 @@ const RescueManagement = () => {
   useEffect(() => {
     fetchAllData();
   }, [fetchAllData]);
+
+  useDataSync(fetchAllData);
 
   // --- TAB SWITCHING ---
   const handleTabChange = (tab: "cases" | "agents" | "vehicles") => {
@@ -422,8 +603,15 @@ const RescueManagement = () => {
         return st.includes("completed") || st.includes("admitted") || st.includes("rescued");
       });
 
+      const isActive = u.is_active !== false;
       const isBusy = activeAssigned.length > 0;
       const currentActiveCase = activeAssigned[0] || null;
+
+      const availabilityVal: "Available" | "Busy" | "Offline" | "On Leave" | "Inactive" = !isActive
+        ? "Inactive"
+        : isBusy
+        ? "Busy"
+        : "Available";
 
       return {
         id: uId,
@@ -434,9 +622,11 @@ const RescueManagement = () => {
         phone: toSafeStr(u.phone || "+91 98765 00000"),
         location: toSafeStr(u.service_area || u.location || "Kurnool"),
         service_area: toSafeStr(u.service_area || "Kurnool Rescue Sector"),
-        availability: isBusy ? "Busy" : ("Available" as const),
+        availability: availabilityVal,
         active_cases_count: activeAssigned.length,
         completed_rescues_count: completedAssigned.length,
+        active_cases: activeAssigned,
+        completed_cases: completedAssigned,
         assigned_vehicle: currentActiveCase?.dispatch_vehicle && currentActiveCase.dispatch_vehicle !== "-" ? currentActiveCase.dispatch_vehicle : "Unassigned",
         avatar_url: typeof u.avatar_url === "string" ? u.avatar_url : undefined,
         shift: toSafeStr(u.shift || "Field Operations Shift"),
@@ -445,6 +635,7 @@ const RescueManagement = () => {
         certifications: ["PawGuard Certified Field Responder", "Emergency Canine Rescue Level 2"],
         current_assignment: currentActiveCase,
         rawUser: u,
+        is_active: isActive,
       };
     });
   }, [users, cases]);
@@ -582,7 +773,8 @@ const RescueManagement = () => {
         ) return false;
       }
       if (agentStatusFilter !== "all") {
-        if (toSafeLower(a.availability) !== toSafeLower(agentStatusFilter)) return false;
+        if (agentStatusFilter === "inactive" && a.is_active !== false) return false;
+        if (agentStatusFilter !== "inactive" && toSafeLower(a.availability) !== toSafeLower(agentStatusFilter)) return false;
       }
       return true;
     });
@@ -641,6 +833,16 @@ const RescueManagement = () => {
     setSelectedCase(c);
     setIsCaseModalOpen(false);
     setIsAssignModalOpen(true);
+  };
+
+  const handleOpenStatusUpdateModal = (c: RescueCaseTableRow) => {
+    setSelectedCase(c);
+    const validNextOptions = getNextValidStatuses(c.status);
+    setStatusForm({
+      status: validNextOptions.length > 0 ? validNextOptions[0].value : "",
+      notes: "",
+    });
+    setIsStatusUpdateOpen(true);
   };
 
   const handleCreateCase = async (e: React.FormEvent) => {
@@ -738,6 +940,139 @@ const RescueManagement = () => {
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string; message?: string } } };
       addToast(e?.response?.data?.detail || e?.response?.data?.message || "Failed to update status", "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAgentAcceptAndEnRoute = async (caseItem: RescueCaseTableRow) => {
+    try {
+      setIsSubmitting(true);
+      await rescueService.acceptDispatch(caseItem.id);
+      try {
+        await rescueService.startTracking(caseItem.id);
+      } catch {
+        /* tracking optional */
+      }
+      addToast("Rescue assignment accepted & En Route to field!", "success");
+      notifyDataChanged();
+      await fetchAllData();
+
+      const refreshed = await rescueService.getRescueCaseById(caseItem.id);
+      if (refreshed) {
+        const row = formatCaseRow(refreshed?.data || refreshed);
+        setSelectedCase(row.status === "dispatched" ? { ...row, status: "en_route" } : row);
+      } else {
+        setSelectedCase((prev) => (prev ? { ...prev, status: "en_route" } : null));
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string; message?: string } } };
+      addToast(e?.response?.data?.detail || e?.response?.data?.message || "Failed to accept rescue assignment.", "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAgentMarkLocated = async (caseItem: RescueCaseTableRow) => {
+    try {
+      setIsSubmitting(true);
+      await rescueService.markRescueLocated(caseItem.id);
+      addToast("Dog marked as located on scene!", "success");
+      notifyDataChanged();
+      await fetchAllData();
+
+      const refreshed = await rescueService.getRescueCaseById(caseItem.id);
+      if (refreshed) {
+        const row = formatCaseRow(refreshed?.data || refreshed);
+        setSelectedCase(row.status === "en_route" ? { ...row, status: "located" } : row);
+      } else {
+        setSelectedCase((prev) => (prev ? { ...prev, status: "located" } : null));
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string; message?: string } } };
+      addToast(e?.response?.data?.detail || e?.response?.data?.message || "Failed to mark animal as located.", "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAgentMarkSecured = async (caseItem: RescueCaseTableRow) => {
+    try {
+      setIsSubmitting(true);
+      await rescueService.markRescueSecured(caseItem.id);
+      addToast("Dog secured & rescued successfully!", "success");
+      notifyDataChanged();
+      await fetchAllData();
+
+      const refreshed = await rescueService.getRescueCaseById(caseItem.id);
+      if (refreshed) {
+        const row = formatCaseRow(refreshed?.data || refreshed);
+        setSelectedCase(row.status === "located" ? { ...row, status: "secured" } : row);
+      } else {
+        setSelectedCase((prev) => (prev ? { ...prev, status: "secured" } : null));
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string; message?: string } } };
+      addToast(e?.response?.data?.detail || e?.response?.data?.message || "Failed to mark animal as secured.", "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleShelterHandoverClick = async (caseItem: RescueCaseTableRow) => {
+    try {
+      setIsSubmitting(true);
+      addToast(`Checking backend handover status for case ${caseItem.ticket_number || caseItem.id}...`, "info");
+      notifyDataChanged();
+      await fetchAllData();
+
+      const refreshed = await rescueService.getRescueCaseById(caseItem.id);
+      if (refreshed) {
+        const row = formatCaseRow(refreshed?.data || refreshed);
+        setSelectedCase(row);
+        if (row.status === "admitted" || row.status === "completed") {
+          addToast("Animal has been admitted to the shelter!", "success");
+          return;
+        }
+      }
+
+      addToast("Animal is secured and awaiting shelter intake processing by the Shelter Manager.", "info");
+      
+      const role = getCurrentUserRole();
+      if (["shelter_manager", "rescue_coordinator", "rescue_centre_admin", "super_admin"].includes(role)) {
+        navigate(`/shelter-dogs?rescue_case_id=${encodeURIComponent(caseItem.id)}`);
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string; message?: string } } };
+      addToast(e?.response?.data?.detail || e?.response?.data?.message || "Unable to fetch handover status.", "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAgentMarkAdmitted = async (caseItem: RescueCaseTableRow) => {
+    try {
+      setIsSubmitting(true);
+      await rescueService.markRescueAdmitted(caseItem.id);
+      addToast("Rescue completed & dog admitted to shelter!", "success");
+      notifyDataChanged();
+      await fetchAllData();
+
+      const refreshed = await rescueService.getRescueCaseById(caseItem.id);
+      if (refreshed) {
+        setSelectedCase(formatCaseRow(refreshed?.data || refreshed));
+      } else {
+        setSelectedCase((prev) => (prev ? { ...prev, status: "admitted" } : null));
+      }
+
+      setTimeout(() => {
+        if (window.confirm(`Rescue mission completed! Would you like to register the rescued dog in the Dog Repository now?`)) {
+          navigate(`/pets?action=add&rescue_case_id=${encodeURIComponent(caseItem.id)}`);
+        }
+      }, 300);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string; message?: string } } };
+      addToast(e?.response?.data?.detail || e?.response?.data?.message || "Failed to admit animal to shelter.", "error");
     } finally {
       setIsSubmitting(false);
     }
@@ -1417,7 +1752,28 @@ const RescueManagement = () => {
               <option value="available">Available</option>
               <option value="busy">Busy</option>
               <option value="offline">Offline</option>
+              <option value="inactive">Inactive</option>
             </select>
+            <button
+              onClick={() => setIsAddAgentModalOpen(true)}
+              style={{
+                background: "#16A34A",
+                color: "#FFFFFF",
+                border: "none",
+                borderRadius: "8px",
+                padding: "8px 16px",
+                fontSize: "13px",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <FaPlus size={12} />
+              <span>Register Agent</span>
+            </button>
           </div>
 
           {/* AGENTS ROSTER GRID (3 COLUMNS x 3 ROWS, MAX 9 PER PAGE) */}
@@ -1459,13 +1815,13 @@ const RescueManagement = () => {
                       borderRadius: "999px",
                       fontSize: "11px",
                       fontWeight: 800,
-                      background: agent.availability === "Available" ? "#ECFDF5" : "#FEF2F2",
-                      color: agent.availability === "Available" ? "#059669" : "#DC2626",
+                      background: agent.availability === "Available" ? "#ECFDF5" : agent.availability === "Inactive" ? "#FEF2F2" : "#FEF2F2",
+                      color: agent.availability === "Available" ? "#059669" : agent.availability === "Inactive" ? "#DC2626" : "#DC2626",
                       flexShrink: 0,
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {agent.availability === "Available" ? "● AVAILABLE" : "○ BUSY ON RESCUE"}
+                    {agent.availability === "Available" ? "● AVAILABLE" : agent.availability === "Inactive" ? "✕ INACTIVE" : "○ BUSY ON RESCUE"}
                   </span>
                 </div>
 
@@ -1478,7 +1834,28 @@ const RescueManagement = () => {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "12px", borderTop: "1px solid #F1F5F9", fontSize: "12px", flexWrap: "wrap", gap: "6px" }}>
                   <span style={{ color: "#64748B", whiteSpace: "nowrap" }}>Active Cases: <strong style={{ color: "#2563EB" }}>{agent.active_cases_count}</strong></span>
                   <span style={{ color: "#64748B", whiteSpace: "nowrap" }}>Total Completed: <strong style={{ color: "#059669" }}>{agent.completed_rescues_count}</strong></span>
-                  <span style={{ color: "#2563EB", fontWeight: 700, whiteSpace: "nowrap" }}>Details →</span>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    {!isRescueCentreAdmin && agent.is_active !== false && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeactivateAgent(agent);
+                        }}
+                        style={{
+                          border: "none",
+                          background: "transparent",
+                          color: "#DC2626",
+                          fontWeight: 700,
+                          fontSize: "12px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Deactivate
+                      </button>
+                    )}
+                    <span style={{ color: "#2563EB", fontWeight: 700, whiteSpace: "nowrap" }}>Details →</span>
+                  </div>
                 </div>
               </div>
             ))}
@@ -1783,52 +2160,157 @@ const RescueManagement = () => {
 
                 {/* ACTION BUTTONS */}
                 <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "12px", flexWrap: "wrap" }}>
-                  <button
-                    onClick={() => setIsStatusUpdateOpen(true)}
-                    style={{
-                      padding: "8px 14px",
-                      borderRadius: "6px",
-                      border: "1px solid #D97706",
-                      background: "#FFFBEB",
-                      color: "#D97706",
-                      fontWeight: 700,
-                      fontSize: "13px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    ⚡ Update Status
-                  </button>
-                  <button
-                    onClick={() => handleLogFoundPetFromRescue(selectedCase)}
-                    disabled={isSubmitting}
-                    style={{
-                      padding: "8px 14px",
-                      borderRadius: "6px",
-                      border: "1px solid #10B981",
-                      background: "#ECFDF5",
-                      color: "#059669",
-                      fontWeight: 700,
-                      fontSize: "13px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    🐾 Log Found Pet Report
-                  </button>
-                  <button
-                    onClick={() => handleOpenAssignModal(selectedCase)}
-                    style={{
-                      padding: "8px 14px",
-                      borderRadius: "6px",
-                      border: "none",
-                      background: "#2563EB",
-                      color: "#FFF",
-                      fontWeight: 700,
-                      fontSize: "13px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    👮 Assign Agent &amp; Vehicle
-                  </button>
+                  {isRescueAgent ? (
+                    <>
+                      {["dispatched", "accepted", "assigned", "verified"].includes(toSafeLower(selectedCase.status)) && (
+                        <button
+                          type="button"
+                          onClick={() => handleAgentAcceptAndEnRoute(selectedCase)}
+                          disabled={isSubmitting}
+                          style={{
+                            padding: "8px 16px",
+                            borderRadius: "8px",
+                            border: "none",
+                            background: "#2563EB",
+                            color: "#FFF",
+                            fontWeight: 700,
+                            fontSize: "13px",
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px",
+                          }}
+                        >
+                          🚀 Accept &amp; En Route
+                        </button>
+                      )}
+
+                      {toSafeLower(selectedCase.status) === "en_route" && (
+                        <button
+                          type="button"
+                          onClick={() => handleAgentMarkLocated(selectedCase)}
+                          disabled={isSubmitting}
+                          style={{
+                            padding: "8px 16px",
+                            borderRadius: "8px",
+                            border: "none",
+                            background: "#0891B2",
+                            color: "#FFF",
+                            fontWeight: 700,
+                            fontSize: "13px",
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px",
+                          }}
+                        >
+                          📍 Mark Dog Located
+                        </button>
+                      )}
+
+                      {["located", "in_progress", "arrived"].includes(toSafeLower(selectedCase.status)) && (
+                        <button
+                          type="button"
+                          onClick={() => handleAgentMarkSecured(selectedCase)}
+                          disabled={isSubmitting}
+                          style={{
+                            padding: "8px 16px",
+                            borderRadius: "8px",
+                            border: "none",
+                            background: "#059669",
+                            color: "#FFF",
+                            fontWeight: 700,
+                            fontSize: "13px",
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px",
+                          }}
+                        >
+                          🐕 Mark Dog Secured
+                        </button>
+                      )}
+
+                      {["secured", "rescued"].includes(toSafeLower(selectedCase.status)) && (
+                        <button
+                          type="button"
+                          onClick={() => handleShelterHandoverClick(selectedCase)}
+                          disabled={isSubmitting}
+                          style={{
+                            padding: "8px 14px",
+                            borderRadius: "6px",
+                            background: "#ECFDF5",
+                            color: "#059669",
+                            fontWeight: 700,
+                            fontSize: "13px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            border: "1px solid #10B981",
+                            cursor: "pointer",
+                          }}
+                        >
+                          🐕 Dog Secured — Awaiting Shelter Handover
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    !["completed", "admitted", "cancelled", "rejected", "failed"].includes(toSafeLower(selectedCase.status)) && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenStatusUpdateModal(selectedCase)}
+                        style={{
+                          padding: "8px 14px",
+                          borderRadius: "6px",
+                          border: "1px solid #D97706",
+                          background: "#FFFBEB",
+                          color: "#D97706",
+                          fontWeight: 700,
+                          fontSize: "13px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        ⚡ Update Status
+                      </button>
+                    )
+                  )}
+                  {["located", "secured", "rescued", "admitted", "completed", "in_progress"].includes(toSafeLower(selectedCase.status)) && (
+                    <button
+                      type="button"
+                      onClick={() => handleLogFoundPetFromRescue(selectedCase)}
+                      disabled={isSubmitting}
+                      style={{
+                        padding: "8px 14px",
+                        borderRadius: "6px",
+                        border: "1px solid #10B981",
+                        background: "#ECFDF5",
+                        color: "#059669",
+                        fontWeight: 700,
+                        fontSize: "13px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      🐾 Log Found Pet Report
+                    </button>
+                  )}
+                  <Can permission="assign_rescues">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAssignModal(selectedCase)}
+                      style={{
+                        padding: "8px 14px",
+                        borderRadius: "6px",
+                        border: "none",
+                        background: "#2563EB",
+                        color: "#FFF",
+                        fontWeight: 700,
+                        fontSize: "13px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      👮 Assign Agent &amp; Vehicle
+                    </button>
+                  </Can>
                 </div>
               </div>
             ) : (
@@ -1840,13 +2322,13 @@ const RescueManagement = () => {
                 <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
                   {[
                     { title: "Rescue Request Submitted", time: selectedCase.created_at, done: true },
-                    { title: "Coordinator Reviewed & Verified", time: selectedCase.created_at, done: true },
-                    { title: "Dispatch Team & Vehicle Assigned", time: selectedCase.dispatched_at, done: selectedCase.has_dispatch },
-                    { title: "Agent En Route to Field Scene", time: selectedCase.dispatched_at, done: selectedCase.has_dispatch },
-                    { title: "Agent Arrived & Dog Located", time: selectedCase.located_at, done: selectedCase.located_at !== "-" },
-                    { title: "Dog Rescued & Secured", time: selectedCase.rescued_at, done: selectedCase.rescued_at !== "-" },
-                    { title: "Transferred to Shelter / Vet Clinic", time: selectedCase.admitted_at, done: selectedCase.admitted_at !== "-" },
-                    { title: "Rescue Mission Completed", time: selectedCase.updated_at, done: selectedCase.status.toLowerCase().includes("completed") || selectedCase.status.toLowerCase().includes("admitted") },
+                    { title: "Coordinator Reviewed & Verified", time: selectedCase.created_at, done: !["reported", "submitted", "pending", "new", "awaiting_triage"].includes(toSafeLower(selectedCase.status)) },
+                    { title: "Dispatch Team & Vehicle Assigned", time: selectedCase.dispatched_at, done: selectedCase.has_dispatch || ["dispatched", "accepted", "en_route", "in_progress", "located", "secured", "rescued", "admitted", "completed"].includes(toSafeLower(selectedCase.status)) },
+                    { title: "Agent En Route to Field Scene", time: selectedCase.dispatched_at, done: ["en_route", "in_progress", "located", "secured", "rescued", "admitted", "completed"].includes(toSafeLower(selectedCase.status)) },
+                    { title: "Agent Arrived & Dog Located", time: selectedCase.located_at, done: (selectedCase.located_at !== undefined && selectedCase.located_at !== "-") || ["located", "secured", "rescued", "admitted", "completed"].includes(toSafeLower(selectedCase.status)) },
+                    { title: "Dog Rescued & Secured", time: (selectedCase.rescued_at && selectedCase.rescued_at !== "-") ? selectedCase.rescued_at : (selectedCase.located_at && selectedCase.located_at !== "-" ? selectedCase.located_at : "-"), done: (selectedCase.rescued_at !== undefined && selectedCase.rescued_at !== "-") || ["secured", "rescued", "admitted", "completed"].includes(toSafeLower(selectedCase.status)) },
+                    { title: "Transferred to Shelter / Vet Clinic", time: selectedCase.admitted_at, done: (selectedCase.admitted_at !== undefined && selectedCase.admitted_at !== "-") || ["admitted", "completed"].includes(toSafeLower(selectedCase.status)) },
+                    { title: "Rescue Mission Completed", time: selectedCase.updated_at, done: ["completed"].includes(toSafeLower(selectedCase.status)) },
                   ].map((step, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
                       <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: step.done ? "#10B981" : "#E2E8F0", color: step.done ? "#FFF" : "#64748B", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", fontWeight: 800 }}>
@@ -1854,7 +2336,7 @@ const RescueManagement = () => {
                       </div>
                       <div>
                         <div style={{ fontWeight: 700, fontSize: "13px", color: step.done ? "#0F172A" : "#94A3B8" }}>{step.title}</div>
-                        <div style={{ fontSize: "11px", color: "#64748B" }}>Timestamp: {step.time}</div>
+                        <div style={{ fontSize: "11px", color: "#64748B" }}>Timestamp: {step.done ? (step.time && step.time !== "-" ? step.time : "-") : "-"}</div>
                       </div>
                     </div>
                   ))}
@@ -1872,38 +2354,210 @@ const RescueManagement = () => {
           onClose={() => setIsAgentModalOpen(false)}
           title={`Rescue Agent Profile: ${selectedAgent.full_name}`}
         >
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "16px", background: "#F8FAFC", padding: "16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
-              <div style={{ width: "60px", height: "60px", borderRadius: "50%", background: "#2563EB", color: "#FFF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "22px", fontWeight: 800 }}>
-                {selectedAgent.full_name.slice(0, 2).toUpperCase()}
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 800, color: "#0F172A" }}>{selectedAgent.full_name}</h3>
-                <div style={{ fontSize: "13px", color: "#64748B" }}>{selectedAgent.role} • ID: {selectedAgent.agent_code}</div>
-                <div style={{ fontSize: "12px", color: "#2563EB", fontWeight: 700, marginTop: "2px" }}>{selectedAgent.service_area}</div>
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", fontSize: "13px" }}>
-              <div><strong>Email:</strong> {selectedAgent.email}</div>
-              <div><strong>Phone:</strong> {selectedAgent.phone}</div>
-              <div><strong>Operational Shift:</strong> {selectedAgent.shift}</div>
-              <div><strong>Assigned Vehicle:</strong> {selectedAgent.assigned_vehicle}</div>
-              <div><strong>Experience:</strong> {selectedAgent.experience_years} Years</div>
-              <div><strong>Status:</strong> {selectedAgent.availability}</div>
-            </div>
-
-            {/* CURRENT ASSIGNMENT */}
-            {selectedAgent.current_assignment ? (
-              <div style={{ background: "#EFF6FF", border: "1px solid #93C5FD", borderRadius: "8px", padding: "12px" }}>
-                <div style={{ fontSize: "12px", fontWeight: 800, color: "#1E40AF", marginBottom: "4px" }}>🚑 CURRENT ACTIVE RESCUE ASSIGNMENT</div>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "#1E3A8A" }}>
-                  Case #{selectedAgent.current_assignment.ticket_number} — Location: {selectedAgent.current_assignment.location_address}
+          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            {/* AGENT PROFILE HEADER */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#F8FAFC", padding: "16px 20px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                <div style={{ width: "56px", height: "56px", borderRadius: "50%", background: "#2563EB", color: "#FFF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", fontWeight: 800, flexShrink: 0 }}>
+                  {selectedAgent.full_name.slice(0, 2).toUpperCase()}
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 800, color: "#0F172A" }}>{selectedAgent.full_name}</h3>
+                  <div style={{ fontSize: "13px", color: "#64748B", marginTop: "2px" }}>
+                    {selectedAgent.role} • <strong>ID: {selectedAgent.agent_code}</strong>
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#2563EB", fontWeight: 700, marginTop: "2px" }}>
+                    📍 {selectedAgent.service_area}
+                  </div>
                 </div>
               </div>
-            ) : (
-              <div style={{ background: "#ECFDF5", border: "1px solid #6EE7B7", borderRadius: "8px", padding: "10px", fontSize: "13px", color: "#065F46", fontWeight: 600 }}>
-                ✓ Agent is currently available for immediate field dispatch.
+              <span
+                style={{
+                  padding: "4px 12px",
+                  borderRadius: "999px",
+                  fontSize: "12px",
+                  fontWeight: 800,
+                  background: selectedAgent.availability === "Available" ? "#ECFDF5" : selectedAgent.availability === "Inactive" ? "#FEF2F2" : "#FFFBEB",
+                  color: selectedAgent.availability === "Available" ? "#059669" : selectedAgent.availability === "Inactive" ? "#DC2626" : "#D97706",
+                }}
+              >
+                {selectedAgent.availability === "Available" ? "● AVAILABLE" : selectedAgent.availability === "Inactive" ? "✕ INACTIVE" : "○ BUSY ON RESCUE"}
+              </span>
+            </div>
+
+            {/* SECTION 1: AGENT INFORMATION GRID */}
+            <div>
+              <div style={{ fontSize: "14px", fontWeight: 800, color: "#0F172A", marginBottom: "10px", display: "flex", alignItems: "center", gap: "6px" }}>
+                <FaUserTie style={{ color: "#2563EB" }} /> Agent Personnel Information
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", background: "#FFFFFF", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0", fontSize: "13px" }}>
+                <div><span style={{ color: "#64748B" }}>Email:</span> <strong>{selectedAgent.email}</strong></div>
+                <div><span style={{ color: "#64748B" }}>Phone:</span> <strong>{selectedAgent.phone}</strong></div>
+                <div><span style={{ color: "#64748B" }}>Operational Shift:</span> <strong>{selectedAgent.shift}</strong></div>
+                <div><span style={{ color: "#64748B" }}>Assigned Vehicle:</span> <strong>{selectedAgent.assigned_vehicle}</strong></div>
+                <div><span style={{ color: "#64748B" }}>Field Experience:</span> <strong>{selectedAgent.experience_years} Years</strong></div>
+                <div><span style={{ color: "#64748B" }}>Account Status:</span> <strong style={{ color: selectedAgent.is_active !== false ? "#16A34A" : "#DC2626" }}>{selectedAgent.is_active !== false ? "Active" : "Inactive"}</strong></div>
+              </div>
+            </div>
+
+            {/* SECTION 2: RESCUE STATISTICS */}
+            <div>
+              <div style={{ fontSize: "14px", fontWeight: 800, color: "#0F172A", marginBottom: "10px", display: "flex", alignItems: "center", gap: "6px" }}>
+                <FaClipboardList style={{ color: "#2563EB" }} /> Rescue Operations Summary
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "10px", padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: 700, color: "#1E40AF", textTransform: "uppercase" }}>Active Rescue Assignments</div>
+                    <div style={{ fontSize: "22px", fontWeight: 800, color: "#1E3A8A", marginTop: "2px" }}>{selectedAgent.active_cases_count}</div>
+                  </div>
+                  <FaAmbulance size={28} style={{ color: "#3B82F6", opacity: 0.8 }} />
+                </div>
+                <div style={{ background: "#ECFDF5", border: "1px solid #A7F3D0", borderRadius: "10px", padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: 700, color: "#065F46", textTransform: "uppercase" }}>Total Rescues Completed</div>
+                    <div style={{ fontSize: "22px", fontWeight: 800, color: "#064E3B", marginTop: "2px" }}>{selectedAgent.completed_rescues_count}</div>
+                  </div>
+                  <FaCheckCircle size={28} style={{ color: "#10B981", opacity: 0.8 }} />
+                </div>
+              </div>
+            </div>
+
+            {/* SECTION 3: CURRENT ACTIVE ASSIGNMENT(S) */}
+            <div>
+              <div style={{ fontSize: "14px", fontWeight: 800, color: "#0F172A", marginBottom: "10px", display: "flex", alignItems: "center", gap: "6px" }}>
+                <FaAmbulance style={{ color: "#D97706" }} /> Active Rescue Assignments ({selectedAgent.active_cases_count})
+              </div>
+              {selectedAgent.active_cases && selectedAgent.active_cases.length > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {selectedAgent.active_cases.map((c) => (
+                    <div
+                      key={c.id}
+                      onClick={() => {
+                        setIsAgentModalOpen(false);
+                        setSelectedCase(c);
+                        setIsCaseModalOpen(true);
+                      }}
+                      style={{
+                        background: "#FFFBEB",
+                        border: "1px solid #FCD34D",
+                        borderRadius: "10px",
+                        padding: "14px 16px",
+                        cursor: "pointer",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: "12px",
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: "14px", fontWeight: 800, color: "#92400E" }}>
+                          Case #{c.ticket_number}
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#78350F", marginTop: "2px" }}>
+                          📍 <strong>Location:</strong> {c.location_address || "Field Location"}
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>
+                          Reporter: {c.reporter_name} • Reported: {c.created_at}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
+                        {rescueStatusBadge(c.status)}
+                        <span style={{ fontSize: "11px", color: "#2563EB", fontWeight: 700 }}>View Case →</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ background: "#ECFDF5", border: "1px solid #6EE7B7", borderRadius: "10px", padding: "12px 16px", fontSize: "13px", color: "#065F46", fontWeight: 600 }}>
+                  ✓ Agent is currently available with no active rescue assignments.
+                </div>
+              )}
+            </div>
+
+            {/* SECTION 4: RESCUE ACTIVITY HISTORY (COMPLETED RESCUES) */}
+            <div>
+              <div style={{ fontSize: "14px", fontWeight: 800, color: "#0F172A", marginBottom: "10px", display: "flex", alignItems: "center", gap: "6px" }}>
+                <FaCheckCircle style={{ color: "#059669" }} /> Completed Rescue History ({selectedAgent.completed_rescues_count})
+              </div>
+              {selectedAgent.completed_cases && selectedAgent.completed_cases.length > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "240px", overflowY: "auto" }}>
+                  {selectedAgent.completed_cases.map((c) => (
+                    <div
+                      key={c.id}
+                      onClick={() => {
+                        setIsAgentModalOpen(false);
+                        setSelectedCase(c);
+                        setIsCaseModalOpen(true);
+                      }}
+                      style={{
+                        background: "#F8FAFC",
+                        border: "1px solid #E2E8F0",
+                        borderRadius: "10px",
+                        padding: "12px 16px",
+                        cursor: "pointer",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: "12px",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A" }}>
+                          Case #{c.ticket_number}
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#475569", marginTop: "2px" }}>
+                          📍 {c.location_address || "Field Location"}
+                        </div>
+                        <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>
+                          Completed: {c.admitted_at || c.updated_at || c.created_at}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
+                        {rescueStatusBadge(c.status)}
+                        <span style={{ fontSize: "11px", color: "#2563EB", fontWeight: 700 }}>Details →</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "14px 16px", fontSize: "13px", color: "#64748B", textAlign: "center" }}>
+                  No completed rescue case history recorded for this agent yet.
+                </div>
+              )}
+            </div>
+
+            {/* ACTION BUTTONS FOR AGENT */}
+            {!isRescueCentreAdmin && (
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", paddingTop: "12px", borderTop: "1px solid #E2E8F0" }}>
+                {selectedAgent.is_active !== false ? (
+                  <button
+                    type="button"
+                    onClick={() => handleDeactivateAgent(selectedAgent)}
+                    disabled={isSubmitting}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "8px",
+                      border: "1px solid #FCA5A5",
+                      background: "#FEF2F2",
+                      color: "#DC2626",
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      cursor: isSubmitting ? "not-allowed" : "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <FaTimes size={12} />
+                    <span>Deactivate Agent</span>
+                  </button>
+                ) : (
+                  <span style={{ fontSize: "12px", color: "#DC2626", fontWeight: 700 }}>
+                    This Rescue Agent is currently inactive.
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -2011,36 +2665,125 @@ const RescueManagement = () => {
         >
           <form onSubmit={handleUpdateStatus} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <div>
-              <label style={{ fontSize: "12px", fontWeight: 700, color: "#334155" }}>Select New Operational Status</label>
-              <select
-                value={statusForm.status}
-                onChange={(e) => setStatusForm({ ...statusForm, status: e.target.value })}
-                style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", marginTop: "4px", background: "#FFF" }}
-                required
-              >
-                <option value="">-- Choose Status --</option>
-                <option value="verified">Verified / Approved</option>
-                <option value="dispatched">Dispatched</option>
-                <option value="en_route">En Route to Field</option>
-                <option value="arrived">Arrived at Scene</option>
-                <option value="in_progress">Rescue In Progress</option>
-                <option value="located">Dog Located</option>
-                <option value="secured">Dog Secured</option>
-                <option value="admitted">Admitted to Shelter / Vet</option>
-                <option value="completed">Rescue Completed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
+              <label style={{ fontSize: "12px", fontWeight: 700, color: "#334155" }}>Select Next Operational Status</label>
+              {(() => {
+                const validNextOptions = getNextValidStatuses(selectedCase.status);
+                return (
+                  <select
+                    value={statusForm.status}
+                    onChange={(e) => setStatusForm({ ...statusForm, status: e.target.value })}
+                    style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", marginTop: "4px", background: "#FFF" }}
+                    required
+                  >
+                    {validNextOptions.length === 0 ? (
+                      <option value="">-- No further status updates available --</option>
+                    ) : (
+                      validNextOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                );
+              })()}
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>
               <button type="button" onClick={() => setIsStatusUpdateOpen(false)} style={{ padding: "8px 16px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF" }}>Cancel</button>
-              <button type="submit" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "6px", background: "#2563EB", color: "#FFF", border: "none", fontWeight: 700 }}>
+              <button type="submit" disabled={isSubmitting || getNextValidStatuses(selectedCase.status).length === 0} style={{ padding: "8px 16px", borderRadius: "6px", background: "#2563EB", color: "#FFF", border: "none", fontWeight: 700, cursor: isSubmitting || getNextValidStatuses(selectedCase.status).length === 0 ? "not-allowed" : "pointer" }}>
                 {isSubmitting ? "Updating..." : "Update Status"}
               </button>
             </div>
           </form>
         </Modal>
       )}
+
+      {/* --- MODAL 4: REGISTER NEW RESCUE AGENT MODAL --- */}
+      <Modal
+        isOpen={isAddAgentModalOpen}
+        onClose={() => {
+          setIsAddAgentModalOpen(false);
+          setAgentFormError(null);
+        }}
+        title="Register New Rescue Agent"
+      >
+        <form onSubmit={handleCreateAgent} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          {agentFormError && (
+            <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", color: "#DC2626", padding: "10px", borderRadius: "8px", fontSize: "13px" }}>
+              {agentFormError}
+            </div>
+          )}
+          <div>
+            <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+              Full Name <span style={{ color: "#DC2626" }}>*</span>
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Rahul Sharma"
+              value={agentFormData.full_name}
+              onChange={(e) => setAgentFormData({ ...agentFormData, full_name: e.target.value })}
+              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }}
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+              Email Address <span style={{ color: "#DC2626" }}>*</span>
+            </label>
+            <input
+              type="email"
+              required
+              placeholder="e.g. rahul.sharma@pawguard.org"
+              value={agentFormData.email}
+              onChange={(e) => setAgentFormData({ ...agentFormData, email: e.target.value })}
+              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }}
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+              Password <span style={{ color: "#DC2626" }}>*</span>
+            </label>
+            <input
+              type="password"
+              required
+              minLength={6}
+              placeholder="At least 6 characters"
+              value={agentFormData.password}
+              onChange={(e) => setAgentFormData({ ...agentFormData, password: e.target.value })}
+              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }}
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+              Phone Number
+            </label>
+            <input
+              type="tel"
+              placeholder="e.g. +91 98765 43210"
+              value={agentFormData.phone}
+              onChange={(e) => setAgentFormData({ ...agentFormData, phone: e.target.value })}
+              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }}
+            />
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" }}>
+            <button
+              type="button"
+              onClick={() => setIsAddAgentModalOpen(false)}
+              style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              style={{ padding: "8px 18px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontSize: "13px", fontWeight: 700, cursor: isSubmitting ? "not-allowed" : "pointer" }}
+            >
+              {isSubmitting ? "Registering..." : "Register Agent"}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

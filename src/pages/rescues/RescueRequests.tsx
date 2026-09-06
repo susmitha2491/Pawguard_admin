@@ -177,7 +177,7 @@ const RescueRequests = () => {
       setError(null);
 
       const queryParams: Record<string, unknown> = {};
-      const response = await rescueService.getRescueRequests(queryParams);
+      const response = await rescueService.getAllRescueCases(queryParams);
       const list: Record<string, unknown>[] = Array.isArray(response)
         ? response
         : Array.isArray(response?.data)
@@ -860,6 +860,7 @@ const RescueRequests = () => {
         <DataTable
           data={filteredRequests}
           columns={columns}
+          pageSize={10}
           loading={loading}
           error={error}
           onRetry={fetchRequests}

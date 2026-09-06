@@ -447,6 +447,9 @@ const ShelterManagerDashboard = () => {
   const [editPhotoUrl, setEditPhotoUrl] = useState<string>("");
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
+  const intakeFileInputRef = useRef<HTMLInputElement>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
+
   // Backend-persisted photo URL map: dogId → presigned download URL
   const [dogPhotoMap, setDogPhotoMap] = useState<Record<string, string>>({});
 
@@ -722,6 +725,9 @@ const ShelterManagerDashboard = () => {
     setActiveRescueForIntake(caseItem);
     setIntakePhotoFile(null);
     setIntakePhotoUrl("");
+    if (intakeFileInputRef.current) {
+      intakeFileInputRef.current.value = "";
+    }
     setPetForm({
       ...emptyPetForm,
       name: caseItem.animal_type ? `Rescued ${caseItem.animal_type}` : `Rescued Dog (${caseItem.ticket_number || caseItem.id})`,
@@ -1809,6 +1815,7 @@ const ShelterManagerDashboard = () => {
                 <label style={{ cursor: "pointer", background: "#EFF6FF", color: "#1E3A8A", border: "1px solid #CBD5E1", padding: "10px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 700, whiteSpace: "nowrap" }}>
                   {intakePhotoFile ? "Selected" : "Choose File"}
                   <input
+                    ref={intakeFileInputRef}
                     type="file"
                     accept="image/*"
                     onChange={(e) => {
@@ -1822,9 +1829,32 @@ const ShelterManagerDashboard = () => {
                   />
                 </label>
               </div>
-              {intakePhotoUrl && (
-                <div style={{ marginTop: "4px" }}>
-                  <img src={intakePhotoUrl} alt="Preview" style={{ width: "40px", height: "40px", borderRadius: "8px", objectFit: "cover" }} />
+              {(intakePhotoUrl || petForm.photo_url) && (
+                <div style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "10px" }}>
+                  <img src={intakePhotoUrl || petForm.photo_url} alt="Preview" style={{ width: "44px", height: "44px", borderRadius: "8px", objectFit: "cover", border: "1px solid #CBD5E1" }} />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIntakePhotoFile(null);
+                      setIntakePhotoUrl("");
+                      setPetForm((prev) => ({ ...prev, photo_url: "" }));
+                      if (intakeFileInputRef.current) {
+                        intakeFileInputRef.current.value = "";
+                      }
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      border: "1px solid #EF4444",
+                      background: "#FEF2F2",
+                      color: "#DC2626",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      cursor: "pointer"
+                    }}
+                  >
+                    Remove
+                  </button>
                 </div>
               )}
             </div>
@@ -1983,6 +2013,7 @@ const ShelterManagerDashboard = () => {
               <label style={{ cursor: "pointer", background: "#EFF6FF", color: "#1E3A8A", border: "1px solid #CBD5E1", padding: "10px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 700, whiteSpace: "nowrap" }}>
                 {editPhotoFile ? "Selected" : "Choose File"}
                 <input
+                  ref={editFileInputRef}
                   type="file"
                   accept="image/*"
                   onChange={(e) => {
@@ -1996,9 +2027,30 @@ const ShelterManagerDashboard = () => {
                 />
               </label>
             </div>
-            {(editPhotoUrl || getDogPhotoUrl(selectedDog, dogPhotoMap)) && (
-              <div style={{ marginTop: "4px" }}>
-                <img src={editPhotoUrl || getDogPhotoUrl(selectedDog, dogPhotoMap)} alt="Preview" style={{ width: "40px", height: "40px", borderRadius: "8px", objectFit: "cover" }} />
+            {(editPhotoUrl || petForm.photo_url || getDogPhotoUrl(selectedDog, dogPhotoMap)) && (
+              <div style={{ marginTop: "6px", display: "flex", alignItems: "center", gap: "10px" }}>
+                <img src={editPhotoUrl || petForm.photo_url || getDogPhotoUrl(selectedDog, dogPhotoMap)} alt="Preview" style={{ width: "44px", height: "44px", borderRadius: "8px", objectFit: "cover", border: "1px solid #CBD5E1" }} />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditPhotoFile(null);
+                    setEditPhotoUrl("");
+                    setPetForm((prev) => ({ ...prev, photo_url: "" }));
+                    if (editFileInputRef.current) editFileInputRef.current.value = "";
+                  }}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: "6px",
+                    border: "1px solid #EF4444",
+                    background: "#FEF2F2",
+                    color: "#DC2626",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Remove
+                </button>
               </div>
             )}
           </div>

@@ -58,8 +58,11 @@ import { formatDateTime } from "../../utils/dateUtils";
 
 const formatDate = (iso?: string | null): string => formatDateTime(iso);
 
-const formatCoord = (v: number | null | undefined): string =>
-  typeof v === "number" && Number.isFinite(v) ? v.toFixed(5) : "-";
+const formatCoord = (v: number | string | null | undefined): string => {
+  if (v === undefined || v === null || v === "" || v === "-") return "-";
+  const n = typeof v === "number" ? v : parseFloat(String(v));
+  return Number.isFinite(n) ? n.toFixed(5) : "-";
+};
 
 const extractError = (err: unknown, fallback: string): string => {
   if (err && typeof err === "object") {

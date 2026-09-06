@@ -122,6 +122,36 @@ const mapRescueCallRowToDetail = (row: RescueCallRow): RescueRequestTableRow => 
   };
 };
 
+const safeText = (val: any, fallback = "—"): string => {
+  if (val === undefined || val === null || val === "") return fallback;
+  if (typeof val === "object") {
+    return String(val.name || val.label || val.title || val.ticket_number || val.id || fallback);
+  }
+  return String(val);
+};
+
+const LIFECYCLE_STEPS = [
+  { key: "reported", label: "Reported" },
+  { key: "verified", label: "Verified" },
+  { key: "dispatched", label: "Dispatched" },
+  { key: "en_route", label: "En Route" },
+  { key: "located", label: "Located" },
+  { key: "secured", label: "Secured" },
+  { key: "admitted", label: "Admitted" },
+];
+
+const getStepIndex = (statusStr?: string): number => {
+  const s = String(statusStr || "").toLowerCase();
+  if (s === "submitted" || s === "reported") return 0;
+  if (s === "verified") return 1;
+  if (s === "dispatched" || s === "accepted") return 2;
+  if (s === "en_route" || s === "in_progress") return 3;
+  if (s === "located") return 4;
+  if (s === "secured" || s === "rescued") return 5;
+  if (s === "admitted" || s === "completed") return 6;
+  return -1;
+};
+
 const RescueCentreAdminDashboard = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -358,7 +388,7 @@ const RescueCentreAdminDashboard = () => {
       setDogIntakes(intakes);
 
       setStatsData({
-        totalCalls: dashData.total_calls ?? dashData.totalCalls ?? casesList.length,
+        totalCalls: casesList.length,
         pendingCalls: dashData.pending ?? dashData.pendingCases ?? pendingCases,
         activeDispatches: dashData.dispatched ?? dashData.dispatchedCases ?? activeDispatchesCount,
         shelterDogsCount: intakes.length,
@@ -965,128 +995,374 @@ const RescueCentreAdminDashboard = () => {
         isOpen={isDetailModalOpen}
         onClose={() => setIsDetailModalOpen(false)}
         title={`Rescue Request Details${selectedCase?.ticket_number ? ` — ${selectedCase.ticket_number}` : ""}`}
-        size="lg"
+        size="xl"
+        maxWidth="960px"
         footer={
-          <button
-            onClick={() => setIsDetailModalOpen(false)}
-            style={{ padding: "8px 16px", background: "#64748B", color: "#FFF", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
-          >
-            Close
-          </button>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+            <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>
+              Case ID: <span style={{ fontFamily: "monospace", color: "#1E3A8A" }}>{selectedCase?.id}</span>
+            </div>
+            <button
+              onClick={() => setIsDetailModalOpen(false)}
+              style={{
+                padding: "8px 20px",
+                background: "#1E293B",
+                color: "#FFF",
+                borderRadius: "8px",
+                border: "none",
+                cursor: "pointer",
+                fontWeight: 700,
+                fontSize: "13px",
+              }}
+            >
+              Close
+            </button>
+          </div>
         }
       >
         {selectedCase && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {/* Information Grid */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", background: "#F8FAFC", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Ticket Information</span>
-                <strong>{selectedCase.ticket_number || selectedCase.id}</strong>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}><FaUser size={10} style={{ marginRight: "4px" }} /> Reporter Information</span>
-                <strong>{selectedCase.reporter}</strong>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}><FaPhoneAlt size={10} style={{ marginRight: "4px" }} /> Contact Phone</span>
-                <strong>{selectedCase.phone}</strong>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}><FaMapMarkerAlt size={10} style={{ marginRight: "4px" }} /> Rescue Location</span>
-                <strong style={{ wordBreak: "break-word" }}>{selectedCase.location}</strong>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Animal / Physical Condition</span>
-                <strong style={{ textTransform: "capitalize" }}>{String(selectedCase.condition || "-").replace(/_/g, " ")}</strong>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Severity &amp; Urgency</span>
-                <strong style={{ textTransform: "uppercase", color: selectedCase.severity === "critical" ? "#DC2626" : selectedCase.severity === "high" ? "#EA580C" : selectedCase.severity === "medium" ? "#D97706" : "#16A34A" }}>
-                  {selectedCase.severity || "-"}
-                </strong>
-                {selectedCase.is_urgent && (
-                  <span style={{ marginLeft: "8px", background: "#FEF2F2", color: "#DC2626", padding: "2px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: 800 }}>
-                    URGENT
+          <div style={{ display: "flex", flexDirection: "column", gap: "18px", padding: "4px" }}>
+            
+            {/* 1. TOP RESCUE CASE SUMMARY SECTION */}
+            <div
+              style={{
+                background: "linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%)",
+                borderRadius: "12px",
+                border: "1px solid #BFDBFE",
+                padding: "16px 20px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", marginBottom: "14px", borderBottom: "1px dashed #CBD5E1", paddingBottom: "12px" }}>
+                <div>
+                  <span style={{ fontSize: "11px", fontWeight: 800, textTransform: "uppercase", color: "#64748B", letterSpacing: "0.5px", display: "block" }}>
+                    Rescue Case Summary
                   </span>
-                )}
+                  <div style={{ fontSize: "18px", fontWeight: 800, color: "#0F172A", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span>Ticket #{safeText(selectedCase.ticket_number || selectedCase.id)}</span>
+                    {selectedCase.is_urgent && (
+                      <span style={{ background: "#FEF2F2", color: "#DC2626", border: "1px solid #FCA5A5", padding: "2px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 800 }}>
+                        🔥 URGENT
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                    <span style={{ fontSize: "10px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", marginBottom: "2px" }}>Current Status</span>
+                    {rescueStatusBadge(selectedCase.status)}
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                    <span style={{ fontSize: "10px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", marginBottom: "2px" }}>Dispatch Stage</span>
+                    <span
+                      style={{
+                        padding: "3px 10px",
+                        borderRadius: "12px",
+                        fontSize: "12px",
+                        fontWeight: 800,
+                        background: selectedCase.dispatch_bg,
+                        color: selectedCase.dispatch_color,
+                      }}
+                    >
+                      {safeText(selectedCase.dispatch_status)}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Current Status</span>
-                {rescueStatusBadge(selectedCase.status)}
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Dispatch Status</span>
-                <span style={{ padding: "2px 8px", borderRadius: "12px", fontSize: "12px", fontWeight: 700, background: selectedCase.dispatch_bg, color: selectedCase.dispatch_color }}>
-                  {selectedCase.dispatch_status}
-                </span>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Assigned Rescue Agent</span>
-                <strong>{selectedCase.assigned_agent_name || selectedCase.assigned_agent_id || "Unassigned"}</strong>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}>Assigned Vehicle</span>
-                <strong>{selectedCase.assigned_vehicle_number || selectedCase.assigned_vehicle_id || "Unassigned"}</strong>
-              </div>
-              <div>
-                <span style={{ color: "#64748B", fontSize: "12px", display: "block", fontWeight: 600 }}><FaClock size={10} style={{ marginRight: "4px" }} /> Created / Reported Time</span>
-                <strong>{selectedCase.date ? formatDateTime(selectedCase.date) : "-"}</strong>
+
+              {/* Summary Metrics Grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px", fontSize: "13px" }}>
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "11px", display: "block", fontWeight: 700, textTransform: "uppercase" }}>Ticket / Case ID</span>
+                  <strong style={{ fontFamily: "monospace", color: "#1E3A8A" }}>{safeText(selectedCase.ticket_number || selectedCase.id)}</strong>
+                </div>
+
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "11px", display: "block", fontWeight: 700, textTransform: "uppercase" }}>Current Status</span>
+                  <strong style={{ textTransform: "capitalize", color: "#0F172A" }}>{safeText(selectedCase.status)}</strong>
+                </div>
+
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "11px", display: "block", fontWeight: 700, textTransform: "uppercase" }}>Dispatch Status</span>
+                  <strong>{safeText(selectedCase.dispatch_status)}</strong>
+                </div>
+
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "11px", display: "block", fontWeight: 700, textTransform: "uppercase" }}>Severity / Priority</span>
+                  <strong style={{ color: selectedCase.severity === "critical" ? "#DC2626" : selectedCase.severity === "high" ? "#EA580C" : selectedCase.severity === "medium" ? "#D97706" : "#16A34A", textTransform: "uppercase" }}>
+                    {safeText(selectedCase.severity)}
+                  </strong>
+                </div>
+
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "11px", display: "block", fontWeight: 700, textTransform: "uppercase" }}>Reported Time</span>
+                  <strong>{selectedCase.date ? formatDateTime(selectedCase.date) : "—"}</strong>
+                </div>
+
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "11px", display: "block", fontWeight: 700, textTransform: "uppercase" }}>Assigned Agent</span>
+                  <strong>{safeText(selectedCase.assigned_agent_name || selectedCase.assigned_agent_id, "Unassigned")}</strong>
+                </div>
+
+                <div>
+                  <span style={{ color: "#64748B", fontSize: "11px", display: "block", fontWeight: 700, textTransform: "uppercase" }}>Assigned Vehicle</span>
+                  <strong>{safeText(selectedCase.assigned_vehicle_number || selectedCase.assigned_vehicle_id, "Unassigned")}</strong>
+                </div>
               </div>
             </div>
 
-            {/* Rescue Location Map Section */}
-            <div>
-              <strong style={{ display: "block", marginBottom: "8px", fontSize: "14px", color: "#0F172A" }}>
-                <FaMapMarkerAlt size={14} style={{ marginRight: "6px", color: "#EF4444" }} /> Rescue Location &amp; Map
-              </strong>
-              <LocationMapPreview
-                latitude={selectedCase.latitude ?? (selectedCase.raw?.latitude as any)}
-                longitude={selectedCase.longitude ?? (selectedCase.raw?.longitude as any)}
-                locationAddress={selectedCase.location}
-                locationLandmark={selectedCase.location_landmark ?? (selectedCase.raw?.location_landmark as any) ?? (selectedCase.raw?.landmark as any)}
-                height="220px"
-              />
-            </div>
+            {/* 2. RESCUE LIFECYCLE PROGRESS TIMELINE */}
+            {(() => {
+              const currentStepIdx = getStepIndex(selectedCase.status);
+              const isRejectedOrCancelled = ["rejected", "cancelled"].includes(String(selectedCase.status).toLowerCase());
 
-            {/* Reporter Notes */}
-            {Boolean(selectedCase.raw?.reporter_notes) && (
-              <div style={{ background: "#F1F5F9", padding: "12px 14px", borderRadius: "10px", border: "1px solid #CBD5E1" }}>
-                <strong style={{ color: "#334155", display: "block", marginBottom: "4px", fontSize: "13px" }}>
-                  <FaInfoCircle size={12} style={{ marginRight: "6px" }} /> Reporter Description / Notes:
-                </strong>
-                <span style={{ fontSize: "13px", color: "#475569" }}>{String(selectedCase.raw.reporter_notes)}</span>
+              if (isRejectedOrCancelled) {
+                return (
+                  <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "12px 16px", color: "#991B1B" }}>
+                    <div style={{ fontWeight: 800, fontSize: "14px", display: "flex", alignItems: "center", gap: "6px" }}>
+                      ⚠️ Rescue Request {selectedCase.status.toUpperCase()}
+                    </div>
+                    {selectedCase.rejection_rationale && (
+                      <div style={{ fontSize: "13px", marginTop: "4px", color: "#B91C1C" }}>
+                        Reason: {safeText(selectedCase.rejection_rationale)}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              return (
+                <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "14px 16px" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", display: "block", marginBottom: "12px" }}>
+                    Rescue Case Lifecycle Status Timeline
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", position: "relative" }}>
+                    {LIFECYCLE_STEPS.map((step, idx) => {
+                      const isPassed = currentStepIdx >= idx && currentStepIdx !== -1;
+                      const isCurrent = currentStepIdx === idx;
+                      return (
+                        <div key={step.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, position: "relative", zIndex: 1 }}>
+                          <div
+                            style={{
+                              width: "26px",
+                              height: "26px",
+                              borderRadius: "50%",
+                              background: isCurrent ? "#1E3A8A" : isPassed ? "#16A34A" : "#F1F5F9",
+                              color: isPassed || isCurrent ? "#FFF" : "#94A3B8",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: "11px",
+                              fontWeight: 800,
+                              border: isCurrent ? "2px solid #93C5FD" : isPassed ? "2px solid #86EFAC" : "1px solid #CBD5E1",
+                              boxShadow: isCurrent ? "0 0 0 3px rgba(30, 58, 138, 0.2)" : "none",
+                            }}
+                          >
+                            {isPassed && !isCurrent ? "✓" : idx + 1}
+                          </div>
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              fontWeight: isCurrent ? 800 : isPassed ? 700 : 500,
+                              color: isCurrent ? "#1E3A8A" : isPassed ? "#15803D" : "#94A3B8",
+                              marginTop: "6px",
+                              textAlign: "center",
+                            }}
+                          >
+                            {step.label}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* 3. SEPARATED OPERATIONAL SECTIONS IN 2-COLUMN GRID */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+
+              {/* LEFT COLUMN */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                
+                {/* Rescue / Animal Information */}
+                <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "14px 16px" }}>
+                  <div style={{ fontSize: "14px", fontWeight: 800, color: "#0F172A", marginBottom: "12px", borderBottom: "1px solid #F1F5F9", paddingBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <FaPaw color="#1E3A8A" /> Rescue / Animal Information
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: "13px" }}>
+                    <div>
+                      <span style={{ color: "#64748B", fontSize: "11px", display: "block", fontWeight: 600 }}>Animal Type / Count</span>
+                      <strong>{safeText(selectedCase.raw?.animal_type || "Dog")} ({safeText(selectedCase.raw?.animal_count || 1)} animal)</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: "#64748B", fontSize: "11px", display: "block", fontWeight: 600 }}>Physical Condition</span>
+                      <strong style={{ textTransform: "capitalize" }}>{safeText(selectedCase.condition).replace(/_/g, " ")}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: "#64748B", fontSize: "11px", display: "block", fontWeight: 600 }}>Urgency Priority</span>
+                      <strong style={{ textTransform: "uppercase", color: selectedCase.is_urgent ? "#DC2626" : "#334155" }}>
+                        {selectedCase.is_urgent ? "Urgent Priority" : "Normal"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span style={{ color: "#64748B", fontSize: "11px", display: "block", fontWeight: 600 }}>System Case ID</span>
+                      <span style={{ fontFamily: "monospace", fontSize: "12px" }}>{safeText(selectedCase.id)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Reporter Information */}
+                <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "14px 16px" }}>
+                  <div style={{ fontSize: "14px", fontWeight: 800, color: "#0F172A", marginBottom: "12px", borderBottom: "1px solid #F1F5F9", paddingBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <FaUser color="#1E3A8A" /> Reporter Information
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: "13px" }}>
+                    <div>
+                      <span style={{ color: "#64748B", fontSize: "11px", display: "block", fontWeight: 600 }}>Reporter Name</span>
+                      <strong>{safeText(selectedCase.reporter)}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: "#64748B", fontSize: "11px", display: "block", fontWeight: 600 }}>Contact Phone</span>
+                      <strong>{safeText(selectedCase.phone)}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: "#64748B", fontSize: "11px", display: "block", fontWeight: 600 }}>Reporter Type</span>
+                      <span>{selectedCase.raw?.is_anonymous || selectedCase.raw?.anonymous ? "Anonymous Reporter" : "Registered Public Reporter"}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Reporter Description & Notes */}
+                <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "14px 16px" }}>
+                  <div style={{ fontSize: "14px", fontWeight: 800, color: "#334155", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <FaInfoCircle color="#64748B" /> Reporter Description / Notes
+                  </div>
+                  <div style={{ fontSize: "13px", color: "#475569", background: "#FFFFFF", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", lineHeight: 1.5 }}>
+                    {safeText(selectedCase.raw?.reporter_notes || selectedCase.raw?.notes || selectedCase.raw?.description, "No additional reporter notes provided for this rescue case.")}
+                  </div>
+                </div>
+
               </div>
-            )}
 
-            {/* Dispatch & Team Info */}
-            {Boolean(selectedCase.dispatch || selectedCase.assigned_vehicle_number || selectedCase.assigned_agent_name) && (
-              <div style={{ background: "#F5F3FF", padding: "14px 16px", borderRadius: "10px", border: "1px solid #DDD6FE" }}>
-                <strong style={{ color: "#1E3A8A", fontSize: "14px", display: "block", marginBottom: "8px" }}>
-                  <FaTruck size={14} style={{ marginRight: "6px" }} /> Dispatch &amp; Field Team Info
-                </strong>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px", fontSize: "13px" }}>
-                  <div><span style={{ color: "#1E3A8A", fontWeight: 600 }}>Assigned Agent:</span> <strong>{selectedCase.assigned_agent_name || selectedCase.assigned_agent_id || "Unassigned"}</strong></div>
-                  <div><span style={{ color: "#1E3A8A", fontWeight: 600 }}>Assigned Vehicle:</span> <strong>{selectedCase.assigned_vehicle_number || selectedCase.assigned_vehicle_id || "Unassigned"}</strong></div>
-                  {Boolean((selectedCase.dispatch as any)?.dispatched_at) && (
-                    <div><span style={{ color: "#1E3A8A", fontWeight: 600 }}>Dispatched At:</span> <strong>{formatDateTime(String((selectedCase.dispatch as any)?.dispatched_at))}</strong></div>
+              {/* RIGHT COLUMN */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                
+                {/* Rescue Location */}
+                <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "14px 16px" }}>
+                  <div style={{ fontSize: "14px", fontWeight: 800, color: "#0F172A", marginBottom: "12px", borderBottom: "1px solid #F1F5F9", paddingBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <FaMapMarkerAlt color="#EF4444" /> Rescue Location
+                  </div>
+
+                  <div style={{ marginBottom: "10px", fontSize: "13px" }}>
+                    <span style={{ color: "#64748B", fontSize: "11px", display: "block", fontWeight: 600 }}>Recorded Address</span>
+                    <strong style={{ color: "#0F172A", wordBreak: "break-word" }}>{safeText(selectedCase.location, "Location address not recorded")}</strong>
+                  </div>
+
+                  {Boolean(selectedCase.location_landmark || selectedCase.raw?.location_landmark || selectedCase.raw?.landmark) && (
+                    <div style={{ marginBottom: "10px", fontSize: "13px" }}>
+                      <span style={{ color: "#64748B", fontSize: "11px", display: "block", fontWeight: 600 }}>Landmark / Reference</span>
+                      <span>{safeText(selectedCase.location_landmark || selectedCase.raw?.location_landmark || selectedCase.raw?.landmark)}</span>
+                    </div>
                   )}
-                </div>
-              </div>
-            )}
 
-            {/* Photos / Media Evidence */}
-            {Boolean(selectedCase.media_urls && selectedCase.media_urls.length > 0) && (
-              <div>
-                <strong style={{ display: "block", marginBottom: "6px", fontSize: "13px" }}>Photos / Media Evidence:</strong>
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                  {selectedCase.media_urls.map((u: string, i: number) => (
-                    <a key={i} href={u} target="_blank" rel="noreferrer" style={{ padding: "6px 12px", background: "#EFF6FF", color: "#1E3A8A", borderRadius: "6px", border: "1px solid #BFDBFE", fontSize: "12px", fontWeight: 700, textDecoration: "none" }}>
-                      Photo Evidence {i + 1} ↗
-                    </a>
-                  ))}
+                  {/* Location Map / Compact GPS panel */}
+                  {(() => {
+                    const latNum = Number(selectedCase.latitude ?? selectedCase.raw?.latitude);
+                    const lngNum = Number(selectedCase.longitude ?? selectedCase.raw?.longitude);
+                    const hasCoords = !isNaN(latNum) && !isNaN(lngNum) && latNum !== 0 && lngNum !== 0;
+
+                    if (hasCoords) {
+                      return (
+                        <LocationMapPreview
+                          latitude={latNum}
+                          longitude={lngNum}
+                          locationAddress={selectedCase.location}
+                          locationLandmark={selectedCase.location_landmark ?? (selectedCase.raw?.location_landmark as any) ?? (selectedCase.raw?.landmark as any)}
+                          height="160px"
+                        />
+                      );
+                    }
+
+                    return (
+                      <div style={{ background: "#F8FAFC", border: "1px dashed #CBD5E1", padding: "10px 14px", borderRadius: "8px", fontSize: "12px", color: "#64748B", display: "flex", alignItems: "center", gap: "10px" }}>
+                        <FaMapMarkerAlt color="#94A3B8" size={18} />
+                        <div>
+                          <strong style={{ color: "#334155", display: "block", marginBottom: "2px" }}>Exact GPS Coordinates Unavailable</strong>
+                          <span>Location state panel displaying recorded text address above.</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
+
+                {/* Dispatch & Field Team Information */}
+                <div style={{ background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: "10px", padding: "14px 16px" }}>
+                  <div style={{ fontSize: "14px", fontWeight: 800, color: "#4C1D95", marginBottom: "12px", borderBottom: "1px solid #EDE9FE", paddingBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <FaTruck color="#7C3AED" /> Dispatch &amp; Field Team Information
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: "13px" }}>
+                    <div>
+                      <span style={{ color: "#6B21A8", fontSize: "11px", display: "block", fontWeight: 600 }}>Assigned Agent</span>
+                      <strong>{safeText(selectedCase.assigned_agent_name || selectedCase.assigned_agent_id, "Unassigned")}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: "#6B21A8", fontSize: "11px", display: "block", fontWeight: 600 }}>Assigned Vehicle</span>
+                      <strong>{safeText(selectedCase.assigned_vehicle_number || selectedCase.assigned_vehicle_id, "Unassigned")}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: "#6B21A8", fontSize: "11px", display: "block", fontWeight: 600 }}>Dispatch Stage</span>
+                      <span style={{ fontWeight: 700, color: selectedCase.dispatch_color }}>{safeText(selectedCase.dispatch_status)}</span>
+                    </div>
+                    {Boolean((selectedCase.dispatch as any)?.dispatched_at) && (
+                      <div>
+                        <span style={{ color: "#6B21A8", fontSize: "11px", display: "block", fontWeight: 600 }}>Dispatched At</span>
+                        <strong>{formatDateTime(String((selectedCase.dispatch as any)?.dispatched_at))}</strong>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Photos / Media Evidence */}
+                {Boolean(selectedCase.media_urls && selectedCase.media_urls.length > 0) && (
+                  <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "14px 16px" }}>
+                    <div style={{ fontSize: "14px", fontWeight: 800, color: "#0F172A", marginBottom: "10px", display: "flex", alignItems: "center", gap: "6px" }}>
+                      📷 Photos / Media Evidence
+                    </div>
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      {selectedCase.media_urls.map((u: string, i: number) => (
+                        <a
+                          key={i}
+                          href={u}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            padding: "6px 12px",
+                            background: "#EFF6FF",
+                            color: "#1E3A8A",
+                            borderRadius: "6px",
+                            border: "1px solid #BFDBFE",
+                            fontSize: "12px",
+                            fontWeight: 700,
+                            textDecoration: "none",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          Photo Evidence {i + 1} ↗
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
               </div>
-            )}
+            </div>
+
           </div>
         )}
       </Modal>

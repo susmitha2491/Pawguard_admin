@@ -464,12 +464,12 @@ export const RescueDetailModal: React.FC<RescueDetailModalProps> = ({
               {[
                 { title: "Rescue Request Submitted", time: rescue.created_at, done: true },
                 { title: "Coordinator Reviewed & Verified", time: rescue.created_at, done: !isPending },
-                { title: "Dispatch Team & Vehicle Assigned", time: rescue.dispatched_at || "-", done: Boolean(rescue.dispatch || rescue.assigned_agent_id || rescue.dispatch_agents) },
+                { title: "Dispatch Team & Vehicle Assigned", time: rescue.dispatched_at || "-", done: Boolean(rescue.dispatch || rescue.assigned_agent_id || rescue.dispatch_agents) || ["dispatched", "accepted", "en_route", "in_progress", "located", "secured", "rescued", "admitted", "completed"].includes(statusLower) },
                 { title: "Agent En Route to Field Scene", time: rescue.dispatched_at || "-", done: ["en_route", "in_progress", "located", "secured", "rescued", "admitted", "completed"].includes(statusLower) },
-                { title: "Agent Arrived & Dog Located", time: rescue.located_at || "-", done: rescue.located_at !== undefined && rescue.located_at !== "-" },
-                { title: "Dog Rescued & Secured", time: rescue.rescued_at || "-", done: rescue.rescued_at !== undefined && rescue.rescued_at !== "-" },
-                { title: "Transferred to Shelter / Vet Clinic", time: rescue.admitted_at || "-", done: rescue.admitted_at !== undefined && rescue.admitted_at !== "-" },
-                { title: "Rescue Mission Completed", time: rescue.updated_at || "-", done: ["completed", "admitted"].includes(statusLower) },
+                { title: "Agent Arrived & Dog Located", time: rescue.located_at || "-", done: (rescue.located_at !== undefined && rescue.located_at !== "-") || ["located", "secured", "rescued", "admitted", "completed"].includes(statusLower) },
+                { title: "Dog Rescued & Secured", time: rescue.rescued_at || "-", done: (rescue.rescued_at !== undefined && rescue.rescued_at !== "-") || ["secured", "rescued", "admitted", "completed"].includes(statusLower) },
+                { title: "Transferred to Shelter / Vet Clinic", time: rescue.admitted_at || "-", done: (rescue.admitted_at !== undefined && rescue.admitted_at !== "-") || ["admitted", "completed"].includes(statusLower) },
+                { title: "Rescue Mission Completed", time: rescue.updated_at || "-", done: ["completed"].includes(statusLower) },
               ].map((step, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
                   <div
@@ -490,7 +490,7 @@ export const RescueDetailModal: React.FC<RescueDetailModalProps> = ({
                   </div>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: "13px", color: step.done ? "#0F172A" : "#94A3B8" }}>{step.title}</div>
-                    <div style={{ fontSize: "11px", color: "#64748B" }}>Timestamp: {step.time}</div>
+                    <div style={{ fontSize: "11px", color: "#64748B" }}>Timestamp: {step.done ? (step.time && step.time !== "-" ? step.time : "-") : "-"}</div>
                   </div>
                 </div>
               ))}
