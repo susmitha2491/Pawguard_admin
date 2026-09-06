@@ -1039,40 +1039,12 @@ const RescueManagement = () => {
       addToast("Animal is secured and awaiting shelter intake processing by the Shelter Manager.", "info");
       
       const role = getCurrentUserRole();
-      if (["shelter_manager", "rescue_coordinator", "rescue_centre_admin", "super_admin"].includes(role)) {
+      if (role && ["shelter_manager", "rescue_coordinator", "rescue_centre_admin", "super_admin"].includes(role)) {
         navigate(`/shelter-dogs?rescue_case_id=${encodeURIComponent(caseItem.id)}`);
       }
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string; message?: string } } };
       addToast(e?.response?.data?.detail || e?.response?.data?.message || "Unable to fetch handover status.", "error");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleAgentMarkAdmitted = async (caseItem: RescueCaseTableRow) => {
-    try {
-      setIsSubmitting(true);
-      await rescueService.markRescueAdmitted(caseItem.id);
-      addToast("Rescue completed & dog admitted to shelter!", "success");
-      notifyDataChanged();
-      await fetchAllData();
-
-      const refreshed = await rescueService.getRescueCaseById(caseItem.id);
-      if (refreshed) {
-        setSelectedCase(formatCaseRow(refreshed?.data || refreshed));
-      } else {
-        setSelectedCase((prev) => (prev ? { ...prev, status: "admitted" } : null));
-      }
-
-      setTimeout(() => {
-        if (window.confirm(`Rescue mission completed! Would you like to register the rescued dog in the Dog Repository now?`)) {
-          navigate(`/pets?action=add&rescue_case_id=${encodeURIComponent(caseItem.id)}`);
-        }
-      }, 300);
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string; message?: string } } };
-      addToast(e?.response?.data?.detail || e?.response?.data?.message || "Failed to admit animal to shelter.", "error");
     } finally {
       setIsSubmitting(false);
     }

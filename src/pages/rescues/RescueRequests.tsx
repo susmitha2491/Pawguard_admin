@@ -30,6 +30,7 @@ import { rescueStatusBadge, dispatchStage } from "../../utils/rescueStatus.tsx";
 import { notifyDataChanged } from "../../utils/dataSync";
 import { getCurrentUserRole, getCurrentUser, getRescueCentreId } from "../../utils/roleUtils";
 import { formatDateTime } from "../../utils/dateUtils";
+import { unwrapList } from "../../utils/chartUtils";
 import LocationMapPreview from "../../components/common/LocationMapPreview";
 import RescueDetailModal from "../../components/rescue/RescueDetailModal";
 import RescueAssignModal from "../../components/rescue/RescueAssignModal";
@@ -178,13 +179,7 @@ const RescueRequests = () => {
 
       const queryParams: Record<string, unknown> = {};
       const response = await rescueService.getAllRescueCases(queryParams);
-      const list: Record<string, unknown>[] = Array.isArray(response)
-        ? response
-        : Array.isArray(response?.data)
-        ? response.data
-        : Array.isArray(response?.data?.data)
-        ? response.data.data
-        : [];
+      const list = unwrapList(response?.data ?? response);
 
       // Collect reporter and assigned agent user UUIDs for resolution
       const userIdsToResolve = new Set<string>();

@@ -13,9 +13,7 @@ import {
   FaSync,
   FaEye,
   FaUser,
-  FaPhoneAlt,
   FaMapMarkerAlt,
-  FaClock,
   FaInfoCircle,
   FaTruck,
 } from "react-icons/fa";

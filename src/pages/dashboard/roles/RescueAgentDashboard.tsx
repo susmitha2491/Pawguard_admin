@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import StatCard from "../../../components/dashboard/StatCard";
 import DataTable from "../../../components/common/DataTable";
 import QuickActionCard from "../../../components/dashboard/QuickActionCard";
@@ -22,7 +23,7 @@ import rescueService from "../../../services/rescueService";
 import petService from "../../../services/petService";
 import storageService from "../../../services/storageService";
 import { useDataSync, notifyDataChanged } from "../../../utils/dataSync";
-import { getCurrentUser } from "../../../utils/roleUtils";
+import { getCurrentUser, getCurrentUserRole } from "../../../utils/roleUtils";
 import { rescueStatusBadge } from "../../../utils/rescueStatus.tsx";
 import { formatDateTime } from "../../../utils/dateUtils";
 
@@ -91,6 +92,7 @@ const formatAssigned = (c: Record<string, unknown>, localStatuses: Record<string
 };
 
 const RescueAgentDashboard = () => {
+  const navigate = useNavigate();
   const { addToast } = useToast();
   const [activeCard, setActiveCard] = useState<CardTab>("assigned");
   const [searchQuery, setSearchQuery] = useState("");
@@ -580,9 +582,9 @@ const RescueAgentDashboard = () => {
 
       const refreshed = await rescueService.getRescueCaseById(caseId);
       if (refreshed) {
-        const row = formatCaseRow(refreshed?.data || refreshed);
-        setSelectedCase(row);
-        if (row.status === "admitted" || row.status === "completed") {
+        const rawObj = (refreshed?.data || refreshed) as Record<string, unknown>;
+        const rawStatus = String(rawObj?.status || "").toLowerCase();
+        if (rawStatus === "admitted" || rawStatus === "completed") {
           addToast("Animal has been admitted to the shelter!", "success");
           return;
         }
@@ -591,7 +593,7 @@ const RescueAgentDashboard = () => {
       addToast("Animal is secured and awaiting shelter intake processing by the Shelter Manager.", "info");
 
       const role = getCurrentUserRole();
-      if (["shelter_manager", "rescue_coordinator", "rescue_centre_admin", "super_admin"].includes(role)) {
+      if (role && ["shelter_manager", "rescue_coordinator", "rescue_centre_admin", "super_admin"].includes(role)) {
         navigate(`/shelter-dogs?rescue_case_id=${encodeURIComponent(caseId)}`);
       }
     } catch {
