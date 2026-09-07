@@ -8,15 +8,8 @@ import { useToast } from "../../../context/ToastContext";
 import { FaHome, FaPaw, FaUserPlus, FaCalendarCheck, FaSync, FaUsers, FaCheckCircle, FaTimesCircle, FaEye } from "react-icons/fa";
 import dashboardService from "../../../services/dashboardService";
 import fosterService from "../../../services/fosterService";
-import volunteerService from "../../../services/volunteerService";
 import { useDataSync, notifyDataChanged } from "../../../utils/dataSync";
 import { formatDateTime } from "../../../utils/dateUtils";
-
-// Helper: identify foster-care volunteers
-const isFosterCareVolunteer = (vol: any): boolean => {
-  const role = String(vol?.preferred_role || vol?.volunteer_type || vol?.applied_role || "").toLowerCase();
-  return role.includes("foster");
-};
 
 const isPending = (st?: string) => {
   const s = String(st || "").toLowerCase();
@@ -28,7 +21,7 @@ const isApproved = (st?: string) => {
   return s === "approved" || s === "active" || s === "onboarded";
 };
 
-const VolunteerStatusBadge = ({ status }: { status?: string }) => {
+const ApplicationStatusBadge = ({ status }: { status?: string }) => {
   const s = String(status || "applied").toLowerCase();
   const color =
     isApproved(s) ? "#15803D" :
@@ -52,15 +45,11 @@ const FosterCoordinatorDashboard = () => {
   const [profiles, setProfiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Foster volunteers state
-  const [fosterVolunteers, setFosterVolunteers] = useState<any[]>([]);
-  const [volLoading, setVolLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // View Details modal
-  const [selectedVol, setSelectedVol] = useState<any | null>(null);
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  // View Pending Application modal
+  const [selectedApplication, setSelectedApplication] = useState<any | null>(null);
+  const [isAppModalOpen, setIsAppModalOpen] = useState(false);
 
   // Foster Profile Inspect Modal
   const [selectedFosterProfile, setSelectedFosterProfile] = useState<any | null>(null);
@@ -73,7 +62,7 @@ const FosterCoordinatorDashboard = () => {
 
       const [dashRes, profileRes] = await Promise.allSettled([
         dashboardService.getFosterDashboard(),
-        fosterService.getFosterProfiles({ page_size: 500 }),
+        fosterService.getFosterProfiles({ page_size: 50 }),
       ]);
 
       let dashObj: any = null;
@@ -83,10 +72,13 @@ const FosterCoordinatorDashboard = () => {
 
       let profileList: any[] = [];
       if (profileRes.status === "fulfilled" && profileRes.value) {
-        profileList = Array.isArray(profileRes.value?.data)
-          ? profileRes.value.data
-          : Array.isArray(profileRes.value)
-          ? profileRes.value
+        const val = profileRes.value;
+        profileList = Array.isArray(val?.data)
+          ? val.data
+          : Array.isArray(val?.items)
+          ? val.items
+          : Array.isArray(val)
+          ? val
           : [];
       } else if (dashObj) {
         profileList = Array.isArray(dashObj?.placements)
@@ -96,6 +88,11 @@ const FosterCoordinatorDashboard = () => {
           : Array.isArray(dashObj?.items)
           ? dashObj.items
           : [];
+      }
+
+      if (dashRes.status === "rejected" && profileRes.status === "rejected") {
+        const errObj: any = dashRes.reason || profileRes.reason;
+        throw errObj;
       }
 
       profileList.sort((a, b) => {
@@ -110,101 +107,61 @@ const FosterCoordinatorDashboard = () => {
       setError(
         err?.response?.data?.detail ||
           err?.response?.data?.message ||
-          "Failed to load foster metrics."
+          err?.message ||
+          "Failed to load foster metrics from backend."
       );
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const fetchFosterVolunteers = useCallback(async () => {
-    try {
-      setVolLoading(true);
-      let res: any;
-      try {
-        res = await volunteerService.getVolunteers({ page_size: 500 });
-      } catch {
-        res = [];
-      }
-      const list: any[] = Array.isArray(res)
-        ? res
-        : Array.isArray(res?.data)
-        ? res.data
-        : Array.isArray(res?.items)
-        ? res.items
-        : [];
-
-      const fosterOnly = list.filter(isFosterCareVolunteer);
-      fosterOnly.sort((a, b) => {
-        const tA = new Date(a.created_at || a.submitted_at || 0).getTime();
-        const tB = new Date(b.created_at || b.submitted_at || 0).getTime();
-        return (isNaN(tB) ? 0 : tB) - (isNaN(tA) ? 0 : tA);
-      });
-      setFosterVolunteers(fosterOnly);
-    } catch {
-      setFosterVolunteers([]);
-    } finally {
-      setVolLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     fetchDashboard();
-    fetchFosterVolunteers();
-  }, [fetchDashboard, fetchFosterVolunteers]);
+  }, [fetchDashboard]);
 
   useDataSync(() => {
     fetchDashboard();
-    fetchFosterVolunteers();
   });
 
-  const handleApprove = async (vol: any) => {
-    const id = vol?.id || vol?.application_id || vol?.profile_id;
-    if (!id) { addToast("Invalid volunteer ID.", "error"); return; }
+  const handleApproveApplication = async (prof: any) => {
+    const id = prof?.id || prof?.profile_id;
+    if (!id) { addToast("Invalid profile ID.", "error"); return; }
     try {
       setIsSubmitting(true);
-      try {
-        await volunteerService.approveApplication(id);
-      } catch (err: any) {
-        if (err?.response?.status === 404 || err?.response?.status === 405) {
-          await volunteerService.updateVolunteerProfile(id, { status: "active" });
-        } else throw err;
-      }
-      addToast(`Foster volunteer approved!`, "success");
-      setFosterVolunteers((prev) =>
-        prev.map((v) => (v.id === id ? { ...v, status: "approved" } : v))
-      );
-      if (selectedVol?.id === id) setSelectedVol((p: any) => p ? { ...p, status: "approved" } : null);
-      fetchFosterVolunteers();
+      await fosterService.updateProfile(id, {
+        status: "approved",
+        is_available: true,
+        background_check_passed: true,
+        home_inspection_passed: true,
+      });
+      addToast("Foster caregiver application approved successfully!", "success");
+      setIsAppModalOpen(false);
+      setSelectedApplication(null);
+      fetchDashboard();
       notifyDataChanged();
     } catch (err: any) {
-      addToast(err?.response?.data?.detail || err?.message || "Failed to approve volunteer.", "error");
+      addToast(err?.response?.data?.detail || err?.message || "Failed to approve application.", "error");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleReject = async (vol: any) => {
-    const id = vol?.id || vol?.application_id || vol?.profile_id;
-    if (!id) { addToast("Invalid volunteer ID.", "error"); return; }
+  const handleRejectApplication = async (prof: any) => {
+    const id = prof?.id || prof?.profile_id;
+    if (!id) { addToast("Invalid profile ID.", "error"); return; }
     try {
       setIsSubmitting(true);
-      try {
-        await volunteerService.rejectApplication(id, "Rejected by Foster Coordinator.");
-      } catch (err: any) {
-        if (err?.response?.status === 404 || err?.response?.status === 405) {
-          await volunteerService.updateVolunteerProfile(id, { status: "rejected" });
-        } else throw err;
-      }
-      addToast("Foster volunteer application rejected.", "info");
-      setFosterVolunteers((prev) =>
-        prev.map((v) => (v.id === id ? { ...v, status: "rejected" } : v))
-      );
-      if (selectedVol?.id === id) setSelectedVol((p: any) => p ? { ...p, status: "rejected" } : null);
-      fetchFosterVolunteers();
+      await fosterService.updateProfile(id, {
+        status: "rejected",
+        is_available: false,
+      });
+      addToast("Foster caregiver application rejected.", "info");
+      setIsAppModalOpen(false);
+      setSelectedApplication(null);
+      fetchDashboard();
       notifyDataChanged();
     } catch (err: any) {
-      addToast(err?.response?.data?.detail || err?.message || "Failed to reject volunteer.", "error");
+      addToast(err?.response?.data?.detail || err?.message || "Failed to reject application.", "error");
     } finally {
       setIsSubmitting(false);
     }
@@ -213,40 +170,42 @@ const FosterCoordinatorDashboard = () => {
   // Derived counts
   const activeHomesCount =
     dashboardData?.active_homes ??
+    dashboardData?.active_foster_homes ??
     dashboardData?.activeHomes ??
-    profiles.filter((p) => p.is_available || String(p.status).toLowerCase() === "active").length;
+    profiles.filter((p) => p.is_available || String(p.status).toLowerCase() === "approved" || String(p.status).toLowerCase() === "active").length;
 
   const petsInCareCount =
     dashboardData?.pets_in_care ??
+    dashboardData?.pets_in_foster ??
     dashboardData?.petsInCare ??
-    profiles.reduce((sum, p) => sum + Number(p.active_count || 0), 0);
+    profiles.reduce((sum, p) => sum + Number(p.active_count ?? p.placements_count ?? 0), 0);
 
   const pendingRequestsCount =
     dashboardData?.pending_requests ??
+    dashboardData?.pending_applications ??
     dashboardData?.pendingRequests ??
-    profiles.filter((p) => String(p.status).toLowerCase() === "pending" || String(p.status).toLowerCase() === "applied").length;
+    profiles.filter((p) => isPending(p.status)).length;
 
   const availableCapacityCount =
     dashboardData?.available_capacity ??
     dashboardData?.availableCapacity ??
-    profiles.reduce((sum, p) => sum + Math.max(0, (Number(p.max_capacity) || 1) - (Number(p.active_count) || 0)), 0);
+    profiles.reduce((sum, p) => sum + Math.max(0, (Number(p.max_capacity) || 1) - (Number(p.active_count ?? p.placements_count) || 0)), 0);
 
-  const pendingFosterVols = fosterVolunteers.filter((v) => isPending(v.status));
-  const approvedFosterVols = fosterVolunteers.filter((v) => isApproved(v.status));
+  const pendingApplicationsList = profiles.filter((p) => isPending(p.status));
 
   const stats = [
-    { title: "Active Foster Homes", value: loading ? "..." : String(activeHomesCount), trend: "Available Homes", color: "#1E3A8A", icon: <FaHome />, onClick: () => navigate("/fosters") },
-    { title: "Pets in Foster Care", value: loading ? "..." : String(petsInCareCount), trend: "Active Placements", color: "#16A34A", icon: <FaPaw />, onClick: () => navigate("/pets") },
-    { title: "Pending Foster Applications", value: loading ? "..." : String(pendingRequestsCount), trend: "Requires Review", color: "#F59E0B", icon: <FaUserPlus />, onClick: () => navigate("/fosters") },
-    { title: "Total Care Capacity", value: loading ? "..." : String(availableCapacityCount), trend: "Available Slots", color: "#1E3A8A", icon: <FaCalendarCheck />, onClick: () => navigate("/fosters") },
-    { title: "Foster Volunteers", value: volLoading ? "..." : String(fosterVolunteers.length), trend: `${approvedFosterVols.length} Approved`, color: "#1E3A8A", icon: <FaUsers /> },
+    { title: "Active Foster Homes", value: loading ? "..." : error ? "-" : String(activeHomesCount), trend: "Available Homes", color: "#1E3A8A", icon: <FaHome />, onClick: () => navigate("/fosters") },
+    { title: "Pets in Foster Care", value: loading ? "..." : error ? "-" : String(petsInCareCount), trend: "Active Placements", color: "#16A34A", icon: <FaPaw />, onClick: () => navigate("/pets") },
+    { title: "Pending Applications", value: loading ? "..." : error ? "-" : String(pendingRequestsCount), trend: "Requires Review", color: "#F59E0B", icon: <FaUserPlus />, onClick: () => navigate("/fosters") },
+    { title: "Total Care Capacity", value: loading ? "..." : error ? "-" : String(availableCapacityCount), trend: "Available Slots", color: "#1E3A8A", icon: <FaCalendarCheck />, onClick: () => navigate("/fosters") },
+    { title: "Registered Profiles", value: loading ? "..." : error ? "-" : String(profiles.length), trend: `${profiles.filter((p) => String(p.status).toLowerCase() === "approved").length} Approved`, color: "#1E3A8A", icon: <FaUsers />, onClick: () => navigate("/fosters") },
   ];
 
   const placementColumns: Column<any>[] = [
     {
       key: "id",
-      title: "Profile / Placement ID",
-      render: (v: string) => <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#64748B" }}>{v ? String(v).slice(0, 10) : "-"}</span>,
+      title: "Profile ID",
+      render: (v: string) => <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#64748B" }}>{v ? String(v).slice(0, 8) : "-"}</span>,
     },
     {
       key: "foster_family",
@@ -254,13 +213,18 @@ const FosterCoordinatorDashboard = () => {
       render: (_: string, row: any) => {
         const user = row.user || {};
         const name = user.full_name || user.name || user.email || row.foster_name || row.family || row.id || "Foster Parent";
-        return <div style={{ fontWeight: 700, color: "#0F172A" }}>{name}</div>;
+        return (
+          <div>
+            <div style={{ fontWeight: 700, color: "#0F172A" }}>{name}</div>
+            {user.email && <div style={{ fontSize: "12px", color: "#64748B" }}>{user.email}</div>}
+          </div>
+        );
       },
     },
     {
       key: "active_count",
       title: "Active Placements",
-      render: (v: number) => <span style={{ fontWeight: 700, color: "#1E3A8A" }}>{v ?? 0} Pets</span>,
+      render: (v: number, row: any) => <span style={{ fontWeight: 700, color: "#1E3A8A" }}>{v ?? row.placements_count ?? 0} Pets</span>,
     },
     {
       key: "max_capacity",
@@ -269,7 +233,7 @@ const FosterCoordinatorDashboard = () => {
     },
     {
       key: "created_at",
-      title: "Registered / Created",
+      title: "Registered Date",
       render: (v: string, row: any) => {
         const dateStr = v || row.date || row.updated_at;
         return <span style={{ fontSize: "12px", color: "#64748B" }}>{dateStr ? formatDateTime(dateStr) : "N/A"}</span>;
@@ -288,8 +252,8 @@ const FosterCoordinatorDashboard = () => {
               borderRadius: "999px",
               fontSize: "11px",
               fontWeight: 800,
-              background: isAvail ? "#D1FAE5" : "#EFF6FF",
-              color: isAvail ? "#15803D" : "#1E3A8A",
+              background: isAvail || statusStr === "APPROVED" ? "#D1FAE5" : "#EFF6FF",
+              color: isAvail || statusStr === "APPROVED" ? "#15803D" : "#1E3A8A",
             }}
           >
             {statusStr}
@@ -299,44 +263,45 @@ const FosterCoordinatorDashboard = () => {
     },
   ];
 
-  const volunteerColumns: Column<any>[] = [
+  const pendingAppColumns: Column<any>[] = [
     {
-      key: "name",
-      title: "Volunteer Name & Contact",
-      render: (_: string, row: any) => (
-        <div>
-          <div style={{ fontWeight: 700, color: "#0F172A" }}>
-            {row.user?.full_name || row.full_name || row.emergency_contact_name || "Volunteer"}
+      key: "foster_family",
+      title: "Applicant Name & Contact",
+      render: (_: string, row: any) => {
+        const user = row.user || {};
+        const name = user.full_name || user.name || user.email || row.foster_name || row.id || "Applicant";
+        return (
+          <div>
+            <div style={{ fontWeight: 700, color: "#0F172A" }}>{name}</div>
+            <div style={{ fontSize: "12px", color: "#64748B" }}>
+              {user.email || `Profile ID: ${String(row.id || "").slice(0, 8)}`}
+            </div>
           </div>
-          <div style={{ fontSize: "12px", color: "#64748B" }}>
-            {row.user?.email || row.email || `ID: ${String(row.id || "").slice(0, 8)}`}
-          </div>
-        </div>
-      ),
+        );
+      },
     },
     {
-      key: "availability",
-      title: "Availability",
-      render: (v: string) => <span style={{ color: "#475569", fontSize: "13px" }}>{v || "Flexible"}</span>,
+      key: "max_capacity",
+      title: "Capacity",
+      render: (v: number) => <span style={{ fontWeight: 600, color: "#1E3A8A" }}>{v ?? 1} Max Slots</span>,
     },
     {
-      key: "skills",
-      title: "Skills / Experience",
-      render: (_: string, row: any) => (
-        <span style={{ color: "#475569", fontSize: "12px" }}>
-          {row.skills || row.animal_handling_experience || "—"}
-        </span>
-      ),
+      key: "preferences",
+      title: "Preferences",
+      render: (v: string) => <span style={{ color: "#475569", fontSize: "12px" }}>{v || "Dogs only"}</span>,
     },
     {
       key: "created_at",
-      title: "Applied",
-      render: (v: string) => <span style={{ fontSize: "12px", color: "#64748B" }}>{v ? formatDateTime(v) : "—"}</span>,
+      title: "Applied Date",
+      render: (v: string, row: any) => {
+        const d = v || row.date || row.updated_at;
+        return <span style={{ fontSize: "12px", color: "#64748B" }}>{d ? formatDateTime(d) : "—"}</span>;
+      },
     },
     {
       key: "status",
       title: "Status",
-      render: (v: string) => <VolunteerStatusBadge status={v} />,
+      render: (v: string) => <ApplicationStatusBadge status={v} />,
     },
     {
       key: "actions",
@@ -344,10 +309,10 @@ const FosterCoordinatorDashboard = () => {
       render: (_: string, row: any) => (
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); setSelectedVol(row); setIsViewModalOpen(true); }}
+          onClick={(e) => { e.stopPropagation(); setSelectedApplication(row); setIsAppModalOpen(true); }}
           style={{ padding: "5px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", color: "#0F172A", fontSize: "12px", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
         >
-          <FaEye /> Review
+          <FaEye /> Review Application
         </button>
       ),
     },
@@ -359,29 +324,30 @@ const FosterCoordinatorDashboard = () => {
       <div style={{ marginBottom: "20px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "20px 24px", borderRadius: "14px", color: "#fff" }}>
         <h1 style={{ margin: 0, fontSize: "24px", fontWeight: 800 }}>Foster Care Administration Station</h1>
         <p style={{ margin: "4px 0 0", color: "#94A3B8", fontSize: "13px" }}>
-          Onboard foster caregivers, place animals in temporary homes, and monitor care duration and return logs.
+          Onboard foster caregivers, process placement applications, match animals with temporary homes, and monitor care duration.
         </p>
       </div>
 
       {error && (
-        <div style={{ marginBottom: "20px", padding: "14px 18px", borderRadius: "10px", backgroundColor: "#FFFBEB", border: "1px solid #FCD34D", color: "#B45309", fontSize: "13px", fontWeight: 600 }}>
-          ℹ️ {error} — Fallback data loaded directly from active foster records.
+        <div style={{ marginBottom: "20px", padding: "14px 18px", borderRadius: "10px", backgroundColor: "#FEF2F2", border: "1px solid #FCA5A5", color: "#991B1B", fontSize: "13px", fontWeight: 600, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>⚠️ {error}</div>
+          <button type="button" onClick={fetchDashboard} style={{ padding: "6px 12px", borderRadius: "6px", border: "none", background: "#DC2626", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}>Retry</button>
         </div>
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", marginBottom: "20px" }}>
         <QuickActionCard icon={<FaUserPlus />} title="Register Fosterer" subtitle="Onboard new caregiver" color="#1E3A8A" onClick={() => navigate("/fosters?action=apply")} />
         <QuickActionCard icon={<FaPaw />} title="Place Dog in Foster" subtitle="Match dog with family" color="#16A34A" onClick={() => navigate("/fosters?action=place")} />
-        <QuickActionCard icon={<FaSync />} title="Refresh Roster" subtitle="Sync latest foster data" color="#1E3A8A" onClick={fetchDashboard} />
+        <QuickActionCard icon={<FaSync />} title="Refresh Foster Data" subtitle="Sync latest backend data" color="#1E3A8A" onClick={fetchDashboard} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "20px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginBottom: "20px" }}>
         {stats.map((s) => (
           <StatCard key={s.title} {...s} />
         ))}
       </div>
 
-      {/* Foster Placements Table */}
+      {/* Foster Caregiver Roster Table */}
       <div className="soft-card" style={{ padding: "20px", marginBottom: "24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
           <h3 style={{ margin: 0, color: "#0F172A", fontSize: "16px", fontWeight: 700 }}>
@@ -393,7 +359,7 @@ const FosterCoordinatorDashboard = () => {
           columns={placementColumns}
           data={profiles}
           loading={loading}
-          emptyMessage="No active foster profiles registered."
+          emptyMessage="No active foster profiles registered in backend."
           onRowClick={(row: any) => {
             setSelectedFosterProfile(row);
             setIsFosterInspectModalOpen(true);
@@ -401,15 +367,24 @@ const FosterCoordinatorDashboard = () => {
         />
       </div>
 
-      {/* Foster Volunteer Applicants Table */}
+      {/* Pending Foster Applications Table */}
       <div className="soft-card" style={{ padding: "20px", marginBottom: "24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
           <h3 style={{ margin: 0, color: "#0F172A", fontSize: "16px", fontWeight: 700 }}>
-            Foster Volunteer Applications ({pendingFosterVols.length} Pending Review)
+            Pending Foster Caregiver Applications ({pendingApplicationsList.length} Pending Review)
           </h3>
-          {volLoading && <span style={{ fontSize: "13px", color: "#1E3A8A", fontWeight: 600 }}>Loading volunteers...</span>}
+          {loading && <span style={{ fontSize: "13px", color: "#1E3A8A", fontWeight: 600 }}>Loading applications...</span>}
         </div>
-        <DataTable columns={volunteerColumns} data={fosterVolunteers} loading={volLoading} emptyMessage="No foster volunteer applications found." onRowClick={(row: any) => { setSelectedVol(row); setIsViewModalOpen(true); }} />
+        <DataTable
+          columns={pendingAppColumns}
+          data={pendingApplicationsList}
+          loading={loading}
+          emptyMessage="No pending foster caregiver applications requiring review."
+          onRowClick={(row: any) => {
+            setSelectedApplication(row);
+            setIsAppModalOpen(true);
+          }}
+        />
       </div>
 
       {/* Foster Profile & Placement Inspect Modal */}
@@ -418,7 +393,7 @@ const FosterCoordinatorDashboard = () => {
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "16px" }}>
               <div style={{ fontWeight: 800, fontSize: "18px", color: "#0F172A" }}>
-                {selectedFosterProfile.user?.full_name || selectedFosterProfile.user?.name || selectedFosterProfile.foster_name || "Foster Family"}
+                {selectedFosterProfile.user?.full_name || selectedFosterProfile.user?.name || selectedFosterProfile.user?.email || selectedFosterProfile.foster_name || "Foster Family"}
               </div>
               <div style={{ fontSize: "12px", color: "#64748B", marginTop: "4px" }}>
                 Email: {selectedFosterProfile.user?.email || "—"} &bull; Profile ID: <span style={{ fontFamily: "monospace" }}>{String(selectedFosterProfile.id || "").slice(0, 8)}</span>
@@ -427,15 +402,15 @@ const FosterCoordinatorDashboard = () => {
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", fontSize: "13px" }}>
               <div style={{ background: "#FFF", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
-                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Caregiver Status &amp; Availability</div>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Caregiver Availability</div>
                 <div style={{ fontWeight: 700, color: selectedFosterProfile.is_available ? "#15803D" : "#1E3A8A", marginTop: "4px" }}>
                   {selectedFosterProfile.is_available ? "✓ Available for Placement" : "Busy / Max Capacity Reached"}
                 </div>
               </div>
               <div style={{ background: "#FFF", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
-                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Care Capacity &amp; Placements</div>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Care Capacity</div>
                 <div style={{ fontWeight: 700, color: "#1E3A8A", marginTop: "4px" }}>
-                  {selectedFosterProfile.active_count ?? 0} Active Placements / {selectedFosterProfile.max_capacity ?? 1} Max Capacity
+                  {selectedFosterProfile.active_count ?? selectedFosterProfile.placements_count ?? 0} Active Placements / {selectedFosterProfile.max_capacity ?? 1} Max Capacity
                 </div>
               </div>
             </div>
@@ -472,26 +447,45 @@ const FosterCoordinatorDashboard = () => {
         )}
       </Modal>
 
-      {/* Volunteer Application Review Modal */}
-      <Modal isOpen={isViewModalOpen} onClose={() => setIsViewModalOpen(false)} title="Foster Caregiver Application Review">
-        {selectedVol && (
+      {/* Foster Application Review Modal */}
+      <Modal isOpen={isAppModalOpen} onClose={() => setIsAppModalOpen(false)} title="Foster Caregiver Application Review">
+        {selectedApplication && (
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", fontSize: "13px" }}>
-              <div><strong>Name:</strong> {selectedVol.user?.full_name || selectedVol.full_name || selectedVol.emergency_contact_name || "Volunteer"}</div>
-              <div><strong>Email:</strong> {selectedVol.user?.email || selectedVol.email || "N/A"}</div>
-              <div><strong>Phone:</strong> {selectedVol.user?.phone || selectedVol.phone || "N/A"}</div>
-              <div><strong>Status:</strong> <VolunteerStatusBadge status={selectedVol.status} /></div>
-              <div><strong>Availability:</strong> {selectedVol.availability || "Flexible"}</div>
-              <div><strong>Experience:</strong> {selectedVol.animal_handling_experience || selectedVol.skills || "N/A"}</div>
+            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "16px" }}>
+              <div style={{ fontWeight: 800, fontSize: "18px", color: "#0F172A" }}>
+                {selectedApplication.user?.full_name || selectedApplication.user?.name || selectedApplication.user?.email || selectedApplication.foster_name || "Applicant"}
+              </div>
+              <div style={{ fontSize: "12px", color: "#64748B", marginTop: "4px" }}>
+                Application ID: <span style={{ fontFamily: "monospace" }}>{String(selectedApplication.id || "").slice(0, 8)}</span>
+              </div>
             </div>
 
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", fontSize: "13px" }}>
+              <div><strong>Email:</strong> {selectedApplication.user?.email || "N/A"}</div>
+              <div><strong>Phone:</strong> {selectedApplication.user?.phone || "N/A"}</div>
+              <div><strong>Requested Capacity:</strong> {selectedApplication.max_capacity || 1} Animals</div>
+              <div><strong>Status:</strong> <ApplicationStatusBadge status={selectedApplication.status} /></div>
+            </div>
+
+            {selectedApplication.preferences && (
+              <div style={{ fontSize: "13px", color: "#334155", background: "#FFF", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                <strong>Preferences:</strong> {selectedApplication.preferences}
+              </div>
+            )}
+
+            {selectedApplication.notes && (
+              <div style={{ fontSize: "13px", color: "#334155", background: "#FFF", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                <strong>Notes / Experience:</strong> {selectedApplication.notes}
+              </div>
+            )}
+
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>
-              {isPending(selectedVol.status) && (
+              {isPending(selectedApplication.status) && (
                 <>
                   <button
                     type="button"
                     disabled={isSubmitting}
-                    onClick={() => handleApprove(selectedVol)}
+                    onClick={() => handleApproveApplication(selectedApplication)}
                     style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <FaCheckCircle /> Approve Application
@@ -499,7 +493,7 @@ const FosterCoordinatorDashboard = () => {
                   <button
                     type="button"
                     disabled={isSubmitting}
-                    onClick={() => handleReject(selectedVol)}
+                    onClick={() => handleRejectApplication(selectedApplication)}
                     style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#DC2626", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <FaTimesCircle /> Reject Application

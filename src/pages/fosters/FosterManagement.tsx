@@ -105,8 +105,131 @@ const FosterManagement = () => {
   const [isSupplyModalOpen, setIsSupplyModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-
   const [selectedFoster, setSelectedFoster] = useState<FosterProfileRow | null>(null);
+
+  // Application Review Modal State
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [reviewStep, setReviewStep] = useState<"review" | "confirm_approve" | "confirm_reject">("review");
+  const [reviewForm, setReviewForm] = useState({
+    max_capacity: 2,
+    preferences: "",
+    notes: "",
+    background_check_passed: false,
+    background_check_notes: "",
+    references_checked: false,
+    reference_notes: "",
+    home_inspection_passed: false,
+    home_inspection_notes: "",
+    home_inspection_address: "",
+    vetting_notes: "",
+    rejection_reason: "",
+  });
+
+  const handleOpenReview = (foster: FosterProfileRow) => {
+    const raw = foster.raw || {};
+    setSelectedFoster(foster);
+    setReviewForm({
+      max_capacity: Number(foster.max_capacity || 1),
+      preferences: foster.preferences || "",
+      notes: foster.notes || "",
+      background_check_passed: Boolean(raw.background_check_passed ?? foster.background_check_passed),
+      background_check_notes: raw.background_check_notes || "",
+      references_checked: Boolean(raw.references_checked),
+      reference_notes: raw.reference_notes || "",
+      home_inspection_passed: Boolean(raw.home_inspection_passed ?? foster.home_inspection_passed),
+      home_inspection_notes: raw.home_inspection_notes || "",
+      home_inspection_address: raw.home_inspection_address || "",
+      vetting_notes: raw.vetting_notes || "",
+      rejection_reason: "",
+    });
+    setReviewStep("review");
+    setIsReviewModalOpen(true);
+  };
+
+  const handleSaveVettingProgress = async () => {
+    if (!selectedFoster) return;
+    try {
+      setIsSubmitting(true);
+      await fosterService.updateProfile(selectedFoster.id, {
+        max_capacity: Number(reviewForm.max_capacity),
+        preferences: reviewForm.preferences,
+        notes: reviewForm.notes,
+        background_check_passed: reviewForm.background_check_passed,
+        background_check_notes: reviewForm.background_check_notes,
+        references_checked: reviewForm.references_checked,
+        reference_notes: reviewForm.reference_notes,
+        home_inspection_passed: reviewForm.home_inspection_passed,
+        home_inspection_notes: reviewForm.home_inspection_notes,
+        home_inspection_address: reviewForm.home_inspection_address,
+        vetting_notes: reviewForm.vetting_notes,
+      });
+      addToast("Vetting progress saved successfully!", "success");
+      fetchFosters();
+      notifyDataChanged();
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.response?.data?.message || "Failed to save vetting progress.";
+      addToast(msg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleConfirmApprove = async () => {
+    if (!selectedFoster) return;
+    try {
+      setIsSubmitting(true);
+      await fosterService.updateProfile(selectedFoster.id, {
+        status: "approved",
+        is_available: true,
+        max_capacity: Number(reviewForm.max_capacity),
+        preferences: reviewForm.preferences,
+        notes: reviewForm.notes,
+        background_check_passed: reviewForm.background_check_passed,
+        background_check_notes: reviewForm.background_check_notes,
+        references_checked: reviewForm.references_checked,
+        reference_notes: reviewForm.reference_notes,
+        home_inspection_passed: reviewForm.home_inspection_passed,
+        home_inspection_notes: reviewForm.home_inspection_notes,
+        home_inspection_address: reviewForm.home_inspection_address,
+        vetting_notes: reviewForm.vetting_notes,
+      });
+      addToast(`Approved ${selectedFoster.foster_family} as an active Foster Caregiver!`, "success");
+      setIsReviewModalOpen(false);
+      setSelectedFoster(null);
+      fetchFosters();
+      notifyDataChanged();
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.response?.data?.message || "Failed to approve foster profile.";
+      addToast(msg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleConfirmReject = async () => {
+    if (!selectedFoster) return;
+    try {
+      setIsSubmitting(true);
+      const notesPayload = reviewForm.rejection_reason || reviewForm.vetting_notes || reviewForm.notes;
+      await fosterService.updateProfile(selectedFoster.id, {
+        status: "rejected",
+        is_available: false,
+        vetting_notes: notesPayload,
+        background_check_notes: reviewForm.background_check_notes,
+        home_inspection_notes: reviewForm.home_inspection_notes,
+      });
+      addToast(`Rejected application for ${selectedFoster.foster_family}.`, "info");
+      setIsReviewModalOpen(false);
+      setSelectedFoster(null);
+      fetchFosters();
+      notifyDataChanged();
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.response?.data?.message || "Failed to reject foster application.";
+      addToast(msg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
   const [selectedPlacement, setSelectedPlacement] = useState<any | null>(null);
   const [progressLogs, setProgressLogs] = useState<any[]>([]);
   const [suppliesList, setSuppliesList] = useState<any[]>([]);
@@ -282,44 +405,6 @@ const FosterManagement = () => {
     const start = (page - 1) * pageSize;
     return filteredFosters.slice(start, start + pageSize);
   }, [filteredFosters, page]);
-
-  const handleApproveProfile = async (profileId: string) => {
-    try {
-      setIsSubmitting(true);
-      await fosterService.updateProfile(profileId, {
-        status: "approved",
-        is_available: true,
-        background_check_passed: true,
-        home_inspection_passed: true,
-      });
-      addToast("Foster profile approved successfully!", "success");
-      fetchFosters();
-      notifyDataChanged();
-      setSelectedFoster((prev) => (prev && prev.id === profileId ? { ...prev, status: "approved", is_available: true } : prev));
-    } catch (err: any) {
-      addToast(err?.response?.data?.detail || "Failed to approve profile.", "error");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleRejectProfile = async (profileId: string) => {
-    try {
-      setIsSubmitting(true);
-      await fosterService.updateProfile(profileId, {
-        status: "rejected",
-        is_available: false,
-      });
-      addToast("Foster profile rejected.", "info");
-      fetchFosters();
-      notifyDataChanged();
-      setSelectedFoster((prev) => (prev && prev.id === profileId ? { ...prev, status: "rejected", is_available: false } : prev));
-    } catch (err: any) {
-      addToast(err?.response?.data?.detail || "Failed to reject profile.", "error");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   // Handlers
   const handleApplySubmit = async (e: React.FormEvent) => {
@@ -736,68 +821,48 @@ const FosterManagement = () => {
                 <option value="inactive">Inactive</option>
               </select>
             }
-            onRowClick={(row) => void openFosterDetail(row)}
+            onRowClick={(row) => openFosterDetail(row)}
             renderRowActions={(row: FosterProfileRow) => (
               <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
-                <button
-                  onClick={() => void openFosterDetail(row)}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "4px",
-                    padding: "6px 12px",
-                    borderRadius: "6px",
-                    border: "1px solid #93C5FD",
-                    background: "#EFF6FF",
-                    color: "#1D4ED8",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  Inspect Profile
-                </button>
-                {(row.status === "applied" || row.status === "pending") && (
-                  <>
-                    <button
-                      disabled={isSubmitting}
-                      onClick={() => void handleApproveProfile(row.id)}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "4px",
-                        padding: "6px 12px",
-                        borderRadius: "6px",
-                        border: "1px solid #A7F3D0",
-                        background: "#ECFDF5",
-                        color: "#047857",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      disabled={isSubmitting}
-                      onClick={() => void handleRejectProfile(row.id)}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "4px",
-                        padding: "6px 12px",
-                        borderRadius: "6px",
-                        border: "1px solid #FCA5A5",
-                        background: "#FEF2F2",
-                        color: "#991B1B",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Reject
-                    </button>
-                  </>
+                {(row.status === "applied" || row.status === "pending") ? (
+                  <button
+                    onClick={() => handleOpenReview(row)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      padding: "6px 14px",
+                      borderRadius: "6px",
+                      border: "none",
+                      background: "#2563EB",
+                      color: "#FFF",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      boxShadow: "0 1px 2px rgba(37,99,235,0.2)",
+                    }}
+                  >
+                    <FaClipboardList /> Review Application
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => void openFosterDetail(row)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      border: "1px solid #93C5FD",
+                      background: "#EFF6FF",
+                      color: "#1D4ED8",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Inspect Profile
+                  </button>
                 )}
                 {row.status === "approved" && (
                   <button
@@ -1091,7 +1156,7 @@ const FosterManagement = () => {
       </Modal>
 
       {/* Detailed Profile & History Modal */}
-      <Modal isOpen={isDetailModalOpen} onClose={() => setIsDetailModalOpen(false)} title={`Foster Application Review — ${selectedFoster?.foster_family || "Caregiver"}`} maxWidth="750px">
+      <Modal isOpen={isDetailModalOpen} onClose={() => setIsDetailModalOpen(false)} title={`Foster Caregiver Profile — ${selectedFoster?.foster_family || "Caregiver"}`} maxWidth="750px">
         {selectedFoster && (
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             {/* Header Box */}
@@ -1200,27 +1265,303 @@ const FosterManagement = () => {
             {/* Modal Footer Actions */}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
               {(selectedFoster.status === "applied" || selectedFoster.status === "pending") && (
-                <>
-                  <button
-                    type="button"
-                    disabled={isSubmitting}
-                    onClick={() => void handleApproveProfile(selectedFoster.id)}
-                    style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
-                  >
-                    Accept/Approve
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isSubmitting}
-                    onClick={() => void handleRejectProfile(selectedFoster.id)}
-                    style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "#EF4444", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
-                  >
-                    Reject
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDetailModalOpen(false);
+                    handleOpenReview(selectedFoster);
+                  }}
+                  style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                >
+                  <FaClipboardList /> Start Full Application Review
+                </button>
               )}
               <button type="button" onClick={() => setIsDetailModalOpen(false)} style={{ padding: "10px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}>Close</button>
             </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Comprehensive Application Review Modal */}
+      <Modal
+        isOpen={isReviewModalOpen}
+        onClose={() => setIsReviewModalOpen(false)}
+        title={`Foster Caregiver Application Review — ${selectedFoster?.foster_family || "Caregiver"}`}
+        maxWidth="800px"
+      >
+        {selectedFoster && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+            {/* Header / Applicant Summary Box */}
+            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 800, color: "#0F172A" }}>{selectedFoster.foster_family}</h2>
+                <div style={{ fontSize: "12px", color: "#64748B", marginTop: "4px" }}>
+                  Profile ID: <span style={{ fontFamily: "monospace", fontWeight: 700 }}>{selectedFoster.id}</span> &bull; Applied: {selectedFoster.created_at ? formatDateTime(selectedFoster.created_at) : "N/A"}
+                </div>
+                {selectedFoster.user?.email && (
+                  <div style={{ fontSize: "13px", color: "#334155", marginTop: "2px" }}>
+                    Email: <strong>{selectedFoster.user.email}</strong> {selectedFoster.user?.phone ? `• Phone: ${selectedFoster.user.phone}` : ""}
+                  </div>
+                )}
+              </div>
+              <span style={{ padding: "6px 14px", borderRadius: "999px", fontSize: "11px", fontWeight: 800, textTransform: "uppercase", background: "#FEF3C7", color: "#B45309" }}>
+                {selectedFoster.status} (REQUIRES REVIEW)
+              </span>
+            </div>
+
+            {reviewStep === "review" && (
+              <>
+                {/* SECTION A: APPLICANT CAPACITY & PREFERENCES */}
+                <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "16px" }}>
+                  <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A", marginBottom: "12px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    A. Capacity &amp; Care Preferences
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Maximum Animal Capacity</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={reviewForm.max_capacity}
+                        onChange={(e) => setReviewForm({ ...reviewForm, max_capacity: Number(e.target.value) })}
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Animal / Care Preferences</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Medium dogs, Medical Recovery, Cats"
+                        value={reviewForm.preferences}
+                        onChange={(e) => setReviewForm({ ...reviewForm, preferences: e.target.value })}
+                        style={inputStyle}
+                      />
+                    </div>
+                  </div>
+                  {selectedFoster.notes && (
+                    <div style={{ marginTop: "12px", fontSize: "12px", color: "#334155", background: "#F8FAFC", padding: "10px", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                      <strong>Applicant Notes / Questionnaire:</strong> {selectedFoster.notes}
+                    </div>
+                  )}
+                </div>
+
+                {/* SECTION B: ELIGIBILITY & VERIFICATION CHECKS */}
+                <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "16px" }}>
+                  <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A", marginBottom: "12px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    B. Eligibility Verification &amp; Inspection Checks
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                    {/* Background Check */}
+                    <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                        <label style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A" }}>Background Check Verification</label>
+                        <select
+                          value={reviewForm.background_check_passed ? "true" : "false"}
+                          onChange={(e) => setReviewForm({ ...reviewForm, background_check_passed: e.target.value === "true" })}
+                          style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "12px", fontWeight: 700, background: reviewForm.background_check_passed ? "#ECFDF5" : "#FFFBEB", color: reviewForm.background_check_passed ? "#047857" : "#B45309" }}
+                        >
+                          <option value="true">✓ Clear / Verified</option>
+                          <option value="false">⏳ Pending / Failed</option>
+                        </select>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Background check notes / reference ID..."
+                        value={reviewForm.background_check_notes}
+                        onChange={(e) => setReviewForm({ ...reviewForm, background_check_notes: e.target.value })}
+                        style={{ ...inputStyle, fontSize: "12px", padding: "6px 10px" }}
+                      />
+                    </div>
+
+                    {/* Home Inspection */}
+                    <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                        <label style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A" }}>Home &amp; Yard Inspection</label>
+                        <select
+                          value={reviewForm.home_inspection_passed ? "true" : "false"}
+                          onChange={(e) => setReviewForm({ ...reviewForm, home_inspection_passed: e.target.value === "true" })}
+                          style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "12px", fontWeight: 700, background: reviewForm.home_inspection_passed ? "#ECFDF5" : "#FFFBEB", color: reviewForm.home_inspection_passed ? "#047857" : "#B45309" }}
+                        >
+                          <option value="true">✓ Passed (Fenced Yard Verified)</option>
+                          <option value="false">⏳ Pending Inspection</option>
+                        </select>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                        <input
+                          type="text"
+                          placeholder="Home inspection notes..."
+                          value={reviewForm.home_inspection_notes}
+                          onChange={(e) => setReviewForm({ ...reviewForm, home_inspection_notes: e.target.value })}
+                          style={{ ...inputStyle, fontSize: "12px", padding: "6px 10px" }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Inspection site address..."
+                          value={reviewForm.home_inspection_address}
+                          onChange={(e) => setReviewForm({ ...reviewForm, home_inspection_address: e.target.value })}
+                          style={{ ...inputStyle, fontSize: "12px", padding: "6px 10px" }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Reference Checks */}
+                    <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                        <label style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A" }}>Personal &amp; Vet References</label>
+                        <select
+                          value={reviewForm.references_checked ? "true" : "false"}
+                          onChange={(e) => setReviewForm({ ...reviewForm, references_checked: e.target.value === "true" })}
+                          style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "12px", fontWeight: 700, background: reviewForm.references_checked ? "#ECFDF5" : "#FFFBEB", color: reviewForm.references_checked ? "#047857" : "#B45309" }}
+                        >
+                          <option value="true">✓ Verified References</option>
+                          <option value="false">⏳ Pending References</option>
+                        </select>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Reference check notes..."
+                        value={reviewForm.reference_notes}
+                        onChange={(e) => setReviewForm({ ...reviewForm, reference_notes: e.target.value })}
+                        style={{ ...inputStyle, fontSize: "12px", padding: "6px 10px" }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* SECTION C: COORDINATOR VETTING EVALUATION NOTES */}
+                <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "16px" }}>
+                  <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    C. Coordinator Review Evaluation Notes
+                  </div>
+                  <textarea
+                    placeholder="Enter coordinator vetting notes, evaluation summary, or comments..."
+                    value={reviewForm.vetting_notes}
+                    onChange={(e) => setReviewForm({ ...reviewForm, vetting_notes: e.target.value })}
+                    style={{ ...inputStyle, minHeight: "70px", fontSize: "13px" }}
+                  />
+                </div>
+
+                {/* ACTION BUTTONS */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #E2E8F0", paddingTop: "14px" }}>
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={handleSaveVettingProgress}
+                    style={{ padding: "10px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F8FAFC", color: "#334155", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
+                  >
+                    {isSubmitting ? "Saving..." : "Save Vetting Progress"}
+                  </button>
+
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => setReviewStep("confirm_reject")}
+                      style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "#DC2626", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
+                    >
+                      Reject Application
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => setReviewStep("confirm_approve")}
+                      style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
+                    >
+                      Approve Application
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* STEP 2: APPROVAL CONFIRMATION */}
+            {reviewStep === "confirm_approve" && (
+              <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "12px", padding: "20px", display: "flex", flexDirection: "column", gap: "14px" }}>
+                <h3 style={{ margin: 0, color: "#166534", fontSize: "16px", fontWeight: 800 }}>
+                  Confirm Approval for {selectedFoster.foster_family}
+                </h3>
+                <p style={{ margin: 0, color: "#15803D", fontSize: "13px" }}>
+                  Please review the final vetting summary before approving this caregiver. Upon approval, the status will update to <strong>APPROVED &amp; ACTIVE</strong> and the caregiver will become available for animal placements.
+                </p>
+
+                <div style={{ background: "#FFF", borderRadius: "8px", border: "1px solid #DCFCE7", padding: "14px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: "13px" }}>
+                  <div><strong>Applicant:</strong> {selectedFoster.foster_family}</div>
+                  <div><strong>Max Capacity:</strong> {reviewForm.max_capacity} Animals</div>
+                  <div><strong>Background Check:</strong> {reviewForm.background_check_passed ? "✓ Clear" : "Pending"}</div>
+                  <div><strong>Home Inspection:</strong> {reviewForm.home_inspection_passed ? "✓ Passed" : "Pending"}</div>
+                  <div><strong>References:</strong> {reviewForm.references_checked ? "✓ Verified" : "Pending"}</div>
+                  <div><strong>Resulting Status:</strong> <span style={{ color: "#166534", fontWeight: 800 }}>APPROVED &amp; AVAILABLE</span></div>
+                </div>
+
+                {reviewForm.vetting_notes && (
+                  <div style={{ fontSize: "12px", color: "#166534", background: "#DCFCE7", padding: "8px 12px", borderRadius: "6px" }}>
+                    <strong>Vetting Notes:</strong> {reviewForm.vetting_notes}
+                  </div>
+                )}
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" }}>
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => setReviewStep("review")}
+                    style={{ padding: "10px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF", color: "#334155", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
+                  >
+                    Back to Review
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={handleConfirmApprove}
+                    style={{ padding: "10px 20px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 800, fontSize: "13px", cursor: "pointer" }}
+                  >
+                    {isSubmitting ? "Approving..." : "Confirm & Approve Application"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3: REJECTION CONFIRMATION */}
+            {reviewStep === "confirm_reject" && (
+              <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "12px", padding: "20px", display: "flex", flexDirection: "column", gap: "14px" }}>
+                <h3 style={{ margin: 0, color: "#991B1B", fontSize: "16px", fontWeight: 800 }}>
+                  Confirm Application Rejection for {selectedFoster.foster_family}
+                </h3>
+                <p style={{ margin: 0, color: "#B91C1C", fontSize: "13px" }}>
+                  Please provide the rejection reason or evaluation notes. The status will update to <strong>REJECTED</strong> and availability will be set to inactive.
+                </p>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#991B1B", marginBottom: "6px" }}>Rejection Reason / Vetting Notes</label>
+                  <textarea
+                    placeholder="Enter reason for rejection..."
+                    value={reviewForm.rejection_reason || reviewForm.vetting_notes}
+                    onChange={(e) => setReviewForm({ ...reviewForm, rejection_reason: e.target.value })}
+                    style={{ ...inputStyle, minHeight: "80px", borderColor: "#FCA5A5" }}
+                  />
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" }}>
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => setReviewStep("review")}
+                    style={{ padding: "10px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF", color: "#334155", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
+                  >
+                    Back to Review
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={handleConfirmReject}
+                    style={{ padding: "10px 20px", borderRadius: "8px", border: "none", background: "#DC2626", color: "#FFF", fontWeight: 800, fontSize: "13px", cursor: "pointer" }}
+                  >
+                    {isSubmitting ? "Rejecting..." : "Confirm & Reject Application"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Modal>

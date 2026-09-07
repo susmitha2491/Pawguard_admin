@@ -351,10 +351,17 @@ const Reports = () => {
       if (isFosterCoordinator || isSuperAdmin) {
         try {
           const [fosterRes] = await Promise.allSettled([fosterService.getFosterProfiles()]);
-          const rawFosters = fosterRes.status === "fulfilled" ? (Array.isArray((fosterRes.value as any)?.data) ? (fosterRes.value as any).data : Array.isArray(fosterRes.value) ? fosterRes.value : []) : [];
+          const rawVal: any = fosterRes.status === "fulfilled" ? fosterRes.value : null;
+          const rawFosters = Array.isArray(rawVal?.data)
+            ? rawVal.data
+            : Array.isArray(rawVal?.items)
+            ? rawVal.items
+            : Array.isArray(rawVal)
+            ? rawVal
+            : [];
           setFosterProfiles(rawFosters);
 
-          const activeProfiles = rawFosters.filter((f: any) => Number(f.active_count || 0) > 0);
+          const activeProfiles = rawFosters.filter((f: any) => Number(f.active_count || f.placements_count || 0) > 0);
           const placementList: any[] = [];
           if (activeProfiles.length > 0) {
             const pResults = await Promise.allSettled(
@@ -362,7 +369,14 @@ const Reports = () => {
             );
             pResults.forEach((res, idx) => {
               if (res.status === "fulfilled" && res.value) {
-                const list = Array.isArray((res.value as any)?.data) ? (res.value as any).data : Array.isArray(res.value) ? res.value : [];
+                const val: any = res.value;
+                const list = Array.isArray(val?.data)
+                  ? val.data
+                  : Array.isArray(val?.items)
+                  ? val.items
+                  : Array.isArray(val)
+                  ? val
+                  : [];
                 const f = activeProfiles[idx];
                 const fName = f.user?.full_name || f.user?.name || f.user?.email || f.foster_name || f.id;
                 list.forEach((p: any) => {
