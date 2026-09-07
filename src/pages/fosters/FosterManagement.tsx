@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import DataTable, { type Column } from "../../components/common/DataTable";
 import StatCard from "../../components/dashboard/StatCard";
@@ -17,6 +17,14 @@ import {
   FaBoxOpen,
   FaHistory,
   FaStethoscope,
+  FaInfoCircle,
+  FaCalendarAlt,
+  FaEnvelope,
+  FaExclamationTriangle,
+  FaSync,
+  FaSearch,
+  FaEllipsisV,
+  FaClock,
 } from "react-icons/fa";
 import fosterService, {
   type FosterProfileUpdatePayload,
@@ -58,6 +66,160 @@ const inputStyle: React.CSSProperties = {
 
 const unwrapList = (v: any) =>
   Array.isArray(v) ? v : Array.isArray(v?.data) ? v.data : Array.isArray(v?.items) ? v.items : [];
+
+const getDurationInCare = (placedAt?: string | null): string | null => {
+  if (!placedAt) return null;
+  const start = new Date(placedAt).getTime();
+  if (isNaN(start)) return null;
+  const now = Date.now();
+  const diffMs = now - start;
+  if (diffMs < 0) return "Placed recently";
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (days === 0) return "Placed today";
+  if (days === 1) return "1 day in foster care";
+  return `${days} days in foster care`;
+};
+
+const getPetPhoto = (dog?: any): string | null => {
+  if (!dog) return null;
+  if (typeof dog.photo_url === "string" && dog.photo_url.trim()) return dog.photo_url.trim();
+  if (Array.isArray(dog.image_urls) && dog.image_urls.length > 0 && typeof dog.image_urls[0] === "string" && dog.image_urls[0].trim()) {
+    return dog.image_urls[0].trim();
+  }
+  if (Array.isArray(dog.photo_gallery_urls) && dog.photo_gallery_urls.length > 0 && typeof dog.photo_gallery_urls[0] === "string" && dog.photo_gallery_urls[0].trim()) {
+    return dog.photo_gallery_urls[0].trim();
+  }
+  return null;
+};
+
+const extractBackendErrorMessage = (err: any, fallbackMessage: string): string => {
+  if (!err) return fallbackMessage;
+  const resData = err?.response?.data;
+  if (resData) {
+    if (typeof resData.detail === "string" && resData.detail.trim()) {
+      return resData.detail.trim();
+    }
+    if (Array.isArray(resData.detail) && resData.detail.length > 0) {
+      return resData.detail
+        .map((d: any) => (typeof d === "string" ? d : d?.msg || d?.message || JSON.stringify(d)))
+        .join("; ");
+    }
+    if (typeof resData.message === "string" && resData.message.trim()) {
+      return resData.message.trim();
+    }
+    if (typeof resData.error === "string" && resData.error.trim()) {
+      return resData.error.trim();
+    }
+    if (typeof resData.error?.message === "string" && resData.error.message.trim()) {
+      return resData.error.message.trim();
+    }
+  }
+  if (typeof err.message === "string" && err.message.trim()) {
+    return err.message.trim();
+  }
+  return fallbackMessage;
+};
+
+interface PlacementActionItem {
+  label: string;
+  icon?: React.ReactNode;
+  onClick: () => void;
+  variant?: "normal" | "accent" | "danger";
+}
+
+const PlacementActionMenu: React.FC<{ actions: PlacementActionItem[] }> = ({ actions }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isOpen]);
+
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-block" }} onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          padding: "6px 12px",
+          borderRadius: "6px",
+          border: "1px solid #CBD5E1",
+          background: isOpen ? "#F1F5F9" : "#FFFFFF",
+          color: "#334155",
+          fontSize: "12px",
+          fontWeight: 700,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+        }}
+      >
+        <span>Actions</span> <FaEllipsisV size={11} />
+      </button>
+      {isOpen && (
+        <div
+          style={{
+            position: "absolute",
+            right: 0,
+            top: "100%",
+            marginTop: "4px",
+            background: "#FFFFFF",
+            border: "1px solid #E2E8F0",
+            borderRadius: "8px",
+            boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)",
+            padding: "4px 0",
+            minWidth: "185px",
+            zIndex: 100,
+          }}
+        >
+          {actions.map((act, idx) => {
+            const isDanger = act.variant === "danger";
+            const isAccent = act.variant === "accent";
+            return (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  act.onClick();
+                }}
+                style={{
+                  width: "100%",
+                  padding: "8px 14px",
+                  textAlign: "left",
+                  background: "none",
+                  border: "none",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  color: isDanger ? "#DC2626" : isAccent ? "#DB2777" : "#334155",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = isDanger ? "#FEF2F2" : isAccent ? "#FDF2F8" : "#F8FAFC";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "none";
+                }}
+              >
+                {act.icon && <span style={{ fontSize: "13px" }}>{act.icon}</span>}
+                {act.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const FosterManagement = () => {
   const isRescueCentreAdmin = getCurrentUserRole() === "rescue_centre_admin";
@@ -105,6 +267,9 @@ const FosterManagement = () => {
   const [isSupplyModalOpen, setIsSupplyModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
+  const [selectedPlacementForConvert, setSelectedPlacementForConvert] = useState<any | null>(null);
+  const [convertNotes, setConvertNotes] = useState("");
   const [selectedFoster, setSelectedFoster] = useState<FosterProfileRow | null>(null);
 
   // Application Review Modal State
@@ -262,14 +427,26 @@ const FosterManagement = () => {
   const [returnNotes, setReturnNotes] = useState("");
 
   const [progressForm, setProgressForm] = useState<FosterProgressLogPayload>({
-    weight_kg: 15.0,
-    behavior_notes: "Settled well, friendly with family",
-    feeding_notes: "Normal appetite, ate full portion",
-    medication_notes: "None",
-    exercise_minutes: 30,
+    weight_kg: undefined,
+    behavior_notes: "",
+    feeding_notes: "",
+    medication_notes: "",
     mood_rating: 5,
-    notes: "Doing great overall.",
+    notes: "",
   });
+
+  const openLogProgressModal = (placement: any) => {
+    setSelectedPlacement(placement);
+    setProgressForm({
+      weight_kg: undefined,
+      behavior_notes: "",
+      feeding_notes: "",
+      medication_notes: "",
+      mood_rating: 5,
+      notes: "",
+    });
+    setIsProgressModalOpen(true);
+  };
 
   const [supplyForm, setSupplyForm] = useState<FosterSupplyDispatchPayload>({
     item_type: "food",
@@ -319,13 +496,67 @@ const FosterManagement = () => {
     }
   }, []);
 
+  const [dogsMap, setDogsMap] = useState<Map<string, any>>(new Map());
   const [activePlacements, setActivePlacements] = useState<any[]>([]);
+  const [placementsLoading, setPlacementsLoading] = useState(false);
+  const [placementsError, setPlacementsError] = useState<string | null>(null);
+  const [placementSearchQuery, setPlacementSearchQuery] = useState("");
+
+  const [isPlacementDetailModalOpen, setIsPlacementDetailModalOpen] = useState(false);
+  const [selectedPlacementDetail, setSelectedPlacementDetail] = useState<any | null>(null);
+  const [placementProgressLogs, setPlacementProgressLogs] = useState<any[]>([]);
+  const [placementSuppliesList, setPlacementSuppliesList] = useState<any[]>([]);
+  const [placementDetailLoading, setPlacementDetailLoading] = useState(false);
+
+  const openPlacementDetailModal = async (placement: any) => {
+    setSelectedPlacementDetail(placement);
+    setIsPlacementDetailModalOpen(true);
+    setPlacementDetailLoading(true);
+    setPlacementProgressLogs([]);
+    setPlacementSuppliesList([]);
+
+    try {
+      const placementId = String(placement.id || "");
+      const [logsRes, suppRes] = await Promise.allSettled([
+        fosterService.getProgressLogs(placementId),
+        fosterService.getSupplyDispatches(placementId),
+      ]);
+
+      if (logsRes.status === "fulfilled" && logsRes.value) {
+        setPlacementProgressLogs(unwrapList(logsRes.value));
+      }
+      if (suppRes.status === "fulfilled" && suppRes.value) {
+        setPlacementSuppliesList(unwrapList(suppRes.value));
+      }
+
+      const dogId = String(placement.dog_id || placement.dog?.id || "");
+      if (dogId && !placement.dog && !dogsMap.has(dogId)) {
+        try {
+          const dogData = await petService.getPetById(dogId);
+          if (dogData) {
+            setDogsMap((prev) => new Map(prev).set(dogId, dogData));
+          }
+        } catch {
+          /* ignore single dog fetch failure */
+        }
+      }
+    } catch {
+      /* ignore modal details fetch failure */
+    } finally {
+      setPlacementDetailLoading(false);
+    }
+  };
 
   const fetchPlacements = useCallback(async (fosterProfiles: FosterProfileRow[]) => {
     try {
-      const activeProfiles = fosterProfiles.filter((f) => Number(f.active_count || 0) > 0);
+      setPlacementsLoading(true);
+      setPlacementsError(null);
+      const activeProfiles = fosterProfiles.filter(
+        (f) => f.status === "approved" || Number(f.active_count || 0) > 0
+      );
       if (activeProfiles.length === 0) {
         setActivePlacements([]);
+        setPlacementsLoading(false);
         return;
       }
       const results = await Promise.allSettled(
@@ -338,32 +569,73 @@ const FosterManagement = () => {
           const f = activeProfiles[idx];
           list.forEach((p: any) => {
             if (p.is_active || p.status === "active" || (!p.returned_at && p.status !== "converted_to_adopt")) {
-              allPlacements.push({ ...p, foster_family: f.foster_family, profile_id: f.id });
+              allPlacements.push({
+                ...p,
+                foster_family: f.foster_family,
+                profile_id: f.id,
+                caregiver_email: f.user?.email || f.raw?.user?.email || "",
+                caregiver_phone: f.user?.phone || f.raw?.user?.phone || "",
+                caregiver_raw: f.raw,
+              });
             }
           });
         }
       });
       setActivePlacements(allPlacements);
-    } catch {
+    } catch (err: any) {
+      setPlacementsError(
+        err?.response?.data?.detail || err?.response?.data?.message || "Failed to load active foster placements."
+      );
       setActivePlacements([]);
+    } finally {
+      setPlacementsLoading(false);
     }
   }, []);
 
   const fetchDogs = useCallback(async () => {
     try {
-      const dogsRes = await petService.getPets();
+      const dogsRes = await petService.getPets({ page_size: 100 });
       const list = unwrapList(dogsRes);
-      setDogs(
-        list.map((d: any) => ({
-          id: d.id || d.dog_id || "",
+      const map = new Map<string, any>();
+      const dogOptions: any[] = [];
+      list.forEach((d: any) => {
+        const id = String(d.id || d.dog_id || "");
+        if (id) map.set(id, d);
+        dogOptions.push({
+          ...d,
+          id,
           name: d.name || "Dog",
-          label: `${d.name || "Dog"} (${d.registration_number || String(d.id || "").slice(0, 8)})`,
-        }))
-      );
+          label: `${d.name || "Dog"} (${d.registration_number || id.slice(0, 8)})`,
+        });
+      });
+      setDogsMap(map);
+      setDogs(dogOptions);
     } catch {
       setDogs([]);
     }
   }, []);
+
+  const filteredPlacements = useMemo(() => {
+    if (!placementSearchQuery.trim()) return activePlacements;
+    const q = placementSearchQuery.toLowerCase();
+    return activePlacements.filter((p) => {
+      const dogId = String(p.dog_id || p.dog?.id || "");
+      const dogObj = p.dog || dogsMap.get(dogId);
+      const dogName = String(dogObj?.name || "").toLowerCase();
+      const breed = String(dogObj?.breed || "").toLowerCase();
+      const family = String(p.foster_family || "").toLowerCase();
+      const notes = String(p.notes || "").toLowerCase();
+      const pId = String(p.id || "").toLowerCase();
+      return (
+        dogName.includes(q) ||
+        breed.includes(q) ||
+        dogId.toLowerCase().includes(q) ||
+        family.includes(q) ||
+        notes.includes(q) ||
+        pId.includes(q)
+      );
+    });
+  }, [activePlacements, placementSearchQuery, dogsMap]);
 
   useEffect(() => {
     fetchFosters();
@@ -526,15 +798,47 @@ const FosterManagement = () => {
   const handleProgressSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPlacement?.id) return;
+
+    const payload: FosterProgressLogPayload = {};
+    if (progressForm.weight_kg !== undefined && progressForm.weight_kg !== null && !isNaN(Number(progressForm.weight_kg))) {
+      payload.weight_kg = Number(progressForm.weight_kg);
+    }
+    if (progressForm.mood_rating !== undefined && progressForm.mood_rating !== null) {
+      payload.mood_rating = Number(progressForm.mood_rating);
+    }
+    if (progressForm.behavior_notes?.trim()) {
+      payload.behavior_notes = progressForm.behavior_notes.trim();
+    }
+    if (progressForm.feeding_notes?.trim()) {
+      payload.feeding_notes = progressForm.feeding_notes.trim();
+    }
+    if (progressForm.medication_notes?.trim()) {
+      payload.medication_notes = progressForm.medication_notes.trim();
+    }
+    if (progressForm.notes?.trim()) {
+      payload.notes = progressForm.notes.trim();
+    }
+
     try {
       setIsSubmitting(true);
-      await fosterService.logProgress(selectedPlacement.id, progressForm);
+      const placementId = String(selectedPlacement.id || selectedPlacement.placement_id || "");
+      await fosterService.logProgress(placementId, payload);
       addToast("Logged foster progress report!", "success");
       setIsProgressModalOpen(false);
+
+      if (isPlacementDetailModalOpen && selectedPlacementDetail && String(selectedPlacementDetail.id) === placementId) {
+        try {
+          const logsRes = await fosterService.getProgressLogs(placementId);
+          setPlacementProgressLogs(unwrapList(logsRes));
+        } catch {
+          /* ignore refresh log failure */
+        }
+      }
+
       fetchFosters();
       notifyDataChanged();
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || err?.response?.data?.message || "Failed to log progress.";
+      const msg = extractBackendErrorMessage(err, "Failed to log progress.");
       addToast(msg, "error");
     } finally {
       setIsSubmitting(false);
@@ -559,10 +863,35 @@ const FosterManagement = () => {
     }
   };
 
-  const handleConvertToAdopt = async (placementId: string, dogId?: string) => {
+  const handleOpenConvertModal = (placement: any) => {
+    setSelectedPlacementForConvert(placement);
+    setConvertNotes(
+      placement?.notes
+        ? `Converted from active foster stay (${placement.notes})`
+        : "Finalized foster stay and converted to permanent adoption."
+    );
+    setIsConvertModalOpen(true);
+  };
+
+  const handleConfirmConvertToAdopt = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!selectedPlacementForConvert) return;
+
+    const placementId = String(
+      selectedPlacementForConvert.id || selectedPlacementForConvert.placement_id || ""
+    );
+    const dogId = String(
+      selectedPlacementForConvert.dog_id || selectedPlacementForConvert.dog?.id || ""
+    );
+
+    if (!placementId) {
+      addToast("Invalid placement ID for adoption conversion.", "error");
+      return;
+    }
+
     try {
       setIsSubmitting(true);
-      await fosterService.convertToAdopt(placementId);
+      await fosterService.convertToAdopt(placementId, convertNotes);
       if (dogId) {
         await petService.updatePet(dogId, {
           status: "adopted",
@@ -570,12 +899,17 @@ const FosterManagement = () => {
           is_adoptable: false,
         }).catch(() => null);
       }
-      addToast("Placement converted into permanent adoption & Dog Master updated!", "success");
+      addToast("Foster placement successfully converted into permanent adoption!", "success");
+      setIsConvertModalOpen(false);
+      setIsPlacementDetailModalOpen(false);
+      setSelectedPlacementForConvert(null);
+      setConvertNotes("");
       fetchFosters();
+      fetchDogs();
       notifyDataChanged();
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || err?.response?.data?.message || "Failed to convert to adoption.";
-      addToast(msg, "error");
+      const errMsg = extractBackendErrorMessage(err, "Failed to convert foster placement to adoption.");
+      addToast(errMsg, "error");
     } finally {
       setIsSubmitting(false);
     }
@@ -892,71 +1226,272 @@ const FosterManagement = () => {
           />
         </div>
       ) : (
-        <div className="soft-card" style={{ padding: "20px" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
-            Active Foster Placements
-          </h3>
-          {activePlacements.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748B" }}>
-              <FaDog size={36} color="#CBD5E1" style={{ marginBottom: "12px" }} />
-              <div>No active animal foster placements logged in the backend.</div>
+        <div className="soft-card" style={{ padding: "24px" }}>
+          {/* Header & Controls Bar */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "14px" }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 800, color: "#0F172A" }}>
+                Active Foster Placements
+              </h3>
+              <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#64748B" }}>
+                Operational roster of animals currently residing with approved foster families.
+              </p>
+            </div>
+
+            <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+              {/* Placement Search */}
+              <div style={{ position: "relative", minWidth: "240px" }}>
+                <FaSearch style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#94A3B8", fontSize: "13px" }} />
+                <input
+                  type="text"
+                  placeholder="Search pet, breed, caregiver..."
+                  value={placementSearchQuery}
+                  onChange={(e) => setPlacementSearchQuery(e.target.value)}
+                  style={{ ...inputStyle, paddingLeft: "34px", fontSize: "13px", width: "100%" }}
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => fetchFosters()}
+                title="Refresh Active Placements"
+                style={{
+                  padding: "9px 14px",
+                  borderRadius: "8px",
+                  border: "1px solid #CBD5E1",
+                  background: "#FFF",
+                  color: "#475569",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <FaSync className={placementsLoading ? "animate-spin" : ""} /> Refresh
+              </button>
+            </div>
+          </div>
+
+          {/* Loading State */}
+          {placementsLoading ? (
+            <div style={{ textAlign: "center", padding: "48px 20px", color: "#64748B", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+              <FaSync className="animate-spin" size={28} color="#2563EB" style={{ marginBottom: "12px" }} />
+              <div style={{ fontWeight: 700, fontSize: "15px", color: "#1E293B" }}>Loading active foster placements...</div>
+              <div style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>Retrieving active caregiver placement records</div>
+            </div>
+          ) : placementsError ? (
+            /* Explicit Error State with Retry */
+            <div style={{ padding: "20px", borderRadius: "12px", backgroundColor: "#FEF2F2", border: "1px solid #FCA5A5", color: "#991B1B" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", fontWeight: 700, fontSize: "15px" }}>
+                <FaExclamationTriangle size={18} color="#DC2626" />
+                Failed to load active placements
+              </div>
+              <p style={{ margin: "6px 0 14px", fontSize: "13px", color: "#7F1D1D" }}>{placementsError}</p>
+              <button
+                type="button"
+                onClick={() => fetchFosters()}
+                style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: "#DC2626", color: "#FFF", fontWeight: 700, fontSize: "12px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+              >
+                <FaSync /> Retry Loading
+              </button>
+            </div>
+          ) : filteredPlacements.length === 0 ? (
+            /* Clean Empty State */
+            <div style={{ textAlign: "center", padding: "48px 20px", background: "#F8FAFC", borderRadius: "12px", border: "1px dashed #CBD5E1", color: "#64748B" }}>
+              <FaDog size={40} color="#CBD5E1" style={{ marginBottom: "12px" }} />
+              <div style={{ fontWeight: 700, fontSize: "16px", color: "#0F172A" }}>
+                {placementSearchQuery ? "No matching active placements found" : "No active foster placements."}
+              </div>
+              <div style={{ fontSize: "13px", color: "#64748B", marginTop: "4px", maxWidth: "460px", margin: "4px auto 0" }}>
+                {placementSearchQuery ? "Try searching with a different pet name, breed, or caregiver." : "There are currently no animals placed in temporary foster homes."}
+              </div>
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              {activePlacements.map((p, idx) => (
-                <div key={p.id || idx} style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
-                  <div>
-                    <div style={{ fontWeight: 800, fontSize: "16px", color: "#0F172A" }}>
-                      Dog ID: {String(p.dog_id || p.dog?.id || "-")} &bull; Family: {p.foster_family}
+            /* Operational Card Roster Grid */
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: "16px" }}>
+              {filteredPlacements.map((p, idx) => {
+                const dogId = String(p.dog_id || p.dog?.id || "");
+                const dogObj = p.dog || dogsMap.get(dogId);
+                const dogName = dogObj?.name || (dogId ? `Pet #${dogId.slice(0, 8)}` : "Animal Placement");
+                const breed = dogObj?.breed || dogObj?.breed_classification || null;
+                const photoUrl = getPetPhoto(dogObj);
+                const placedAt = p.placed_at || p.start_date || p.created_at;
+                const durationStr = getDurationInCare(placedAt);
+                const expectedReturn = p.expected_return_date || p.expected_return || p.end_date;
+
+                return (
+                  <div
+                    key={p.id || idx}
+                    style={{
+                      background: "#FFFFFF",
+                      border: "1px solid #E2E8F0",
+                      borderRadius: "12px",
+                      padding: "18px",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                    }}
+                  >
+                    {/* Pet Information Header */}
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "12px" }}>
+                        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                          {photoUrl ? (
+                            <img
+                              src={photoUrl}
+                              alt={dogName}
+                              style={{ width: "48px", height: "48px", borderRadius: "10px", objectFit: "cover", border: "1px solid #E2E8F0" }}
+                            />
+                          ) : (
+                            <div style={{ width: "48px", height: "48px", borderRadius: "10px", background: "#EFF6FF", color: "#2563EB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px" }}>
+                              <FaDog />
+                            </div>
+                          )}
+                          <div>
+                            <h4 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#0F172A" }}>{dogName}</h4>
+                            <div style={{ fontSize: "12px", color: "#475569", marginTop: "2px" }}>
+                              {breed ? `${breed} • ` : ""}
+                              <span style={{ fontFamily: "monospace", fontSize: "11px", color: "#64748B" }}>Ref: {dogId ? dogId.slice(0, 8) : "-"}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <span
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: "999px",
+                            fontSize: "11px",
+                            fontWeight: 800,
+                            textTransform: "uppercase",
+                            background: "#ECFDF5",
+                            color: "#047857",
+                            border: "1px solid #A7F3D0",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {p.status || "Active Placement"}
+                        </span>
+                      </div>
+
+                      {/* Divider */}
+                      <div style={{ borderBottom: "1px solid #F1F5F9", marginBottom: "12px" }} />
+
+                      {/* Caregiver & Placement Metadata */}
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "13px", color: "#334155", marginBottom: "14px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <FaHome color="#2563EB" size={14} />
+                          <span>Foster Family: <strong>{p.foster_family}</strong></span>
+                        </div>
+                        {p.caregiver_email && (
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#64748B", paddingLeft: "22px" }}>
+                            <FaEnvelope size={11} /> <span>{p.caregiver_email}</span>
+                          </div>
+                        )}
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <FaCalendarAlt color="#6366F1" size={14} />
+                          <span>
+                            Placed Date: <strong>{placedAt ? formatDateTime(placedAt) : "N/A"}</strong>
+                            {durationStr && <span style={{ color: "#2563EB", fontWeight: 700, marginLeft: "6px" }}>({durationStr})</span>}
+                          </span>
+                        </div>
+                        {expectedReturn && (
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#B45309" }}>
+                            <FaClock size={14} />
+                            <span>Expected Return: <strong>{formatDateTime(expectedReturn)}</strong></span>
+                          </div>
+                        )}
+                        {p.notes && (
+                          <div style={{ fontSize: "12px", color: "#475569", background: "#F8FAFC", padding: "8px 10px", borderRadius: "6px", border: "1px solid #E2E8F0", marginTop: "4px" }}>
+                            <strong>Placement Notes:</strong> {p.notes}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div style={{ fontSize: "12px", color: "#64748B", marginTop: "4px" }}>
-                      Placed At: {p.placed_at ? formatDateTime(p.placed_at) : "N/A"} &bull; Placement ID: <span style={{ fontFamily: "monospace" }}>{String(p.id).slice(0, 8)}</span>
+
+                    {/* Action Bar Footer */}
+                    <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <button
+                          type="button"
+                          onClick={() => openLogProgressModal(p)}
+                          style={{
+                            padding: "7px 14px",
+                            borderRadius: "6px",
+                            border: "none",
+                            background: "#2563EB",
+                            color: "#FFF",
+                            fontWeight: 700,
+                            fontSize: "12px",
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            boxShadow: "0 1px 2px rgba(37,99,235,0.2)",
+                          }}
+                        >
+                          <FaClipboardList /> Log Progress
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openPlacementDetailModal(p)}
+                          style={{
+                            padding: "7px 12px",
+                            borderRadius: "6px",
+                            border: "1px solid #CBD5E1",
+                            background: "#F8FAFC",
+                            color: "#334155",
+                            fontWeight: 700,
+                            fontSize: "12px",
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          <FaInfoCircle /> Details
+                        </button>
+                      </div>
+
+                      {/* Dropdown Action Menu */}
+                      <PlacementActionMenu
+                        actions={[
+                          {
+                            label: "Log Supply Dispatch",
+                            icon: <FaBoxOpen />,
+                            onClick: () => {
+                              setSelectedPlacement(p);
+                              setIsSupplyModalOpen(true);
+                            },
+                          },
+                          {
+                            label: "Request Vet Check",
+                            icon: <FaStethoscope />,
+                            onClick: () => void handleRequestMedical(dogId),
+                          },
+                          {
+                            label: "Convert to Adopt",
+                            icon: <FaHeart />,
+                            variant: "accent",
+                            onClick: () => handleOpenConvertModal(p),
+                          },
+                          {
+                            label: "Return to Shelter",
+                            icon: <FaUndo />,
+                            variant: "danger",
+                            onClick: () => {
+                              setSelectedPlacement(p);
+                              setIsReturnModalOpen(true);
+                            },
+                          },
+                        ]}
+                      />
                     </div>
-                    {p.notes && <div style={{ fontSize: "13px", color: "#334155", marginTop: "6px" }}>Notes: {p.notes}</div>}
                   </div>
-                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                    <button
-                      onClick={() => {
-                        setSelectedPlacement(p);
-                        setIsProgressModalOpen(true);
-                      }}
-                      style={{ padding: "8px 14px", borderRadius: "6px", border: "1px solid #93C5FD", background: "#EFF6FF", color: "#1D4ED8", fontWeight: 600, fontSize: "12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
-                    >
-                      <FaClipboardList /> Log Progress
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedPlacement(p);
-                        setIsSupplyModalOpen(true);
-                      }}
-                      style={{ padding: "8px 14px", borderRadius: "6px", border: "1px solid #C084FC", background: "#F3E8FF", color: "#7E22CE", fontWeight: 600, fontSize: "12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
-                    >
-                      <FaBoxOpen /> Log Supply
-                    </button>
-                    <button
-                      onClick={() => void handleRequestMedical(String(p.dog_id || p.dog?.id || ""))}
-                      style={{ padding: "8px 14px", borderRadius: "6px", border: "1px solid #6EE7B7", background: "#ECFDF5", color: "#047857", fontWeight: 600, fontSize: "12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
-                    >
-                      <FaStethoscope /> Request Vet Check
-                    </button>
-                    <button
-                      onClick={() => void handleConvertToAdopt(p.id, String(p.dog_id || p.dog?.id || ""))}
-                      style={{ padding: "8px 14px", borderRadius: "6px", border: "1px solid #F472B6", background: "#FDF2F8", color: "#DB2777", fontWeight: 600, fontSize: "12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
-                    >
-                      <FaHeart /> Convert to Adopt
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedPlacement(p);
-                        setIsReturnModalOpen(true);
-                      }}
-                      style={{ padding: "8px 14px", borderRadius: "6px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", fontWeight: 600, fontSize: "12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
-                    >
-                      <FaUndo /> Return to Shelter
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1086,31 +1621,116 @@ const FosterManagement = () => {
       </Modal>
 
       {/* Progress Log Modal */}
-      <Modal isOpen={isProgressModalOpen} onClose={() => setIsProgressModalOpen(false)} title="Log Foster Progress Report">
-        <form onSubmit={handleProgressSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            <div>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Weight (kg)</label>
-              <input type="number" step="0.1" value={progressForm.weight_kg || 15} onChange={(e) => setProgressForm({ ...progressForm, weight_kg: Number(e.target.value) })} style={inputStyle} />
-            </div>
-            <div>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Mood Rating (1-5)</label>
-              <input type="number" min="1" max="5" value={progressForm.mood_rating || 5} onChange={(e) => setProgressForm({ ...progressForm, mood_rating: Number(e.target.value) })} style={inputStyle} />
-            </div>
-          </div>
-          <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Behavior Notes</label>
-            <input type="text" placeholder="e.g. Playful and settled well, no anxiety signs." value={progressForm.behavior_notes || ""} onChange={(e) => setProgressForm({ ...progressForm, behavior_notes: e.target.value })} style={inputStyle} />
-          </div>
-          <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Feeding &amp; Medication Notes</label>
-            <input type="text" placeholder="e.g. Ate full portion, gave morning antibiotic" value={progressForm.feeding_notes || ""} onChange={(e) => setProgressForm({ ...progressForm, feeding_notes: e.target.value })} style={inputStyle} />
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>
-            <button type="button" onClick={() => setIsProgressModalOpen(false)} style={{ padding: "10px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}>Cancel</button>
-            <button type="submit" disabled={isSubmitting} style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 600 }}>{isSubmitting ? "Logging..." : "Log Progress"}</button>
-          </div>
-        </form>
+      <Modal isOpen={isProgressModalOpen} onClose={() => setIsProgressModalOpen(false)} title="Log Foster Progress Report" maxWidth="600px">
+        {selectedPlacement && (() => {
+          const dogId = String(selectedPlacement.dog_id || selectedPlacement.dog?.id || "");
+          const dogObj = selectedPlacement.dog || dogsMap.get(dogId);
+          const dogName = dogObj?.name || (dogId ? `Pet #${dogId.slice(0, 8)}` : "Animal Placement");
+          const breed = dogObj?.breed || dogObj?.breed_classification || null;
+          const placementId = String(selectedPlacement.id || selectedPlacement.placement_id || "");
+
+          return (
+            <form onSubmit={handleProgressSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              {/* Context Summary Header */}
+              <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "10px", padding: "14px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "12px" }}>
+                <div><strong>Pet Name:</strong> {dogName} {breed ? `(${breed})` : ""}</div>
+                <div><strong>Foster Family:</strong> {selectedPlacement.foster_family || "Caregiver"}</div>
+                <div><strong>Placement Ref:</strong> <span style={{ fontFamily: "monospace" }}>{placementId.slice(0, 8)}</span></div>
+                <div><strong>Context:</strong> <span style={{ color: "#1D4ED8", fontWeight: 700 }}>Active Care &amp; Monitoring</span></div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Weight (kg)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    placeholder="e.g. 15.5"
+                    value={progressForm.weight_kg ?? ""}
+                    onChange={(e) => setProgressForm({ ...progressForm, weight_kg: e.target.value ? Number(e.target.value) : undefined })}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Mood Rating (1-5)</label>
+                  <select
+                    value={progressForm.mood_rating ?? 5}
+                    onChange={(e) => setProgressForm({ ...progressForm, mood_rating: Number(e.target.value) })}
+                    style={inputStyle}
+                  >
+                    <option value={5}>5 - Excellent / Energetic &amp; Happy</option>
+                    <option value={4}>4 - Good / Calm &amp; Contented</option>
+                    <option value={3}>3 - Fair / Normal Activity</option>
+                    <option value={2}>2 - Guarded / Mild Anxiety or Stress</option>
+                    <option value={1}>1 - Poor / Lethargic or Unwell</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Behavior Notes</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Playful and settled well, responsive to family interactions."
+                  value={progressForm.behavior_notes || ""}
+                  onChange={(e) => setProgressForm({ ...progressForm, behavior_notes: e.target.value })}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Feeding Notes</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Ate full meal portion, good appetite."
+                    value={progressForm.feeding_notes || ""}
+                    onChange={(e) => setProgressForm({ ...progressForm, feeding_notes: e.target.value })}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Medication Notes</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Administered daily supplement / antibiotics."
+                    value={progressForm.medication_notes || ""}
+                    onChange={(e) => setProgressForm({ ...progressForm, medication_notes: e.target.value })}
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Care &amp; Progress Summary Notes</label>
+                <textarea
+                  placeholder="e.g. Overall health observations, care routine updates, or comments."
+                  value={progressForm.notes || ""}
+                  onChange={(e) => setProgressForm({ ...progressForm, notes: e.target.value })}
+                  style={{ ...inputStyle, minHeight: "70px" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  onClick={() => setIsProgressModalOpen(false)}
+                  style={{ padding: "10px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9", color: "#334155", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  style={{ padding: "10px 20px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                >
+                  <FaClipboardList /> {isSubmitting ? "Logging..." : "Submit Progress Log"}
+                </button>
+              </div>
+            </form>
+          );
+        })()}
       </Modal>
 
       {/* Log Supply Dispatch Modal */}
@@ -1564,6 +2184,296 @@ const FosterManagement = () => {
             )}
           </div>
         )}
+      </Modal>
+
+      {/* Detailed Active Placement Modal */}
+      <Modal
+        isOpen={isPlacementDetailModalOpen}
+        onClose={() => setIsPlacementDetailModalOpen(false)}
+        title="Active Foster Placement Details"
+        maxWidth="750px"
+      >
+        {selectedPlacementDetail && (() => {
+          const p = selectedPlacementDetail;
+          const dogId = String(p.dog_id || p.dog?.id || "");
+          const dogObj = p.dog || dogsMap.get(dogId);
+          const dogName = dogObj?.name || (dogId ? `Pet #${dogId.slice(0, 8)}` : "Animal Placement");
+          const breed = dogObj?.breed || dogObj?.breed_classification || null;
+          const photoUrl = getPetPhoto(dogObj);
+          const placedAt = p.placed_at || p.start_date || p.created_at;
+          const durationStr = getDurationInCare(placedAt);
+          const expectedReturn = p.expected_return_date || p.expected_return || p.end_date;
+
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+              {/* Pet & Placement Header Card */}
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "18px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: "14px", alignItems: "center" }}>
+                  {photoUrl ? (
+                    <img src={photoUrl} alt={dogName} style={{ width: "64px", height: "64px", borderRadius: "12px", objectFit: "cover", border: "1px solid #CBD5E1" }} />
+                  ) : (
+                    <div style={{ width: "64px", height: "64px", borderRadius: "12px", background: "#EFF6FF", color: "#2563EB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "28px" }}>
+                      <FaDog />
+                    </div>
+                  )}
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 800, color: "#0F172A" }}>{dogName}</h2>
+                    <div style={{ fontSize: "13px", color: "#475569", marginTop: "2px" }}>
+                      {breed ? `${breed} • ` : ""}
+                      {dogObj?.gender ? `${dogObj.gender} • ` : ""}
+                      <span style={{ fontFamily: "monospace", fontWeight: 700, color: "#64748B" }}>Pet ID: {dogId || "N/A"}</span>
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>
+                      Placement Ref ID: <span style={{ fontFamily: "monospace" }}>{p.id}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <span style={{ padding: "6px 14px", borderRadius: "999px", fontSize: "12px", fontWeight: 800, textTransform: "uppercase", background: "#ECFDF5", color: "#047857", border: "1px solid #A7F3D0" }}>
+                  {p.status || "Active Placement"}
+                </span>
+              </div>
+
+              {/* Grid Section: Caregiver Info & Placement Timeline */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+                {/* Caregiver Card */}
+                <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "16px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 800, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <FaHome color="#2563EB" /> Foster Caregiver Information
+                  </div>
+                  <div style={{ fontSize: "15px", fontWeight: 800, color: "#0F172A" }}>{p.foster_family}</div>
+                  {p.caregiver_email && (
+                    <div style={{ fontSize: "13px", color: "#475569", marginTop: "4px" }}>
+                      Email: <strong>{p.caregiver_email}</strong>
+                    </div>
+                  )}
+                  {p.caregiver_phone && (
+                    <div style={{ fontSize: "13px", color: "#475569", marginTop: "2px" }}>
+                      Phone: <strong>{p.caregiver_phone}</strong>
+                    </div>
+                  )}
+                  <div style={{ fontSize: "12px", color: "#64748B", marginTop: "6px" }}>
+                    Profile ID: <span style={{ fontFamily: "monospace" }}>{p.profile_id}</span>
+                  </div>
+                </div>
+
+                {/* Placement Timeline Card */}
+                <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "16px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 800, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <FaCalendarAlt color="#6366F1" /> Placement Timeline
+                  </div>
+                  <div style={{ fontSize: "13px", color: "#334155" }}>
+                    Placed On: <strong>{placedAt ? formatDateTime(placedAt) : "N/A"}</strong>
+                  </div>
+                  {durationStr && (
+                    <div style={{ fontSize: "13px", color: "#2563EB", fontWeight: 700, marginTop: "4px" }}>
+                      Care Duration: {durationStr}
+                    </div>
+                  )}
+                  {expectedReturn && (
+                    <div style={{ fontSize: "13px", color: "#B45309", fontWeight: 600, marginTop: "4px" }}>
+                      Expected Return: <strong>{formatDateTime(expectedReturn)}</strong>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Notes */}
+              {p.notes && (
+                <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "14px" }}>
+                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Placement Agreement Notes</div>
+                  <div style={{ fontSize: "13px", color: "#1E293B", whiteSpace: "pre-line" }}>{p.notes}</div>
+                </div>
+              )}
+
+              {/* Care & Monitoring Progress Logs */}
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "16px" }}>
+                <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A", marginBottom: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <FaClipboardList color="#2563EB" /> Care &amp; Monitoring Progress History
+                </div>
+                {placementDetailLoading ? (
+                  <div style={{ fontSize: "13px", color: "#64748B", textAlign: "center", padding: "12px" }}>Loading care logs...</div>
+                ) : placementProgressLogs.length === 0 ? (
+                  <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "14px", textAlign: "center", color: "#64748B", fontSize: "13px" }}>
+                    No progress reports yet.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "200px", overflowY: "auto" }}>
+                    {placementProgressLogs.map((log: any, idx: number) => (
+                      <div key={idx} style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px", fontSize: "13px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#64748B", fontSize: "11px", fontWeight: 700, marginBottom: "4px" }}>
+                          <span>LOG #{idx + 1}</span>
+                          <span>{log.created_at ? formatDateTime(log.created_at) : ""}</span>
+                        </div>
+                        <div style={{ fontWeight: 700, color: "#0F172A" }}>
+                          Weight: {log.weight_kg ? `${log.weight_kg} kg` : "N/A"} • Mood Rating: {log.mood_rating || "N/A"}/5
+                        </div>
+                        {log.behavior_notes && <div style={{ color: "#334155", marginTop: "2px" }}><strong>Behavior:</strong> {log.behavior_notes}</div>}
+                        {log.feeding_notes && <div style={{ color: "#334155", marginTop: "2px" }}><strong>Feeding:</strong> {log.feeding_notes}</div>}
+                        {log.medication_notes && <div style={{ color: "#334155", marginTop: "2px" }}><strong>Medication:</strong> {log.medication_notes}</div>}
+                        {log.notes && <div style={{ color: "#334155", marginTop: "2px" }}><strong>Notes:</strong> {log.notes}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Supply Dispatches */}
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "16px" }}>
+                <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A", marginBottom: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <FaBoxOpen color="#7E22CE" /> Supply Dispatches Log
+                </div>
+                {placementDetailLoading ? (
+                  <div style={{ fontSize: "13px", color: "#64748B", textAlign: "center", padding: "12px" }}>Loading supply logs...</div>
+                ) : placementSuppliesList.length === 0 ? (
+                  <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "14px", textAlign: "center", color: "#64748B", fontSize: "13px" }}>
+                    No supply dispatches logged yet.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "180px", overflowY: "auto" }}>
+                    {placementSuppliesList.map((sup: any, idx: number) => (
+                      <div key={idx} style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "10px 12px", fontSize: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div>
+                          <strong style={{ color: "#7E22CE", textTransform: "capitalize" }}>{sup.item_type}</strong>: {sup.description || "N/A"}
+                        </div>
+                        <span style={{ fontWeight: 700, color: "#475569" }}>Qty: {sup.quantity || 1}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons Bar */}
+              <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPlacementDetailModalOpen(false);
+                      openLogProgressModal(p);
+                    }}
+                    style={{ padding: "8px 14px", borderRadius: "6px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 700, fontSize: "12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}
+                  >
+                    <FaClipboardList /> Log Progress
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPlacementDetailModalOpen(false);
+                      setSelectedPlacement(p);
+                      setIsSupplyModalOpen(true);
+                    }}
+                    style={{ padding: "8px 14px", borderRadius: "6px", border: "1px solid #C084FC", background: "#F3E8FF", color: "#7E22CE", fontWeight: 700, fontSize: "12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}
+                  >
+                    <FaBoxOpen /> Log Supply
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPlacementDetailModalOpen(false);
+                      void handleRequestMedical(dogId);
+                    }}
+                    style={{ padding: "8px 14px", borderRadius: "6px", border: "1px solid #6EE7B7", background: "#ECFDF5", color: "#047857", fontWeight: 700, fontSize: "12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}
+                  >
+                    <FaStethoscope /> Request Vet Check
+                  </button>
+                </div>
+
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPlacementDetailModalOpen(false);
+                      handleOpenConvertModal(p);
+                    }}
+                    style={{ padding: "8px 14px", borderRadius: "6px", border: "1px solid #F472B6", background: "#FDF2F8", color: "#DB2777", fontWeight: 700, fontSize: "12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}
+                  >
+                    <FaHeart /> Convert to Adopt
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPlacementDetailModalOpen(false);
+                      setSelectedPlacement(p);
+                      setIsReturnModalOpen(true);
+                    }}
+                    style={{ padding: "8px 14px", borderRadius: "6px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", fontWeight: 700, fontSize: "12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}
+                  >
+                    <FaUndo /> Return to Shelter
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* Convert to Permanent Adoption Confirmation Modal */}
+      <Modal
+        isOpen={isConvertModalOpen}
+        onClose={() => setIsConvertModalOpen(false)}
+        title="Convert Foster Placement to Adoption"
+        maxWidth="600px"
+      >
+        {selectedPlacementForConvert && (() => {
+          const p = selectedPlacementForConvert;
+          const dogId = String(p.dog_id || p.dog?.id || "");
+          const dogObj = p.dog || dogsMap.get(dogId);
+          const dogName = dogObj?.name || (dogId ? `Pet #${dogId.slice(0, 8)}` : "Animal");
+          const breed = dogObj?.breed || dogObj?.breed_classification || null;
+
+          return (
+            <form onSubmit={handleConfirmConvertToAdopt} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div style={{ background: "#FDF2F8", border: "1px solid #FBCFE8", borderRadius: "10px", padding: "16px", display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                <FaHeart size={24} color="#DB2777" style={{ marginTop: "2px", flexShrink: 0 }} />
+                <div>
+                  <h4 style={{ margin: "0 0 4px", fontSize: "15px", fontWeight: 800, color: "#831843" }}>
+                    Confirm Permanent Adoption Transition
+                  </h4>
+                  <p style={{ margin: 0, fontSize: "13px", color: "#9D174D", lineHeight: "1.5" }}>
+                    You are converting the active foster stay for <strong>{dogName}</strong> {breed ? `(${breed})` : ""} into a permanent adoption with caregiver family <strong>{p.foster_family}</strong>.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: "12px" }}>
+                <div><strong>Pet Name:</strong> {dogName}</div>
+                <div><strong>Caregiver Family:</strong> {p.foster_family}</div>
+                <div><strong>Placement Ref:</strong> <span style={{ fontFamily: "monospace" }}>{String(p.id || p.placement_id).slice(0, 8)}</span></div>
+                <div><strong>Target Pet Status:</strong> <span style={{ color: "#047857", fontWeight: 700 }}>ADOPTED</span></div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                  Adoption Agreement &amp; Conversion Notes
+                </label>
+                <textarea
+                  placeholder="Enter conversion notes or adoption agreement details..."
+                  value={convertNotes}
+                  onChange={(e) => setConvertNotes(e.target.value)}
+                  style={{ ...inputStyle, minHeight: "70px", fontSize: "13px" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  onClick={() => setIsConvertModalOpen(false)}
+                  style={{ padding: "10px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9", color: "#334155", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  style={{ padding: "10px 20px", borderRadius: "8px", border: "none", background: "#DB2777", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                >
+                  <FaHeart /> {isSubmitting ? "Converting..." : "Confirm Adoption Conversion"}
+                </button>
+              </div>
+            </form>
+          );
+        })()}
       </Modal>
     </div>
   );
