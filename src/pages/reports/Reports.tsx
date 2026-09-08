@@ -35,7 +35,6 @@ import {
   FaBoxes,
   FaPaw,
   FaHeart,
-  FaTruck,
   FaExclamationTriangle,
   FaSyringe,
   FaPills,
@@ -54,6 +53,7 @@ import donationsService, {
 import financeService from "../../services/financeService";
 import { rescueService } from "../../services/rescueService";
 import { inventoryService, normalizeInventoryRow } from "../../services/inventoryService";
+import { LocationMapPreview } from "../../components/common/LocationMapPreview";
 
 const numericValue = (val: unknown): number => {
   const n = Number(String(val ?? "").replace(/[^0-9.]/g, ""));
@@ -633,69 +633,174 @@ const Reports = () => {
     return { critical, high, medium, low, urgent, total: rescueCases.length };
   }, [rescueCases]);
 
-  // Derived Location-Wise Analysis (grouped by backend location_address)
-  const locationWiseRescueAnalysis = useMemo(() => {
-    if (!rescueCases || rescueCases.length === 0) return [];
-    const locMap = new Map<string, { total: number; dispatched: number; rescued: number; pending: number }>();
+  // ------------------- REP-001 METRIC CALCULATIONS -------------------
+
+  // 1. Response Time Metrics (Incident Reported -> On-Site Arrival)
+  const rescueResponseTimeMetrics = useMemo(() => {
+    let validCount = 0;
+    const durationsMins: number[] = [];
 
     rescueCases.forEach((c) => {
-      const loc = getLocationDisplay(c);
-      const current = locMap.get(loc) || { total: 0, dispatched: 0, rescued: 0, pending: 0 };
-      current.total += 1;
+      const reportedRaw = c.created_at || c.date || c.reported_at;
+      if (!reportedRaw) return;
+      const reportedTime = new Date(reportedRaw).getTime();
+      if (isNaN(reportedTime)) return;
 
-      const st = String(c.status || "").toLowerCase();
-      if (["rescued", "admitted", "completed", "resolved"].includes(st)) {
-        current.rescued += 1;
-      } else if (["dispatched", "en_route", "in_transit", "located", "arrived", "active"].includes(st)) {
-        current.dispatched += 1;
-      } else {
-        current.pending += 1;
+      const arrivalRaw =
+        c.dispatch?.arrived_at ||
+        c.arrived_at ||
+        c.on_site_at ||
+        c.dispatch?.located_at ||
+        c.located_at ||
+        c.dispatch?.dispatched_at;
+
+      if (!arrivalRaw) return;
+      const arrivalTime = new Date(arrivalRaw).getTime();
+      if (isNaN(arrivalTime) || arrivalTime < reportedTime) return;
+
+      const diffMins = Math.round((arrivalTime - reportedTime) / (1000 * 60));
+      if (diffMins >= 0 && diffMins <= 2880) {
+        durationsMins.push(diffMins);
+        validCount++;
       }
-
-      locMap.set(loc, current);
     });
 
-    return Array.from(locMap.entries())
-      .map(([locationName, metrics]) => ({ locationName, ...metrics }))
-      .sort((a, b) => b.total - a.total);
+    if (durationsMins.length === 0 && dispatches && dispatches.length > 0) {
+      dispatches.forEach((d) => {
+        const startRaw = d.created_at || d.dispatched_at;
+        const arrivalRaw = d.arrived_at || d.located_at || d.completed_at;
+        if (startRaw && arrivalRaw) {
+          const sTime = new Date(startRaw).getTime();
+          const aTime = new Date(arrivalRaw).getTime();
+          if (!isNaN(sTime) && !isNaN(aTime) && aTime >= sTime) {
+            const diff = Math.round((aTime - sTime) / (1000 * 60));
+            if (diff >= 0 && diff <= 2880) {
+              durationsMins.push(diff);
+              validCount++;
+            }
+          }
+        }
+      });
+    }
+
+    const totalIncidents = totalRescueCasesCount;
+    const avgMins = durationsMins.length > 0 ? Math.round(durationsMins.reduce((a, b) => a + b, 0) / durationsMins.length) : null;
+    const minMins = durationsMins.length > 0 ? Math.min(...durationsMins) : null;
+    const maxMins = durationsMins.length > 0 ? Math.max(...durationsMins) : null;
+
+    return {
+      totalIncidents,
+      validCount,
+      avgMins,
+      minMins,
+      maxMins,
+      avgDisplay: avgMins !== null ? `${avgMins} mins` : "Pending field arrival timestamps",
+      minDisplay: minMins !== null ? `${minMins} mins` : "-",
+      maxDisplay: maxMins !== null ? `${maxMins} mins` : "-",
+    };
+  }, [rescueCases, dispatches, totalRescueCasesCount]);
+
+  // 2. Successful Rescue Ratio Metrics
+  const successfulRescueRatioMetrics = useMemo(() => {
+    const total = totalRescueCasesCount;
+    let successfulCount = 0;
+    let pendingCount = 0;
+    let failedCount = 0;
+
+    rescueCases.forEach((c) => {
+      const st = String(c.status || "").toLowerCase();
+      if (["rescued", "admitted", "completed", "resolved"].includes(st) || c.dispatch?.rescued_at || c.dispatch?.admitted_at) {
+        successfulCount++;
+      } else if (["rejected", "cancelled", "failed"].includes(st) || c.rejection_rationale || c.dispatch?.failure_reason) {
+        failedCount++;
+      } else {
+        pendingCount++;
+      }
+    });
+
+    const ratioNum = total > 0 ? (successfulCount / total) * 100 : 0;
+    const ratioPct = ratioNum.toFixed(1) + "%";
+
+    return {
+      total,
+      successfulCount,
+      pendingCount,
+      failedCount,
+      ratioPct,
+      ratioNum,
+    };
+  }, [rescueCases, totalRescueCasesCount]);
+
+  // 3. Failure Reason Breakdown Metrics
+  const failureReasonBreakdown = useMemo(() => {
+    const reasonMap = new Map<string, number>();
+    let totalFailedCases = 0;
+
+    rescueCases.forEach((c) => {
+      const st = String(c.status || "").toLowerCase();
+      const isFailed = ["rejected", "cancelled", "failed"].includes(st) || Boolean(c.rejection_rationale) || Boolean(c.dispatch?.failure_reason);
+      
+      if (isFailed) {
+        totalFailedCases++;
+        const rawReason = c.rejection_rationale || c.dispatch?.failure_reason || c.failure_reason || c.notes || c.dispatch?.notes;
+        const cleanReason = rawReason && String(rawReason).trim() !== "" ? String(rawReason).trim() : "Reason not recorded";
+        reasonMap.set(cleanReason, (reasonMap.get(cleanReason) || 0) + 1);
+      }
+    });
+
+    const breakdownList = Array.from(reasonMap.entries()).map(([reason, count]) => ({
+      reason,
+      count,
+      pct: totalFailedCases > 0 ? ((count / totalFailedCases) * 100).toFixed(1) + "%" : "0.0%",
+    })).sort((a, b) => b.count - a.count);
+
+    return {
+      totalFailedCases,
+      breakdownList,
+    };
   }, [rescueCases]);
 
-  // Derived Dispatch Performance Metrics
-  const dispatchPerformanceMetrics = useMemo(() => {
-    const total = dispatches.length;
-    let active = 0;
-    let completed = 0;
-    let other = 0;
-    const durations: number[] = [];
+  // 4. Geographic Heatmap / Density Metrics
+  const geographicHeatmapMetrics = useMemo(() => {
+    const validCoordsList: { lat: number; lng: number; title: string; location: string; severity: string }[] = [];
+    const locationMap = new Map<string, number>();
 
-    dispatches.forEach((d) => {
-      const st = String(d.status || "").toLowerCase();
-      if (["completed", "rescued", "admitted", "resolved"].includes(st)) {
-        completed++;
-      } else if (["cancelled", "rejected", "failed"].includes(st)) {
-        other++;
-      } else {
-        active++;
-      }
+    rescueCases.forEach((c) => {
+      const lat = parseFloat(String(c.latitude ?? c.dispatch?.latitude ?? ""));
+      const lng = parseFloat(String(c.longitude ?? c.dispatch?.longitude ?? ""));
+      const locText = getLocationDisplay(c);
 
-      const start = d.dispatched_at || d.created_at;
-      const end = d.completed_at || d.arrived_at || d.updated_at;
-      if (start && end && ["completed", "rescued", "resolved"].includes(st)) {
-        const startTime = new Date(start).getTime();
-        const endTime = new Date(end).getTime();
-        if (!isNaN(startTime) && !isNaN(endTime) && endTime > startTime) {
-          const mins = Math.round((endTime - startTime) / (1000 * 60));
-          if (mins > 0 && mins < 1440) durations.push(mins);
-        }
+      locationMap.set(locText, (locationMap.get(locText) || 0) + 1);
+
+      if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 && (lat !== 0 || lng !== 0)) {
+        validCoordsList.push({
+          lat,
+          lng,
+          title: c.ticket_number || c.ticket || "Rescue Incident",
+          location: locText,
+          severity: String(c.severity || "medium"),
+        });
       }
     });
 
-    const avgResponseTime = durations.length > 0
-      ? `${Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)} mins`
-      : "Data pending field agent timestamps";
+    const locationDensityList = Array.from(locationMap.entries())
+      .map(([location, count]) => ({
+        location,
+        count,
+        pct: totalRescueCasesCount > 0 ? ((count / totalRescueCasesCount) * 100).toFixed(1) + "%" : "0%",
+      }))
+      .sort((a, b) => b.count - a.count);
 
-    return { total, active, completed, other, avgResponseTime };
-  }, [dispatches]);
+    const primaryCoordinate = validCoordsList.length > 0 ? validCoordsList[0] : null;
+
+    return {
+      totalIncidents: totalRescueCasesCount,
+      validCoordsCount: validCoordsList.length,
+      validCoordsList,
+      locationDensityList,
+      primaryCoordinate,
+    };
+  }, [rescueCases, totalRescueCasesCount]);
 
   // Export handlers
   const handleExportCSV = (filename: string, headers: string, rows: string[]) => {
@@ -715,9 +820,88 @@ const Reports = () => {
     }
   };
 
+  const handleExportExcel = (filename: string, headers: string, rows: string[]) => {
+    try {
+      addToast(`Generating ${filename} Export (Excel)...`, "info");
+      const excelContent = `\uFEFF` + headers + "\n" + rows.join("\n");
+      const blob = new Blob([excelContent], { type: "application/vnd.ms-excel;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `${filename}_${new Date().toISOString().slice(0, 10)}.xls`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      addToast(`${filename} Excel spreadsheet downloaded!`, "success");
+    } catch {
+      addToast(`Failed to export ${filename} Excel.`, "error");
+    }
+  };
+
+  const handleExportPDF = (title: string, summary: string, headers: string[], rows: (string | number)[][]) => {
+    try {
+      addToast(`Preparing ${title} PDF Export...`, "info");
+      const printWindow = window.open("", "_blank");
+      if (!printWindow) {
+        addToast("Pop-up window blocked. Please allow pop-ups for PDF export.", "error");
+        return;
+      }
+
+      const tableHeadersHtml = headers
+        .map((h) => `<th style="padding: 10px; border: 1px solid #CBD5E1; background: #F1F5F9; font-size: 12px; font-weight: 700; color: #1E293B;">${h}</th>`)
+        .join("");
+      const tableRowsHtml = rows
+        .map(
+          (r) =>
+            `<tr>${r.map((cell) => `<td style="padding: 8px 10px; border: 1px solid #E2E8F0; font-size: 12px; color: #334155;">${cell}</td>`).join("")}</tr>`
+        )
+        .join("");
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>${title} - PawGuard Official Report</title>
+            <style>
+              body { font-family: system-ui, -apple-system, sans-serif; padding: 24px; color: #0F172A; }
+              .header { border-bottom: 2px solid #1E3A8A; padding-bottom: 16px; margin-bottom: 20px; }
+              .title { font-size: 22px; font-weight: 800; color: #1E3A8A; margin: 0; }
+              .subtitle { font-size: 13px; color: #64748B; margin: 4px 0 0; }
+              .meta { font-size: 11px; color: #94A3B8; margin-top: 8px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+              .footer { margin-top: 30px; font-size: 11px; color: #94A3B8; border-top: 1px solid #E2E8F0; padding-top: 12px; text-align: center; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1 class="title">PAWGUARD ANIMAL WELFARE PLATFORM</h1>
+              <div class="subtitle">Official Analytical Report: ${title}</div>
+              <div class="meta">${summary} | Generated on: ${new Date().toLocaleString()}</div>
+            </div>
+            <table>
+              <thead><tr>${tableHeadersHtml}</tr></thead>
+              <tbody>${tableRowsHtml}</tbody>
+            </table>
+            <div class="footer">Confidential System-Generated Operational Audit Document — PawGuard Administrative Portal</div>
+          </body>
+        </html>
+      `;
+
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+      }, 400);
+      addToast(`${title} PDF ready for print/download!`, "success");
+    } catch {
+      addToast(`Failed to generate ${title} PDF.`, "error");
+    }
+  };
+
   // ----------------------- SUB-COMPONENT RENDERERS -----------------------
 
-  // RESCUE OPERATIONS REPORT VIEW
+  // RESCUE OPERATIONS REPORT VIEW (REP-001 COMPLIANT)
   const renderRescueReports = () => {
     const rescueStatCards = [
       {
@@ -728,11 +912,18 @@ const Reports = () => {
         icon: <FaAmbulance />,
       },
       {
-        title: "Active Field Dispatches",
-        value: loading ? "..." : String(dispatchPerformanceMetrics.active),
-        trend: `${dispatchPerformanceMetrics.total} Total Dispatches`,
-        color: "#F59E0B",
-        icon: <FaTruck />,
+        title: "Successful Rescue Ratio",
+        value: loading ? "..." : successfulRescueRatioMetrics.ratioPct,
+        trend: `${successfulRescueRatioMetrics.successfulCount} Successful / ${successfulRescueRatioMetrics.total} Total Incidents`,
+        color: "#10B981",
+        icon: <FaCheckCircle />,
+      },
+      {
+        title: "Avg Response Time",
+        value: loading ? "..." : rescueResponseTimeMetrics.avgDisplay,
+        trend: "Reported ➔ On-Site Arrival",
+        color: "#6366F1",
+        icon: <FaClock />,
       },
       {
         title: "Critical & Urgent Cases",
@@ -740,13 +931,6 @@ const Reports = () => {
         trend: `${rescueSeverityAnalysis.critical} Critical • ${rescueSeverityAnalysis.urgent} Urgent`,
         color: "#DC2626",
         icon: <FaExclamationTriangle />,
-      },
-      {
-        title: "Completed Rescues",
-        value: loading ? "..." : String(rescueCases.filter((c) => ["rescued", "admitted", "completed", "resolved"].includes(String(c.status || "").toLowerCase())).length),
-        trend: "Safely Intake",
-        color: "#10B981",
-        icon: <FaCheckCircle />,
       },
     ];
 
@@ -764,38 +948,65 @@ const Reports = () => {
       <div style={{ width: "100%", boxSizing: "border-box" }}>
         {/* Header */}
         <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
-          <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Rescue Operations &amp; Incident Analytics</h1>
+          <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Rescue Operational Efficiency Report</h1>
           <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-            Operational summary of emergency rescue calls, dispatches, critical triage cases, and field team completions.
+            Official rescue efficiency audit tracking response times (Reported ➔ On-Site Arrival), successful rescue ratios, failure reason breakdowns, and geographic incident heatmaps.
           </p>
         </div>
 
         {/* Quick Export Actions */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", marginBottom: "24px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "14px", marginBottom: "24px" }}>
           <QuickActionCard
             icon={<FaFileAlt />}
-            title="Export Rescue Cases (CSV)"
+            title="Export PDF Report"
+            subtitle="Printable rescue operational audit PDF"
+            color="#DC2626"
+            onClick={() => {
+              const headers = ["Case ID", "Ticket", "Animal Details", "Location", "Severity", "Urgent", "Status", "Created Date"];
+              const rows = rescueCases.map((c) => [
+                c.id ? String(c.id).slice(0, 8) : "-",
+                c.ticket_number || c.ticket || "-",
+                getAnimalDisplay(c),
+                getLocationDisplay(c),
+                String(c.severity || "medium").toUpperCase(),
+                Boolean(c.is_urgent) ? "YES" : "NO",
+                String(c.status || "reported").toUpperCase(),
+                c.created_at ? new Date(c.created_at).toLocaleDateString() : "-"
+              ]);
+              const auditSummary = `Total: ${totalRescueCasesCount} | Success Ratio: ${successfulRescueRatioMetrics.ratioPct} | Avg Response: ${rescueResponseTimeMetrics.avgDisplay} | Mapped Coords: ${geographicHeatmapMetrics.validCoordsCount}`;
+              handleExportPDF("Rescue Operational Efficiency Audit", auditSummary, headers, rows);
+            }}
+          />
+          <QuickActionCard
+            icon={<FaFileAlt />}
+            title="Export CSV Dataset"
             subtitle="Full rescue incident log raw dataset"
             color="#2563EB"
             onClick={() => {
-              const headers = "Case_ID,Ticket_Number,Animal_Details,Location,Severity,Is_Urgent,Status,Reporter,Created_At";
-              const rows = rescueCases.map((c) => 
-                `"${c.id || "-"}","${c.ticket_number || c.ticket || "-"}","${getAnimalDisplay(c)}","${getLocationDisplay(c)}","${c.severity || "medium"}","${Boolean(c.is_urgent)}","${c.status || "reported"}","${c.reporter_name || c.reporter || "-"}","${c.created_at || "-"}"`
-              );
-              handleExportCSV("rescue_cases_report", headers, rows);
+              const headers = "Case_ID,Ticket_Number,Animal_Details,Location,Severity,Is_Urgent,Status,Reporter,Created_At,Latitude,Longitude,Failure_Reason";
+              const rows = rescueCases.map((c) => {
+                const failReason = c.rejection_rationale || c.dispatch?.failure_reason || c.failure_reason || "-";
+                const lat = c.latitude ?? c.dispatch?.latitude ?? "-";
+                const lng = c.longitude ?? c.dispatch?.longitude ?? "-";
+                return `"${c.id || "-"}","${c.ticket_number || c.ticket || "-"}","${getAnimalDisplay(c)}","${getLocationDisplay(c)}","${c.severity || "medium"}","${Boolean(c.is_urgent)}","${c.status || "reported"}","${c.reporter_name || c.reporter || "-"}","${c.created_at || "-"}","${lat}","${lng}","${failReason}"`;
+              });
+              handleExportCSV("rescue_operational_efficiency_report", headers, rows);
             }}
           />
           <QuickActionCard
             icon={<FaFileDownload />}
-            title="Export Dispatches Log (CSV)"
-            subtitle="Field dispatch logs and tracking dataset"
+            title="Export Excel (.xls)"
+            subtitle="Structured Excel spreadsheet dataset"
             color="#10B981"
             onClick={() => {
-              const headers = "Dispatch_ID,Request_ID,Ticket_Number,Agent,Vehicle,Status,Dispatched_At";
-              const rows = dispatches.map((d) => 
-                `"${d.id || "-"}","${d.rescue_request_id || d.request_id || "-"}","${d.ticket_number || "-"}","${d.agent_name || d.assigned_agent_id || "-"}","${d.vehicle_number || d.assigned_vehicle_id || "-"}","${d.status || "dispatched"}","${d.created_at || d.dispatched_at || "-"}"`
-              );
-              handleExportCSV("rescue_dispatches_report", headers, rows);
+              const headers = "Case_ID,Ticket_Number,Animal_Details,Location,Severity,Is_Urgent,Status,Reporter,Created_At,Latitude,Longitude,Failure_Reason";
+              const rows = rescueCases.map((c) => {
+                const failReason = c.rejection_rationale || c.dispatch?.failure_reason || c.failure_reason || "-";
+                const lat = c.latitude ?? c.dispatch?.latitude ?? "-";
+                const lng = c.longitude ?? c.dispatch?.longitude ?? "-";
+                return `"${c.id || "-"}","${c.ticket_number || c.ticket || "-"}","${getAnimalDisplay(c)}","${getLocationDisplay(c)}","${c.severity || "medium"}","${Boolean(c.is_urgent)}","${c.status || "reported"}","${c.reporter_name || c.reporter || "-"}","${c.created_at || "-"}","${lat}","${lng}","${failReason}"`;
+              });
+              handleExportExcel("rescue_operational_efficiency_report", headers, rows);
             }}
           />
         </div>
@@ -807,7 +1018,213 @@ const Reports = () => {
           ))}
         </div>
 
-        {/* SECTION 1: RESCUE CASE TREND CHART */}
+        {/* METRIC A: RESPONSE TIME (INCIDENT REPORTED -> ON-SITE ARRIVAL) */}
+        <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", marginBottom: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+            <FaClock color="#6366F1" size={22} />
+            <div>
+              <h2 style={{ margin: 0, fontSize: "20px", color: "#0F172A", fontWeight: 800 }}>A. Response Time Metrics (Incident Reported ➔ On-Site Arrival)</h2>
+              <p style={{ margin: "2px 0 0", color: "#64748B", fontSize: "13px" }}>
+                Tracks duration from original incident reporting timestamp (<code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>created_at</code>) to field agent on-site arrival (<code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>arrived_at</code> / <code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>dispatched_at</code>).
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginBottom: "20px" }}>
+            <div style={{ background: "#EEF2FF", border: "1px solid #C7D2FE", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#3730A3", fontWeight: 700 }}>AVERAGE RESPONSE TIME</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#312E81", marginTop: "4px" }}>{rescueResponseTimeMetrics.avgDisplay}</div>
+              <div style={{ fontSize: "12px", color: "#4338CA", marginTop: "4px" }}>Incident Reported ➔ On-Site Arrival</div>
+            </div>
+
+            <div style={{ background: "#F0FDF4", border: "1px solid #86EFAC", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#166534", fontWeight: 700 }}>FASTEST RESPONSE TIME</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#14532D", marginTop: "4px" }}>{rescueResponseTimeMetrics.minDisplay}</div>
+              <div style={{ fontSize: "12px", color: "#15803D", marginTop: "4px" }}>Fastest recorded arrival interval</div>
+            </div>
+
+            <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#92400E", fontWeight: 700 }}>SLOWEST RESPONSE TIME</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#78350F", marginTop: "4px" }}>{rescueResponseTimeMetrics.maxDisplay}</div>
+              <div style={{ fontSize: "12px", color: "#B45309", marginTop: "4px" }}>Slowest recorded arrival interval</div>
+            </div>
+
+            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#475569", fontWeight: 700 }}>INCIDENTS WITH VALID TIMESTAMPS</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#0F172A", marginTop: "4px" }}>
+                {rescueResponseTimeMetrics.validCount} / {rescueResponseTimeMetrics.totalIncidents}
+              </div>
+              <div style={{ fontSize: "12px", color: "#64748B", marginTop: "4px" }}>Verified reported ➔ arrival logs</div>
+            </div>
+          </div>
+        </div>
+
+        {/* METRIC B: SUCCESSFUL RESCUE RATIO */}
+        <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", marginBottom: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+            <FaCheckCircle color="#10B981" size={22} />
+            <div>
+              <h2 style={{ margin: 0, fontSize: "20px", color: "#0F172A", fontWeight: 800 }}>B. Successful Rescue Ratio Metrics</h2>
+              <p style={{ margin: "2px 0 0", color: "#64748B", fontSize: "13px" }}>
+                Formula: <code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>(Successful Rescues / Total Rescue Incidents) × 100</code> based on official backend rescue statuses (<code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>rescued</code>, <code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>admitted</code>, <code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>completed</code>).
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "20px" }}>
+            <div style={{ background: "linear-gradient(135deg, #10B981 0%, #047857 100%)", padding: "20px", borderRadius: "16px", color: "#FFF" }}>
+              <div style={{ fontSize: "12px", fontWeight: 800, letterSpacing: "0.5px", opacity: 0.9 }}>SUCCESSFUL RESCUE RATIO</div>
+              <div style={{ fontSize: "36px", fontWeight: 900, marginTop: "6px" }}>{successfulRescueRatioMetrics.ratioPct}</div>
+              <div style={{ fontSize: "13px", marginTop: "4px", opacity: 0.95 }}>{successfulRescueRatioMetrics.successfulCount} out of {successfulRescueRatioMetrics.total} incidents resolved successfully</div>
+            </div>
+
+            <div style={{ background: "#ECFDF5", border: "1px solid #A7F3D0", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#047857", fontWeight: 700 }}>SUCCESSFUL RESCUES</div>
+              <div style={{ fontSize: "28px", fontWeight: 900, color: "#065F46", marginTop: "4px" }}>{successfulRescueRatioMetrics.successfulCount}</div>
+              <div style={{ fontSize: "12px", color: "#047857", marginTop: "2px" }}>Rescued / Admitted to Facility</div>
+            </div>
+
+            <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#B45309", fontWeight: 700 }}>IN-PROGRESS / PENDING INCIDENTS</div>
+              <div style={{ fontSize: "28px", fontWeight: 900, color: "#92400E", marginTop: "4px" }}>{successfulRescueRatioMetrics.pendingCount}</div>
+              <div style={{ fontSize: "12px", color: "#B45309", marginTop: "2px" }}>Reported / Dispatched / En Route</div>
+            </div>
+
+            <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#991B1B", fontWeight: 700 }}>FAILED / REJECTED INCIDENTS</div>
+              <div style={{ fontSize: "28px", fontWeight: 900, color: "#7F1D1D", marginTop: "4px" }}>{successfulRescueRatioMetrics.failedCount}</div>
+              <div style={{ fontSize: "12px", color: "#991B1B", marginTop: "2px" }}>Rejected / Unsuccessful Attempts</div>
+            </div>
+          </div>
+        </div>
+
+        {/* METRIC C: FAILURE REASON BREAKDOWN */}
+        <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", marginBottom: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+            <FaExclamationTriangle color="#DC2626" size={22} />
+            <div>
+              <h2 style={{ margin: 0, fontSize: "20px", color: "#0F172A", fontWeight: 800 }}>C. Failure &amp; Rejection Reason Breakdown</h2>
+              <p style={{ margin: "2px 0 0", color: "#64748B", fontSize: "13px" }}>
+                Categorized analysis of unsuccessful or rejected rescue operations based on backend fields (<code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>rejection_rationale</code> / <code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>failure_reason</code>).
+              </p>
+            </div>
+          </div>
+
+          {failureReasonBreakdown.totalFailedCases === 0 ? (
+            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "14px", padding: "24px", textAlign: "center" }}>
+              <div style={{ fontSize: "14px", fontWeight: 700, color: "#10B981" }}>No Unsuccessful or Rejected Rescues Recorded</div>
+              <div style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>All logged rescue incidents in the current operational dataset are either active, dispatched, or completed successfully.</div>
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto", border: "1px solid #E2E8F0", borderRadius: "12px" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                <thead>
+                  <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
+                    <th style={{ padding: "12px 14px", fontSize: "12px", color: "#64748B" }}>FAILURE / REJECTION REASON</th>
+                    <th style={{ padding: "12px 14px", fontSize: "12px", color: "#64748B", textAlign: "center" }}>INCIDENT COUNT</th>
+                    <th style={{ padding: "12px 14px", fontSize: "12px", color: "#64748B", textAlign: "center" }}>PERCENTAGE OF FAILURES</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {failureReasonBreakdown.breakdownList.map((item, idx) => (
+                    <tr key={idx} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                      <td style={{ padding: "12px 14px", fontWeight: 700, color: item.reason === "Reason not recorded" ? "#94A3B8" : "#0F172A", fontSize: "14px" }}>
+                        {item.reason}
+                      </td>
+                      <td style={{ padding: "12px 14px", textAlign: "center", fontWeight: 800, color: "#DC2626" }}>
+                        {item.count}
+                      </td>
+                      <td style={{ padding: "12px 14px", textAlign: "center" }}>
+                        <span style={{ background: "#FEF2F2", color: "#991B1B", padding: "3px 12px", borderRadius: "999px", fontWeight: 800, fontSize: "12px" }}>
+                          {item.pct}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* METRIC D: GEOGRAPHIC INCIDENT HEATMAP & LOCATION DENSITY */}
+        <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", marginBottom: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+            <FaMapMarkerAlt color="#2563EB" size={22} />
+            <div>
+              <h2 style={{ margin: 0, fontSize: "20px", color: "#0F172A", fontWeight: 800 }}>D. Geographic Incident Heatmap &amp; Location Density</h2>
+              <p style={{ margin: "2px 0 0", color: "#64748B", fontSize: "13px" }}>
+                Visual geographic distribution and location concentration map derived from real backend rescue coordinates (<code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>latitude</code>, <code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>longitude</code>) and address strings.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px", marginBottom: "20px" }}>
+            {/* Visual Heatmap Embed */}
+            <div style={{ border: "1px solid #E2E8F0", borderRadius: "14px", padding: "16px", background: "#F8FAFC" }}>
+              <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>Geographic Map Pin Preview</span>
+                <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 600 }}>{geographicHeatmapMetrics.validCoordsCount} Coords Available</span>
+              </div>
+
+              {geographicHeatmapMetrics.primaryCoordinate ? (
+                <LocationMapPreview
+                  latitude={geographicHeatmapMetrics.primaryCoordinate.lat}
+                  longitude={geographicHeatmapMetrics.primaryCoordinate.lng}
+                  locationAddress={geographicHeatmapMetrics.primaryCoordinate.location}
+                  title={`Primary Density Pin (${geographicHeatmapMetrics.primaryCoordinate.title})`}
+                  height="260px"
+                />
+              ) : (
+                <div style={{ background: "#FFFFFF", border: "1px dashed #CBD5E1", borderRadius: "12px", height: "260px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px", textAlign: "center" }}>
+                  <FaMapMarkerAlt size={32} color="#94A3B8" />
+                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#475569", marginTop: "10px" }}>Text-Based Location Mapping Active</div>
+                  <div style={{ fontSize: "12px", color: "#64748B", marginTop: "4px", maxWidth: "280px" }}>
+                    Backend records currently contain location address strings. Coordinates (<code style={{ fontSize: "11px" }}>lat/lng</code>) will automatically map when field agents submit GPS pins.
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Location Density Table */}
+            <div>
+              <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A", marginBottom: "12px" }}>
+                Top Incident Concentration Zones ({geographicHeatmapMetrics.locationDensityList.length} Areas)
+              </div>
+
+              <div style={{ maxHeight: "290px", overflowY: "auto", border: "1px solid #E2E8F0", borderRadius: "12px" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                  <thead>
+                    <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
+                      <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", position: "sticky", top: 0, background: "#F8FAFC" }}>LOCATION / AREA</th>
+                      <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", textAlign: "center", position: "sticky", top: 0, background: "#F8FAFC" }}>INCIDENTS</th>
+                      <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", textAlign: "center", position: "sticky", top: 0, background: "#F8FAFC" }}>DENSITY %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {geographicHeatmapMetrics.locationDensityList.map((loc, idx) => (
+                      <tr key={idx} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                        <td style={{ padding: "10px 12px", fontWeight: 700, color: "#0F172A", fontSize: "13px" }}>
+                          {loc.location}
+                        </td>
+                        <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 800, color: "#2563EB" }}>
+                          {loc.count}
+                        </td>
+                        <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                          <span style={{ background: "#EFF6FF", color: "#1D4ED8", padding: "2px 8px", borderRadius: "999px", fontWeight: 700, fontSize: "11px" }}>
+                            {loc.pct}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* SECTION 5: RESCUE CASE TREND CHART */}
         <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", marginBottom: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
           <div style={{ marginBottom: "20px" }}>
             <h2 style={{ margin: 0, fontSize: "20px", color: "#0F172A", fontWeight: 800 }}>Rescue Incident Volume Trend</h2>
@@ -842,7 +1259,7 @@ const Reports = () => {
           )}
         </div>
 
-        {/* SECTION 2: RESCUE STATUS DISTRIBUTION & SEVERITY / URGENCY TRIAGE */}
+        {/* SECTION 6: RESCUE STATUS DISTRIBUTION & SEVERITY / URGENCY TRIAGE */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "24px", marginBottom: "24px" }}>
           {/* Rescue Status Distribution */}
           <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
@@ -917,97 +1334,7 @@ const Reports = () => {
           </div>
         </div>
 
-        {/* SECTION 3: LOCATION-WISE RESCUE ANALYSIS */}
-        <div className="soft-card" style={{ padding: "24px", marginBottom: "24px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
-            <FaMapMarkerAlt color="#2563EB" size={20} />
-            <div>
-              <h2 style={{ margin: 0, fontSize: "20px", color: "#0F172A", fontWeight: 800 }}>Location-Wise Rescue Operations Oversight</h2>
-              <p style={{ margin: "2px 0 0", color: "#64748B", fontSize: "13px" }}>All-location rescue case distribution, dispatches, and completions based on real backend location data</p>
-            </div>
-          </div>
-
-          {locationWiseRescueAnalysis.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "30px 20px", color: "#64748B", fontSize: "14px" }}>
-              No location data available in current rescue records.
-            </div>
-          ) : (
-            <div style={{ maxHeight: "360px", overflowY: "auto", overflowX: "auto", border: "1px solid #E2E8F0", borderRadius: "12px" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-                <thead>
-                  <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
-                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>FIELD LOCATION / AREA</th>
-                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", textAlign: "center", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>TOTAL CASES</th>
-                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", textAlign: "center", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>DISPATCHED / ACTIVE</th>
-                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", textAlign: "center", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>COMPLETED / RESCUED</th>
-                    <th style={{ padding: "12px 10px", fontSize: "12px", color: "#64748B", textAlign: "center", position: "sticky", top: 0, background: "#F8FAFC", zIndex: 1 }}>PENDING / REPORTED</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {locationWiseRescueAnalysis.map((loc, idx) => (
-                    <tr key={loc.locationName || idx} style={{ borderBottom: "1px solid #F1F5F9" }}>
-                      <td style={{ padding: "12px 10px", fontWeight: 700, color: "#0F172A", fontSize: "14px" }}>
-                        {loc.locationName}
-                      </td>
-                      <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 800, color: "#2563EB" }}>
-                        {loc.total}
-                      </td>
-                      <td style={{ padding: "12px 10px", textAlign: "center" }}>
-                        <span style={{ padding: "2px 10px", borderRadius: "999px", background: "#FEF3C7", color: "#B45309", fontSize: "12px", fontWeight: 700 }}>
-                          {loc.dispatched}
-                        </span>
-                      </td>
-                      <td style={{ padding: "12px 10px", textAlign: "center" }}>
-                        <span style={{ padding: "2px 10px", borderRadius: "999px", background: "#D1FAE5", color: "#065F46", fontSize: "12px", fontWeight: 700 }}>
-                          {loc.rescued}
-                        </span>
-                      </td>
-                      <td style={{ padding: "12px 10px", textAlign: "center" }}>
-                        <span style={{ padding: "2px 10px", borderRadius: "999px", background: "#F1F5F9", color: "#475569", fontSize: "12px", fontWeight: 700 }}>
-                          {loc.pending}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* SECTION 4: DISPATCH FIELD PERFORMANCE */}
-        <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", marginBottom: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
-          <h2 style={{ margin: "0 0 6px", fontSize: "20px", color: "#0F172A", fontWeight: 800 }}>Dispatch Field Operations Performance</h2>
-          <p style={{ margin: "0 0 20px", color: "#64748B", fontSize: "13px" }}>Real-time dispatch log metrics and field team completion tracking</p>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>
-            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "16px", borderRadius: "14px" }}>
-              <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 700 }}>TOTAL DISPATCHES LOGGED</div>
-              <div style={{ fontSize: "26px", fontWeight: 900, color: "#0F172A", marginTop: "4px" }}>{dispatchPerformanceMetrics.total}</div>
-              <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>Real backend dispatch records</div>
-            </div>
-
-            <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "16px", borderRadius: "14px" }}>
-              <div style={{ fontSize: "12px", color: "#B45309", fontWeight: 700 }}>IN-PROGRESS FIELD DISPATCHES</div>
-              <div style={{ fontSize: "26px", fontWeight: 900, color: "#D97706", marginTop: "4px" }}>{dispatchPerformanceMetrics.active}</div>
-              <div style={{ fontSize: "12px", color: "#B45309", marginTop: "2px" }}>Vehicles &amp; agents en route</div>
-            </div>
-
-            <div style={{ background: "#ECFDF5", border: "1px solid #A7F3D0", padding: "16px", borderRadius: "14px" }}>
-              <div style={{ fontSize: "12px", color: "#047857", fontWeight: 700 }}>COMPLETED FIELD DISPATCHES</div>
-              <div style={{ fontSize: "26px", fontWeight: 900, color: "#059669", marginTop: "4px" }}>{dispatchPerformanceMetrics.completed}</div>
-              <div style={{ fontSize: "12px", color: "#047857", marginTop: "2px" }}>Safely intaken to facility</div>
-            </div>
-
-            <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", padding: "16px", borderRadius: "14px" }}>
-              <div style={{ fontSize: "12px", color: "#475569", fontWeight: 700 }}>AVG FIELD RESPONSE TIME</div>
-              <div style={{ fontSize: "18px", fontWeight: 800, color: "#334155", marginTop: "6px" }}>{dispatchPerformanceMetrics.avgResponseTime}</div>
-              <div style={{ fontSize: "11px", color: "#64748B", marginTop: "4px" }}>Calculated from valid dispatch timestamps</div>
-            </div>
-          </div>
-        </div>
-
-        {/* SECTION 5: RECENT RESCUE INCIDENTS & FIELD LOG */}
+        {/* SECTION 7: RECENT RESCUE INCIDENTS & FIELD LOG */}
         <div className="soft-card" style={{ padding: "24px" }}>
           <h3 style={{ margin: "0 0 16px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
             Recent Rescue Incidents &amp; Field Log ({totalRescueCasesCount})

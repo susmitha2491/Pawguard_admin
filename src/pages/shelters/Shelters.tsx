@@ -299,7 +299,7 @@ export const Shelters = () => {
         return;
       }
 
-      const queryParams: Record<string, any> = { page: 1, page_size: 500, facility_type: "shelter" };
+      const queryParams: Record<string, any> = { page: 1, page_size: 100, facility_type: "shelter" };
       if (currentRole === "shelter_manager" && userShelterId) {
         queryParams.shelter_id = userShelterId;
         queryParams.facility_id = userShelterId;
@@ -337,7 +337,7 @@ export const Shelters = () => {
         return;
       }
 
-      const queryParams: Record<string, any> = { page: 1, page_size: 500, facility_type: "shelter" };
+      const queryParams: Record<string, any> = { page: 1, page_size: 100, facility_type: "shelter" };
       if (currentRole === "shelter_manager" && userShelterId) {
         queryParams.shelter_id = userShelterId;
         queryParams.facility_id = userShelterId;
@@ -415,7 +415,6 @@ export const Shelters = () => {
 
   useEffect(() => {
     fetchAllShelters();
-    fetchAllKennelsWorkspace();
   }, []);
 
   useEffect(() => {

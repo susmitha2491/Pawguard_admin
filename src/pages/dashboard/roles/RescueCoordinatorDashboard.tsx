@@ -15,6 +15,7 @@ import {
   FaExternalLinkAlt,
   FaShieldAlt,
   FaArrowRight,
+  FaChartBar,
 } from "react-icons/fa";
 import rescueService from "../../../services/rescueService";
 import { useDataSync } from "../../../utils/dataSync";
@@ -472,6 +473,14 @@ const RescueCoordinatorDashboard = () => {
           subtitle="Assign Team & Vehicle"
           color="#1E3A8A"
           onClick={() => navigate("/rescue-dispatch")}
+        />
+
+        <QuickActionCard
+          icon={<FaChartBar />}
+          title="Reports & Analytics"
+          subtitle="Operational Efficiency Audit"
+          color="#7C3AED"
+          onClick={() => navigate("/reports")}
         />
       </div>
 

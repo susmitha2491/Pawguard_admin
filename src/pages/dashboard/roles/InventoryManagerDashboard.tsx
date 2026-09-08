@@ -53,6 +53,10 @@ const InventoryManagerDashboard = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // In-page table filter and search state
+  const [activeFilter, setActiveFilter] = useState<"all" | "medicines" | "low_stock" | "expiring">("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+
   const fetchInventoryDashboardData = useCallback(async () => {
     try {
       setLoading(true);
@@ -168,6 +172,15 @@ const InventoryManagerDashboard = () => {
     [inventoryData, alertsData]
   );
 
+  // Card filter click handler — toggles filter or defaults to "all"
+  const handleCardClick = (filterType: "all" | "medicines" | "low_stock" | "expiring") => {
+    if (activeFilter === filterType) {
+      setActiveFilter("all");
+    } else {
+      setActiveFilter(filterType);
+    }
+  };
+
   const stats = [
     {
       title: "Total Catalog Items",
@@ -175,7 +188,8 @@ const InventoryManagerDashboard = () => {
       trend: `${totalStockQuantitySum} Total Units`,
       color: "#1E3A8A",
       icon: <FaBoxes />,
-      onClick: () => navigate("/inventory"),
+      onClick: () => handleCardClick("all"),
+      selected: activeFilter === "all",
     },
     {
       title: "Medicines & Vaccines",
@@ -183,7 +197,8 @@ const InventoryManagerDashboard = () => {
       trend: "Pharmacy supply",
       color: "#16A34A",
       icon: <FaPills />,
-      onClick: () => navigate("/inventory"),
+      onClick: () => handleCardClick("medicines"),
+      selected: activeFilter === "medicines",
     },
     {
       title: "Low Stock Alerts",
@@ -191,7 +206,8 @@ const InventoryManagerDashboard = () => {
       trend: "Action Required",
       color: "#DC2626",
       icon: <FaExclamationTriangle />,
-      onClick: () => navigate("/inventory?tab=low_stock"),
+      onClick: () => handleCardClick("low_stock"),
+      selected: activeFilter === "low_stock",
     },
     {
       title: "Expiring / Expired",
@@ -199,7 +215,8 @@ const InventoryManagerDashboard = () => {
       trend: `${expiredCount} Expired, ${expiringSoonCount} Soon`,
       color: "#F59E0B",
       icon: <FaCalendarTimes />,
-      onClick: () => navigate("/inventory?tab=expiring_soon"),
+      onClick: () => handleCardClick("expiring"),
+      selected: activeFilter === "expiring",
     },
   ];
 
@@ -265,9 +282,47 @@ const InventoryManagerDashboard = () => {
     },
   ];
 
+  // Client-side filtering combining card selection & search query
+  const filteredRawInventory = useMemo(() => {
+    return inventoryData.filter((item: any) => {
+      // 1. Filter by Summary Card Selection
+      if (activeFilter === "medicines") {
+        const cat = String(item.category || "").toLowerCase();
+        const name = String(item.name || item.itemName || item.item_name || "").toLowerCase();
+        const sup = String(item.supplier || "").toLowerCase();
+        const isMed =
+          cat.includes("medic") ||
+          cat.includes("vaccin") ||
+          cat.includes("pharm") ||
+          cat.includes("drug") ||
+          name.includes("medic") ||
+          name.includes("vaccin") ||
+          sup.includes("pharma");
+        if (!isMed) return false;
+      } else if (activeFilter === "low_stock") {
+        if (!isLowStock(item)) return false;
+      } else if (activeFilter === "expiring") {
+        const expStatus = getExpiryInfo(item.expiry_date as string).status;
+        if (expStatus !== "EXPIRED" && expStatus !== "EXPIRING SOON") return false;
+      }
+
+      // 2. Filter by Search Query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const nameMatch = String(item.name || item.itemName || item.item_name || "").toLowerCase().includes(q);
+        const skuMatch = String(item.sku || item.id || item.code || "").toLowerCase().includes(q);
+        const catMatch = String(item.category || "").toLowerCase().includes(q);
+        const supMatch = String(item.supplier || "").toLowerCase().includes(q);
+        if (!nameMatch && !skuMatch && !catMatch && !supMatch) return false;
+      }
+
+      return true;
+    });
+  }, [inventoryData, activeFilter, searchQuery]);
+
   const formattedInventory = useMemo(
     () =>
-      inventoryData.map((item: any) => ({
+      filteredRawInventory.map((item: any) => ({
         id: item.id ?? item.sku ?? item.code ?? "",
         sku: item.id ?? item.sku ?? item.code ?? "",
         itemName: item.name ?? item.item_name ?? item.itemName ?? "Item",
@@ -281,8 +336,21 @@ const InventoryManagerDashboard = () => {
         expiry_date: item.expiry_date,
         unit_cost: item.unit_cost,
       })),
-    [inventoryData]
+    [filteredRawInventory]
   );
+
+  const getTableTitle = () => {
+    switch (activeFilter) {
+      case "medicines":
+        return `Medicines & Vaccines Stock (${formattedInventory.length})`;
+      case "low_stock":
+        return `Low Stock Alerts (${formattedInventory.length})`;
+      case "expiring":
+        return `Expired & Expiring Stock Items (${formattedInventory.length})`;
+      default:
+        return `Pharmaceutical & Supply Stock Catalog (${formattedInventory.length})`;
+    }
+  };
 
   return (
     <div style={{ width: "100%", boxSizing: "border-box" }}>
@@ -316,20 +384,59 @@ const InventoryManagerDashboard = () => {
         <QuickActionCard icon={<FaExclamationTriangle />} title="Low Stock Audit" subtitle="Review depleted items" color="#DC2626" onClick={() => navigate("/inventory?tab=low_stock")} />
       </div>
 
+      {/* Summary Filter Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "20px" }}>
         {stats.map((s) => (
           <StatCard key={s.title} {...s} />
         ))}
       </div>
 
+      {/* Interactive Catalog Table */}
       <div className="soft-card" style={{ padding: "20px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-          <h3 style={{ margin: 0, color: "#0F172A", fontSize: "16px", fontWeight: 700 }}>
-            Pharmaceutical &amp; Supply Stock Catalog ({formattedInventory.length})
-          </h3>
-          {loading && <span style={{ fontSize: "12px", color: "#1E3A8A", fontWeight: 600 }}>Syncing stock catalog...</span>}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <h3 style={{ margin: 0, color: "#0F172A", fontSize: "16px", fontWeight: 700 }}>
+              {getTableTitle()}
+            </h3>
+            {activeFilter !== "all" && (
+              <button
+                type="button"
+                onClick={() => setActiveFilter("all")}
+                style={{
+                  padding: "2px 8px",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  borderRadius: "4px",
+                  border: "1px solid #CBD5E1",
+                  background: "#F8FAFC",
+                  color: "#475569",
+                  cursor: "pointer",
+                }}
+              >
+                Clear Filter ✕
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+            <input
+              type="text"
+              placeholder="Search catalog items..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "6px",
+                border: "1px solid #CBD5E1",
+                fontSize: "13px",
+                width: "220px",
+                outline: "none",
+              }}
+            />
+            {loading && <span style={{ fontSize: "12px", color: "#1E3A8A", fontWeight: 600 }}>Syncing stock catalog...</span>}
+          </div>
         </div>
-        <DataTable columns={columns} data={formattedInventory} loading={loading} emptyMessage="No inventory items found." />
+        <DataTable columns={columns} data={formattedInventory} loading={loading} emptyMessage="No inventory items match the selected filter." />
       </div>
     </div>
   );

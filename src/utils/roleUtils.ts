@@ -543,6 +543,7 @@ export const getMenusForRole = (role?: string | UserRole | null): RoleMenuItem[]
         { name: "Rescue Dispatch", path: "/rescue-dispatch", iconType: "vehicles" },
         { name: "Dog Management", path: "/pets", iconType: "pets" },
         { name: "Shelter Directory", path: "/shelters", iconType: "shelters" },
+        { name: "Reports & Analytics", path: "/reports", iconType: "reports" },
         { name: "Notifications", path: "/notifications", iconType: "notifications" },
       ];
 
@@ -631,6 +632,8 @@ export const getMenusForRole = (role?: string | UserRole | null): RoleMenuItem[]
       return [
         { name: "Dashboard", path: dashboardPath, iconType: "dashboard" },
         { name: "Inventory & Stock", path: "/inventory", iconType: "inventory" },
+        { name: "Shelters & Storage", path: "/shelters", iconType: "shelters" },
+        { name: "Notifications", path: "/notifications", iconType: "notifications" },
       ];
 
     case "finance_user":

@@ -526,6 +526,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, string[]> = {
     ...perm("rescue_requests", "view", "create", "edit", "approve"),
     ...perm("rescue_dispatch", "view", "create", "edit", "manage"),
     ...perm("shelters", "view"),
+    ...perm("reports", "view", "export"),
     ...perm("notifications", "view"),
     "view_emergency_alerts",
     "report_rescue",
