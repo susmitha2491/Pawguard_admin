@@ -192,21 +192,23 @@ export const petService = {
 
         // Fetch companion pets first page if accessible
         try {
-          const compFirst = await api.get("/companion-pets", { params: { page: 1, page_size: pageSize } });
-          const compBody = compFirst.data;
-          const compList = Array.isArray(compBody?.data) ? compBody.data : Array.isArray(compBody) ? compBody : [];
-          if (compList.length > 0) {
-            const existingIds = new Set(collected.map((d: any) => d.id || d.dog_id));
-            const normalizedCompanions = compList
-              .filter((cp: any) => !existingIds.has(cp.id) && !existingIds.has(cp.original_dog_id))
-              .map((cp: any) => ({
-                ...cp,
-                is_companion_pet: true,
-                is_adoptable: cp.is_adoptable === true,
-                status: cp.status || "companion",
-              }));
-            collected.push(...normalizedCompanions);
-            totalCount += compBody?.meta?.total ?? compList.length;
+          const compFirst = await api.get("/companion-pets", { params: { page: 1, page_size: pageSize } }).catch(() => null);
+          if (compFirst) {
+            const compBody = compFirst.data;
+            const compList = Array.isArray(compBody?.data) ? compBody.data : Array.isArray(compBody) ? compBody : [];
+            if (compList.length > 0) {
+              const existingIds = new Set(collected.map((d: any) => d.id || d.dog_id));
+              const normalizedCompanions = compList
+                .filter((cp: any) => !existingIds.has(cp.id) && !existingIds.has(cp.original_dog_id))
+                .map((cp: any) => ({
+                  ...cp,
+                  is_companion_pet: true,
+                  is_adoptable: cp.is_adoptable === true,
+                  status: cp.status || "companion",
+                }));
+              collected.push(...normalizedCompanions);
+              totalCount += compBody?.meta?.total ?? compList.length;
+            }
           }
         } catch {
           /* ignore companion pets fetch failure */

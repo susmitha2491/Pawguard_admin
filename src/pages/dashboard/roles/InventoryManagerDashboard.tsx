@@ -58,10 +58,9 @@ const InventoryManagerDashboard = () => {
       setLoading(true);
       setError(null);
 
-      // Fetch dashboard summary, inventory alerts, and catalog in parallel
-      const [dashRes, alertRes, invRes] = await Promise.allSettled([
+      // Fetch dashboard summary and stock catalog in parallel
+      const [dashRes, invRes] = await Promise.allSettled([
         dashboardService.getInventoryDashboard(),
-        inventoryService.getInventoryAlerts(),
         inventoryService.getInventory(),
       ]);
 
@@ -71,9 +70,6 @@ const InventoryManagerDashboard = () => {
       }
 
       let alertsObj: any = null;
-      if (alertRes.status === "fulfilled" && alertRes.value) {
-        alertsObj = alertRes.value?.data || alertRes.value;
-      }
 
       let itemsList: any[] = [];
       if (invRes.status === "fulfilled" && invRes.value) {

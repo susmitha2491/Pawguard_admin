@@ -275,10 +275,10 @@ const VeterinarianDashboard = () => {
       setError(null);
 
       const [apptsRes, recordsRes, dogsRes, clinicsRes, dashSummaryRes] = await Promise.all([
-        vetService.getAppointments({ page_size: 500 }).catch(() => ({ data: [] })),
+        vetService.getAppointments({ page: 1, page_size: 50 }).catch(() => ({ data: [] })),
         medicalService.getMedicalRecords().catch(() => ({ data: [] })),
         petService.getAllDogs().catch(() => ({ data: [] })),
-        vetService.getClinics({ page_size: 100 }).catch(() => ({ data: [] })),
+        vetService.getClinics({ page: 1, page_size: 50 }).catch(() => ({ data: [] })),
         dashboardService.getVeterinarianDashboard().catch(() => null),
       ]);
 

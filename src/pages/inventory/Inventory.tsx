@@ -91,6 +91,16 @@ const StockStatusBadge = ({ status }: { status: string }) => {
   );
 };
 
+const emptyItemForm = {
+  name: "",
+  category: "" as ItemCategory,
+  quantity: "" as unknown as number,
+  unit: "",
+  reorder_threshold: "" as unknown as number,
+  unit_cost: "" as unknown as number,
+  expiry_date: "",
+};
+
 const Inventory = () => {
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [requisitions, setRequisitions] = useState<any[]>([]);
@@ -130,24 +140,26 @@ const Inventory = () => {
   const [selectedItem, setSelectedItem] = useState<InventoryRow | null>(null);
 
   // Forms state
-  const [itemForm, setItemForm] = useState({
-    name: "",
-    category: "pharmaceutical" as ItemCategory,
-    quantity: 50,
-    unit: "vials",
-    reorder_threshold: 10,
-    unit_cost: 5.0,
-    expiry_date: "",
-  });
+  const [itemForm, setItemForm] = useState(emptyItemForm);
+
+  const openAddItemModal = () => {
+    setItemForm(emptyItemForm);
+    setIsAddItemModalOpen(true);
+  };
+
+  const closeAddItemModal = () => {
+    setIsAddItemModalOpen(false);
+    setItemForm(emptyItemForm);
+  };
 
   const [editItemForm, setEditItemForm] = useState({
     id: "",
     name: "",
-    category: "pharmaceutical" as ItemCategory,
-    quantity: 50,
-    unit: "vials",
-    reorder_threshold: 10,
-    unit_cost: 5.0,
+    category: "" as ItemCategory,
+    quantity: 0,
+    unit: "",
+    reorder_threshold: 0,
+    unit_cost: 0,
     expiry_date: "",
   });
 
@@ -248,9 +260,14 @@ const Inventory = () => {
     e.preventDefault();
     try {
       setIsSubmitting(true);
-      await inventoryService.createInventoryItem(itemForm);
+      await inventoryService.createInventoryItem({
+        ...itemForm,
+        quantity: Number(itemForm.quantity || 0),
+        reorder_threshold: Number(itemForm.reorder_threshold || 0),
+        unit_cost: Number(itemForm.unit_cost || 0),
+      });
       addToast("Cataloged new inventory item!", "success");
-      setIsAddItemModalOpen(false);
+      closeAddItemModal();
       fetchInventoryData();
       notifyDataChanged();
     } catch (err: any) {
@@ -487,7 +504,7 @@ const Inventory = () => {
       {/* Quick Action Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "14px", marginBottom: "24px" }}>
         <Can permission="manage_inventory">
-          <QuickActionCard icon={<FaPlusCircle />} title="Catalog Item" subtitle="New stock entry" color="#2563EB" onClick={() => setIsAddItemModalOpen(true)} />
+          <QuickActionCard icon={<FaPlusCircle />} title="Catalog Item" subtitle="New stock entry" color="#2563EB" onClick={openAddItemModal} />
         </Can>
         <Can permission="manage_inventory">
           <QuickActionCard icon={<FaMinusCircle />} title="Record Movement" subtitle="Dispense / Issue" color="#10B981" onClick={() => setIsIssueModalOpen(true)} />
@@ -615,7 +632,7 @@ const Inventory = () => {
       </div>
 
       {/* Catalog New Item Modal */}
-      <Modal isOpen={isAddItemModalOpen} onClose={() => setIsAddItemModalOpen(false)} title="Catalog New Inventory Item">
+      <Modal isOpen={isAddItemModalOpen} onClose={closeAddItemModal} title="Catalog New Inventory Item">
         <form onSubmit={handleAddItemSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
             <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Item Name *</label>
@@ -624,7 +641,8 @@ const Inventory = () => {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div>
               <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Category *</label>
-              <select value={itemForm.category} onChange={(e) => setItemForm({ ...itemForm, category: e.target.value as ItemCategory })} style={inputStyle}>
+              <select required value={itemForm.category} onChange={(e) => setItemForm({ ...itemForm, category: e.target.value as ItemCategory })} style={inputStyle}>
+                <option value="">Select Category *</option>
                 <option value="pharmaceutical">Pharmaceuticals</option>
                 <option value="vaccine">Vaccines</option>
                 <option value="food">Food &amp; Nutrition</option>
@@ -641,15 +659,15 @@ const Inventory = () => {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
             <div>
               <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Initial Quantity *</label>
-              <input type="number" min="0" required value={itemForm.quantity} onChange={(e) => setItemForm({ ...itemForm, quantity: Number(e.target.value) })} style={inputStyle} />
+              <input type="number" min="0" required value={itemForm.quantity ?? ""} onChange={(e) => setItemForm({ ...itemForm, quantity: e.target.value === "" ? ("" as unknown as number) : Number(e.target.value) })} style={inputStyle} />
             </div>
             <div>
               <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Reorder Threshold *</label>
-              <input type="number" min="0" required value={itemForm.reorder_threshold} onChange={(e) => setItemForm({ ...itemForm, reorder_threshold: Number(e.target.value) })} style={inputStyle} />
+              <input type="number" min="0" required value={itemForm.reorder_threshold ?? ""} onChange={(e) => setItemForm({ ...itemForm, reorder_threshold: e.target.value === "" ? ("" as unknown as number) : Number(e.target.value) })} style={inputStyle} />
             </div>
             <div>
               <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Unit Cost (₹) *</label>
-              <input type="number" min="0" step="0.01" required value={itemForm.unit_cost} onChange={(e) => setItemForm({ ...itemForm, unit_cost: Number(e.target.value) })} style={inputStyle} />
+              <input type="number" min="0" step="0.01" required value={itemForm.unit_cost ?? ""} onChange={(e) => setItemForm({ ...itemForm, unit_cost: e.target.value === "" ? ("" as unknown as number) : Number(e.target.value) })} style={inputStyle} />
             </div>
           </div>
           <div>
@@ -657,7 +675,7 @@ const Inventory = () => {
             <input type="date" value={itemForm.expiry_date} onChange={(e) => setItemForm({ ...itemForm, expiry_date: e.target.value })} style={inputStyle} />
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>
-            <button type="button" onClick={() => setIsAddItemModalOpen(false)} style={{ padding: "10px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}>Cancel</button>
+            <button type="button" onClick={closeAddItemModal} style={{ padding: "10px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}>Cancel</button>
             <button type="submit" disabled={isSubmitting} style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 600 }}>{isSubmitting ? "Saving..." : "Catalog Item"}</button>
           </div>
         </form>

@@ -83,8 +83,8 @@ const AdoptionCoordinatorDashboard = () => {
       setError(null);
 
       const [adoptionsRes, dogsRes, dashRes] = await Promise.allSettled([
-        adoptionService.getAdoptions({ page_size: 500 }),
-        petService.getAllDogs(),
+        adoptionService.getAdoptions({ page: 1, page_size: 50 }),
+        petService.getDogs({ page: 1, page_size: 50 }),
         dashboardService.getAdoptionDashboard().catch(() => null),
       ]);
 
@@ -99,9 +99,10 @@ const AdoptionCoordinatorDashboard = () => {
         setAdoptions(adoptionsList);
       } else {
         const errDetail =
+          (adoptionsRes.reason as any)?.response?.data?.error?.message ||
           (adoptionsRes.reason as any)?.response?.data?.detail ||
           (adoptionsRes.reason as any)?.response?.data?.message ||
-          "Adoption applications API returned 500 error.";
+          "Failed to load adoption applications.";
         console.error("Adoptions API fetch failed:", adoptionsRes.reason);
         setError(`⚠️ ${errDetail}`);
         setAdoptions([]);

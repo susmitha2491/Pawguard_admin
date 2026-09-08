@@ -97,7 +97,8 @@ export const userService = {
 
   getUserSummary: function (userId: string): Promise<Record<string, unknown> | null> {
     const cleanId = String(userId || "").trim().toLowerCase();
-    if (!cleanId || cleanId === "undefined" || cleanId === "null") return Promise.resolve(null);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
+    if (!cleanId || cleanId === "undefined" || cleanId === "null" || !isUuid) return Promise.resolve(null);
 
     // Return current authenticated user object directly when matching cleanId
     const currentUser = getCurrentUser();

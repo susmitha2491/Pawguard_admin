@@ -230,7 +230,6 @@ function App() {
                     "rescue_centre_admin",
                     "rescue_coordinator",
                     "shelter_manager",
-                    "inventory_manager",
                   ]}
                 />
               }

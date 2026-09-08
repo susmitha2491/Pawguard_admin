@@ -631,7 +631,6 @@ export const getMenusForRole = (role?: string | UserRole | null): RoleMenuItem[]
       return [
         { name: "Dashboard", path: dashboardPath, iconType: "dashboard" },
         { name: "Inventory & Stock", path: "/inventory", iconType: "inventory" },
-        { name: "Shelters & Storage", path: "/shelters", iconType: "shelters" },
       ];
 
     case "finance_user":

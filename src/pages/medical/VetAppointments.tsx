@@ -5,6 +5,7 @@ import DataTable from "../../components/common/DataTable";
 import Modal from "../../components/common/Modal";
 import { useToast } from "../../context/ToastContext";
 import Can from "../../components/rbac/Can";
+import axios from "axios";
 import {
   FaHospital,
   FaCalendarAlt,
@@ -65,6 +66,8 @@ const VetAppointments = () => {
   const [appointmentsLoading, setAppointmentsLoading] = useState(false);
   const [appointmentsError, setAppointmentsError] = useState<string | null>(null);
   const [selectedAppointment, setSelectedAppointment] = useState<Row | null>(null);
+  const [apptPage, setApptPage] = useState(1);
+  const [apptTotal, setApptTotal] = useState(0);
 
   // Dog Management data used for appointment pet selection + display
   const [dogs, setDogs] = useState<Row[]>([]);
@@ -96,7 +99,7 @@ const VetAppointments = () => {
       const res = await vetService.getClinics({
         search: search.trim() || undefined,
         page: 1,
-        page_size: 100,
+        page_size: 50,
       });
       const list = Array.isArray(res?.data) ? res.data : [];
       setClinics(list);
@@ -108,19 +111,23 @@ const VetAppointments = () => {
       });
       setClinicMap(map);
     } catch (err) {
+      if (axios.isCancel(err)) return;
       setClinicsError(toErrorMessage(err, "Failed to load veterinary clinics."));
     } finally {
       setClinicsLoading(false);
     }
   }, []);
 
-  const fetchAppointments = useCallback(async () => {
+  const fetchAppointments = useCallback(async (pageNum = 1) => {
     try {
       setAppointmentsLoading(true);
       setAppointmentsError(null);
-      const res = await vetService.getAppointments({ page: 1, page_size: 50 });
+      const res = await vetService.getAppointments({ page: pageNum, page_size: 50 });
       const list = Array.isArray(res?.data) ? res.data : [];
       setAppointments(list);
+      setApptPage(pageNum);
+      const total = Number((res?.meta as Record<string, unknown>)?.total || list.length);
+      setApptTotal(total);
 
       // Collect all distinct owner/user UUIDs to resolve real names dynamically
       const ownerIds = new Set<string>();
@@ -169,6 +176,7 @@ const VetAppointments = () => {
         }
       }
     } catch (err: any) {
+      if (axios.isCancel(err)) return;
       if (err?.response?.status === 429 || String(err).includes("429")) {
         setAppointmentsError("Server rate limit reached (HTTP 429). Please wait a moment and click Retry Loading.");
       } else {
@@ -205,11 +213,17 @@ const VetAppointments = () => {
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void fetchDogs();
-      void fetchAppointments();
-    }, 0);
-    return () => window.clearTimeout(timer);
+    let isMounted = true;
+    const init = async () => {
+      if (!isMounted) return;
+      await fetchDogs();
+      if (!isMounted) return;
+      await fetchAppointments(1);
+    };
+    void init();
+    return () => {
+      isMounted = false;
+    };
   }, [fetchDogs, fetchAppointments]);
 
   useEffect(() => {
@@ -709,11 +723,16 @@ const VetAppointments = () => {
             module="medical"
             loading={appointmentsLoading}
             error={appointmentsError}
-            onRetry={() => void fetchAppointments()}
+            onRetry={() => void fetchAppointments(apptPage)}
             onRowClick={(row) => setSelectedAppointment(row)}
             onView={(row) => setSelectedAppointment(row)}
             renderRowActions={appointmentRowActions}
             emptyMessage="No appointments received yet."
+            pageSize={50}
+            serverMode={true}
+            totalCount={apptTotal}
+            page={apptPage}
+            onPageChange={(p) => void fetchAppointments(p)}
           />
         </div>
       )}
