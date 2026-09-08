@@ -1,58 +1,44 @@
-# PAWGUARD Admin Portal — Shelter Manager Role Documentation
+# Shelter Manager
 
-**Document:** `SHELTER_MANAGER.md`
-**Portal:** PAWGUARD Admin Portal
-**Role:** Shelter Manager (`shelter_manager`)
-**Purpose:** Complete role, access, workflow, module, and dashboard reference
+## Role Overview
+The Shelter Manager oversees daily shelter facility operations, animal housing, kennel management, capacity planning, and resident care within PawGuard shelter facilities. This role manages facility sections, ward assignments, intake processing, sanitation monitoring, and staff coordination to maintain optimal living conditions for all resident animals.
 
----
+## Responsibilities
+- Manages shelter facility profiles, section layouts, wards, and total housing capacity.
+- Processes incoming animal intakes from rescue dispatches, public handovers, or transfers.
+- Assigns animals to appropriate kennels, isolation wards, or recovery units based on physical condition and behavior.
+- Coordinates daily feeding schedules, kennel sanitation, enrichment, and care monitoring.
+- Manages shelter staff assignments, duty schedules, and operational compliance.
+- Collaborates with veterinary, adoption, and foster teams for animal progression.
 
-## 1. About the Shelter Manager Role
+## Workflow
+1. Log into the PawGuard Admin Portal as Shelter Manager.
+2. Open the Shelter Management dashboard to review facility occupancy, available kennels, and pending intakes.
+3. Receive incoming animals delivered by field rescue teams or public reports.
+4. Create or update the animal's profile and assign an available kennel within the appropriate ward.
+5. Schedule initial medical intake examinations with the veterinary team.
+6. Monitor daily sanitation, feeding, and care logs recorded by shelter staff.
+7. Coordinate placement handovers when animals transition to foster care or adoption.
 
-The **Shelter Manager** (`shelter_manager`) is responsible for managing day-to-day operations of an assigned shelter facility (`userShelterId`).
+## Modules / Areas Used
+- Shelter Facilities & Management
+- Shelter Dogs & Profiles
+- Dog Management
+- Shelter Staff Directory
+- Medical Records & Reminders
+- Adoptions & Foster Management
+- Inventory
+- Reports & Analytics
 
-The role focuses on admitting rescued animals, kennel allocation, kennel reassignment and release, managing shelter capacity, updating kennel sanitation state (`Mark Clean`), and overseeing daily shelter animal care.
+## Actions Available
+- Register and edit shelter facility details, ward sections, capacity limits, and amenity options.
+- Assign or reassign animals to specific kennels and wards based on medical or behavioral needs.
+- Log intake assessments, behavioral traits, physical condition notes, and photo records.
+- Track kennel sanitation states (Clean, Needs Attention, Disinfected).
+- Manage shelter staff profiles and duty schedules.
+- Generate shelter occupancy reports, intake statistics, and capacity analytics.
 
-### Primary Responsibilities
-
-- **Shelter Animal Admission**: Process intake and admission for rescued animals arriving from field operations.
-- **Kennel Allocation & Management**: Assign admitted animals to available kennels (`KennelAssignmentModal`), reassign kennels, and release kennels upon adoption/foster transfer.
-- **Capacity & Occupancy Tracking**: Monitor section architecture (quarantine, isolation, surgical, puppy, general, adoption) and facility capacity.
-- **Sanitation State Maintenance**: Update kennel sanitation state (`Mark Clean`) and manage daily shelter operations.
-- **Dog Master Profile Management**: Maintain shelter dog profiles, companion pet registry within shelter care, photo records, and intake details.
-- **Authorized Safety Tag Operations**: View Safety Tag status, provision tags, generate QR codes, reissue/rotate tags, and revoke tags for shelter animals.
-
----
-
-## 2. Authorized Modules & Access Matrix
-
-| Module | Access Level | Description |
-|---|---|---|
-| Dashboard | Operational Overview | Shelter capacity, occupied kennels, pending intakes, and medical check requests |
-| Dog Master Profile (`/pets`) | Full Access | Manage shelter dog master records, companion pets, and Safety Tags |
-| Shelter Management (`/shelters`, `/shelter-dogs`) | Full Shelter Access | Admit animals, assign/reassign kennels, manage sections, and update sanitation state |
-| Medical Requests | Request Access | Request veterinary checkups for shelter animals |
-| Notifications | System Utility | Shelter operational alerts and admission notifications |
-| Staff & Users / User Management | **BLOCKED** | Reserved for Super Administrator |
-| System Settings & Audit Logs | **BLOCKED** | Reserved for Super Administrator |
-| Finance, Inventory, Adoptions | **BLOCKED** | Reserved for respective domain roles |
-
----
-
-## 3. Shelter Admission & Kennel Workflow
-
-```text
-Rescued Animal Arrives at Shelter Facility
-        ↓
-Shelter Manager Processes Animal Admission
-        ↓
-Create / Update Dog Master Profile
-        ↓
-Assign Kennel Unit via KennelAssignmentModal
-        ↓
-Track Occupancy, Sanitation (Mark Clean), and Daily Care
-        ↓
-Request Veterinary Health Exam (Assigned to Veterinarian)
-        ↓
-Medically Cleared → Transition to Adoption / Foster Pipeline
-```
+## Role Handoffs
+- **From Rescue Agent**: Receives newly rescued animals for shelter intake and housing.
+- **To Veterinarian**: Requests health assessments, vaccinations, spay/neuter operations, and treatments.
+- **To Adoption / Foster Coordinator**: Approves animals cleared for adoption or foster placement.

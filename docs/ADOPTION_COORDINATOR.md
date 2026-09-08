@@ -1,35 +1,38 @@
-# PAWGUARD Admin Portal — Adoption Coordinator Role Documentation
+# Adoption Coordinator
 
-**Document:** `ADOPTION_COORDINATOR.md`
-**Portal:** PAWGUARD Admin Portal
-**Role:** Adoption Coordinator (`adoption_coordinator`)
-**Purpose:** Complete role, access, workflow, module, and dashboard reference
+## Role Overview
+The Adoption Coordinator manages the end-to-end adoption process, matching medically and behaviorally cleared animals with prospective adopters. Overseeing application screening, applicant interviews, home evaluations, adoption agreements, and post-adoption follow-ups, the Adoption Coordinator facilitates safe, permanent pet placements.
 
----
+## Responsibilities
+- Reviews and manages public adoption listings and adoptable dog profiles.
+- Processes incoming adoption applications submitted by prospective pet owners.
+- Conducts applicant background reviews, phone screenings, and home environment assessments.
+- Schedules meet-and-greet sessions between applicants and rescue animals.
+- Finalizes adoption contracts, fee records, and ownership transfer documentation.
+- Monitors post-adoption transitions and schedules follow-up check-ins.
 
-## 1. About the Adoption Coordinator Role
+## Workflow
+1. Log into the PawGuard Admin Portal as Adoption Coordinator.
+2. Open the Adoptions module to review new incoming adoption applications.
+3. Review animal eligibility, ensuring medical clearance from the veterinary team and shelter approval.
+4. Screen prospective adopters through applicant reviews and interview logs.
+5. Schedule an in-person or virtual meet-and-greet session.
+6. Approve verified applications and execute the official adoption contract.
+7. Update animal status to Adopted and hand over digital safety tags and pet passports to the new owner.
 
-The **Adoption Coordinator** (`adoption_coordinator`) is responsible for managing the end-to-end adoption lifecycle for animals cleared for adoption.
+## Modules / Areas Used
+- Adoption Management
+- Adoptable Dogs & Profiles
+- Lost & Found
+- Reports & Analytics
 
-### Primary Responsibilities
+## Actions Available
+- Create and publish adoption listings with photos, personality traits, and compatibility notes.
+- Track application status through screening, background review, interview, home visit, and final decision stages.
+- Record applicant notes, screening scores, and interview feedback.
+- Generate adoption agreements, contracts, and digital ownership certificates.
+- Track adoption metrics, placement conversion rates, and follow-up schedules.
 
-- **Adoption Application Management**: Review incoming adoption applications, verify applicant details, conduct background checks, and track application status.
-- **Applicant Verification & Home Visits**: Schedule and record home visits, applicant interviews, and suitability assessments.
-- **Adoption Approvals & Contracts**: Approve qualified adoption applications, generate adoption agreements, and log adoption fees.
-- **Dog Master Profile Access**: View adoptable animal profiles (`is_adoptable = true` / `is_fit_for_adoption = true`).
-- **Post-Adoption Follow-ups**: Conduct post-adoption wellness checkups and maintain adoption history.
-
----
-
-## 2. Authorized Modules & Access Matrix
-
-| Module | Access Level | Description |
-|---|---|---|
-| Dashboard (`/adoption-dashboard`) | Adoption Overview | Application pipeline, pending reviews, approved adoptions, and follow-ups |
-| Dog Master Profile (`/pets`) | View Access | Review adoptable animal profiles |
-| Adoption Management (`/adoptions`) | Full Access | Review applications, verify applicants, approve adoptions, and manage contracts |
-| Notifications | System Utility | Application alerts and follow-up reminders |
-| Staff & User Admin | **BLOCKED** | Reserved for Super Administrator |
-| Rescue Verification & Dispatch | **BLOCKED** | Reserved for Rescue Coordinator |
-| Kennel Allocation | **BLOCKED** | Reserved for Shelter Manager |
-| Medical Clearances | **BLOCKED** | Reserved for Veterinarian |
+## Role Handoffs
+- **From Veterinarian & Shelter Manager**: Receives medically cleared, behaviorally assessed animals for public adoption listing.
+- **To Adopter / Public User**: Delivers adopted pet, digital safety tag, medical history summary, and post-adoption care guides.

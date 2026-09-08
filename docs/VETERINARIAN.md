@@ -1,50 +1,40 @@
-# PAWGUARD Admin Portal — Veterinarian Role Documentation
+# Veterinarian
 
-**Document:** `VETERINARIAN.md`
-**Portal:** PAWGUARD Admin Portal
-**Role:** Veterinarian (`veterinarian`)
-**Purpose:** Complete role, access, workflow, module, and dashboard reference
+## Role Overview
+The Veterinarian provides clinical medical care, diagnostic evaluation, surgical treatment, and preventative health management for animals within the PawGuard network. Responsible for medical intake examinations, treatment plans, prescriptions, vaccination schedules, and medical clearances, the Veterinarian ensures all animals maintain optimal health throughout their shelter stay.
 
----
+## Responsibilities
+- Conducts comprehensive medical intake examinations for newly admitted rescued animals.
+- Diagnoses physical injuries, medical conditions, illnesses, and behavioral health needs.
+- Prescribes medications, administers treatments, and performs surgical procedures (including spay/neuter operations).
+- Manages vaccination schedules, deworming routines, and preventative health plans.
+- Sets automated medical, vaccination, and medication reminders.
+- Issues official medical certificates and clearances for foster, adoption, or travel.
 
-## 1. About the Veterinarian Role
+## Workflow
+1. Log into the PawGuard Admin Portal as Veterinarian.
+2. Open the Medical Suite dashboard to review daily examination schedules, treatment tasks, and intake alerts.
+3. Perform medical evaluation on newly admitted animals and record diagnostic notes.
+4. Formulate treatment plans, prescribe medications, and order clinical tests.
+5. Perform necessary surgeries or medical interventions and document procedures.
+6. Set recurring vaccination and follow-up reminders.
+7. Issue medical clearance certificates when animals achieve healthy status for adoption or foster care.
 
-The **Veterinarian** (`veterinarian`) is responsible for clinical exams, medical diagnoses, treatments, vaccinations, surgeries, medical records, and issuing medical clearances (`Medically Cleared`).
+## Modules / Areas Used
+- Medical Records & Suite
+- Vet Directory & Appointments
+- Vaccination & Medication Reminders
+- Dog Profiles & Management
+- Certificates & Medical Documentation
 
-### Primary Responsibilities
+## Actions Available
+- Create, update, and review detailed clinical medical records, examination notes, and diagnostic reports.
+- Schedule and manage veterinary appointments, health check-ups, and surgeries.
+- Log administered treatments, medications, dosages, and preventative care records.
+- Set automated smart reminders for recurring vaccinations, booster shots, and prescription renewals.
+- Issue and print digital health certificates, rabies vaccination records, and fitness-for-adoption clearances.
 
-- **Clinical Examinations & Diagnosis**: Perform health exams on rescued and shelter animals.
-- **Treatments & Medications**: Prescribe treatments, record medical notes, and log clinical interventions.
-- **Medical Clearances**: Evaluate animal health fitness and issue official health clearance (`Medically Cleared` / `is_fit_for_adoption = true`).
-- **Medical Records Management**: Create, view, and update comprehensive medical histories (`/medical-records`).
-- **Partner Vet Network**: Collaborate with staff veterinarians and partner clinic networks.
-
----
-
-## 2. Authorized Modules & Access Matrix
-
-| Module | Access Level | Description |
-|---|---|---|
-| Dashboard (`/veterinarian-dashboard`) | Medical Overview | Shelter medical requests, pending exams, and clearance Queue |
-| Dog Master Profile (`/pets`) | View Access | Review animal profiles and medical history |
-| Medical Records (`/medical-records`) | Full Access | Create/edit medical exams, treatments, vaccination records, and issue clearances |
-| Veterinary Network | View Access | View partner clinic networks and staff veterinarians |
-| Notifications | System Utility | Medical request alerts and clinical updates |
-| User Admin, RBAC, Settings | **BLOCKED** | Reserved for Super Administrator |
-| Finance, Inventory, Dispatch | **BLOCKED** | Reserved for respective domain roles |
-
----
-
-## 3. Medical Clearance Workflow
-
-```text
-Shelter Manager / Rescue Team Requests Medical Exam
-        ↓
-Veterinarian Receives Request on Dashboard
-        ↓
-Conducts Clinical Examination & Records Diagnosis / Treatment
-        ↓
-Issues Health Clearance (Medically Cleared)
-        ↓
-Animal Marked Fit for Adoption / Foster Placement
-```
+## Role Handoffs
+- **From Shelter Manager**: Receives requests for intake examinations and routine health check-ups.
+- **To Adoption / Foster Coordinator**: Provides official medical clearances confirming animals are healthy and ready for placement.
+- **To Inventory Manager**: Requisitions medical supplies, pharmaceuticals, vaccines, and surgical equipment.

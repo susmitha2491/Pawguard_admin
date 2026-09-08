@@ -1,34 +1,35 @@
-# PAWGUARD Admin Portal — Finance User Role Documentation
+# Finance User
 
-**Document:** `FINANCE_USER.md`
-**Portal:** PAWGUARD Admin Portal
-**Role:** Finance User (`finance_user`)
-**Purpose:** Complete role, access, workflow, module, and dashboard reference
+## Role Overview
+The Finance User oversees financial accounting, donation management, expenditure tracking, and fiscal reporting within the PawGuard platform. Responsible for processing public and corporate donations, managing campaign funds, recording operational expenses, and generating financial audit statements, the Finance User maintains fiscal transparency and accountability.
 
----
+## Responsibilities
+- Records and categorizes incoming donations, grants, corporate sponsorships, and public contributions.
+- Allocates funds to specific rescue operations, medical cases, shelter facilities, or adoption campaigns.
+- Processes operational expense claims, vendor payments, and inventory purchase invoices.
+- Generates official tax-deductible donation receipts and donor thank-you statements.
+- Prepares financial summaries, budget reports, and compliance statements for executive leadership.
 
-## 1. About the Finance User Role
+## Workflow
+1. Log into the PawGuard Admin Portal as Finance User.
+2. Open the Finance & Donations dashboard to review financial metrics, recent transactions, and campaign tallies.
+3. Verify and record incoming online or offline donation records.
+4. Issue automated donation receipts and contribution acknowledgments to donors.
+5. Process approved operational expense claims and vendor payment requests.
+6. Generate monthly financial audits, revenue vs expenditure statements, and donor contribution reports.
 
-The **Finance User** (`finance_user`) is responsible for overseeing organization-wide financial management, public donations, animal sponsorships, donor management, expense tracking, and financial reporting.
+## Modules / Areas Used
+- Finance & Donations
+- Financial Reports & Analytics
+- Notifications
 
-### Primary Responsibilities
+## Actions Available
+- Log online and offline donations, donor details, payment methods, and target fund allocations.
+- Record operational expenditures, utility bills, fleet fuel expenses, and supplier invoices.
+- Issue digital receipts and tax exemption certificates to contributors.
+- Track campaign fundraising targets and fund disbursement metrics.
+- Export financial transaction ledgers, balance sheets, and audit reports.
 
-- **Donation & Revenue Management**: Process and track public donations, campaign contributions, and recurring gifts.
-- **Animal Sponsorships**: Manage pet sponsorship programs, track sponsor contributions, and send sponsor updates.
-- **Donor Management**: Maintain donor profiles, contribution histories, tax receipts, and donor acknowledgments.
-- **Financial Reporting & Analytics**: Generate revenue trends, donation breakdown reports, expense summaries, and financial audit trails.
-
----
-
-## 2. Authorized Modules & Access Matrix
-
-| Module | Access Level | Description |
-|---|---|---|
-| Dashboard (`/finance-dashboard`) | Financial Overview | Total donations, monthly revenue, active sponsorships, donor counts, expense trends |
-| Finance & Donations (`/donations`) | Full Access | Manage donations, sponsorships, donor profiles, and financial transactions |
-| Reports & Analytics (`/reports`) | Financial Reports | Access financial reports, donation statistics, and revenue trends |
-| Notifications | System Utility | Transaction alerts and donation notifications |
-| Staff & User Admin | **BLOCKED** | Reserved for Super Administrator |
-| Rescue Verification & Dispatch | **BLOCKED** | Reserved for Rescue Coordinator |
-| Kennel Allocation | **BLOCKED** | Reserved for Shelter Manager |
-| Medical Examinations | **BLOCKED** | Reserved for Veterinarian |
+## Role Handoffs
+- **From Inventory Manager / Fleet Manager**: Receives approved purchase requisitions and service invoices for payment.
+- **To Super Administrator**: Provides financial performance reports and audit statements.

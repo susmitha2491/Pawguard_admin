@@ -23,6 +23,8 @@ import adoptionService, {
   type AdoptionScoreCreatePayload,
 } from "../../services/adoptionService";
 import petService from "../../services/petService";
+import IdentityVerificationPanel from "../../components/adoptions/IdentityVerificationPanel";
+import type { AdopterIdentityVerification } from "../../types/identityVerification";
 import { notifyDataChanged } from "../../utils/dataSync";
 import { formatDateTime } from "../../utils/dateUtils";
 import { getCurrentUserRole } from "../../utils/roleUtils";
@@ -211,6 +213,8 @@ const Adoptions = () => {
   // Selection state
   const [selectedAdoption, setSelectedAdoption] = useState<Record<string, unknown> | null>(null);
   const [candidateScores, setCandidateScores] = useState<any[]>([]);
+  const [identityVerification, setIdentityVerification] = useState<AdopterIdentityVerification | null>(null);
+  const [isIdentityLoading, setIsIdentityLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Forms
@@ -563,6 +567,16 @@ const Adoptions = () => {
       setCandidateScores(scoresRes?.data || scoresRes || []);
     } catch {
       setCandidateScores([]);
+    }
+
+    try {
+      setIsIdentityLoading(true);
+      const idRes = await adoptionService.getAdopterIdentityVerification(String(row.id));
+      setIdentityVerification(idRes?.data || idRes || null);
+    } catch {
+      setIdentityVerification(null);
+    } finally {
+      setIsIdentityLoading(false);
     }
   };
 
@@ -1137,6 +1151,23 @@ const Adoptions = () => {
                 </div>
               </div>
             </div>
+
+            {/* Identity Verification Section */}
+            <IdentityVerificationPanel
+              verification={identityVerification}
+              applicantName={String(selectedAdoption.applicantName || "Applicant")}
+              isLoading={isIdentityLoading}
+              onRequestManualReview={async (notes) => {
+                try {
+                  await adoptionService.requestIdentityManualReview(String(selectedAdoption.id), notes);
+                  addToast("Identity manual review note submitted successfully", "success");
+                  const refreshed = await adoptionService.getAdopterIdentityVerification(String(selectedAdoption.id));
+                  setIdentityVerification(refreshed?.data || refreshed || null);
+                } catch (err: any) {
+                  addToast(err?.message || "Failed to log manual review", "error");
+                }
+              }}
+            />
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
               <div style={{ background: "#FFF", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>

@@ -23,6 +23,8 @@ import auditService from "../../services/auditService";
 import { formatDateTime } from "../../utils/dateUtils";
 import { getCurrentUserRole } from "../../utils/roleUtils";
 import { notifyDataChanged } from "../../utils/dataSync";
+import IdentityVerificationPanel from "../adoptions/IdentityVerificationPanel";
+import type { AdopterIdentityVerification } from "../../types/identityVerification";
 
 export interface ApplicationMediaItem {
   label: string;
@@ -139,6 +141,24 @@ export const UserApplicationDetailModal = ({
 
   const [auditLogs, setAuditLogs] = useState<ApplicationHistoryItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [identityVerification, setIdentityVerification] = useState<AdopterIdentityVerification | null>(null);
+
+  // Fetch identity verification data for adoption applications
+  useEffect(() => {
+    if (!application || !isOpen || application.type !== "adoption") {
+      setIdentityVerification(null);
+      return;
+    }
+    let isMounted = true;
+    void adoptionService.getAdopterIdentityVerification(String(application.id)).then((res) => {
+      if (isMounted) {
+        setIdentityVerification(res?.data || res || null);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [application, isOpen]);
 
   // Fetch application audit history from backend when modal opens
   const fetchAuditHistory = useCallback(async () => {
@@ -517,6 +537,24 @@ export const UserApplicationDetailModal = ({
               </div>
             </div>
           </div>
+
+          {/* Identity Verification Panel (Adoption Applications) */}
+          {application.type === "adoption" && (
+            <IdentityVerificationPanel
+              verification={identityVerification}
+              applicantName={application.applicantName || userProfile?.name || userProfile?.full_name || "Applicant"}
+              onRequestManualReview={async (notes) => {
+                try {
+                  await adoptionService.requestIdentityManualReview(String(application.id), notes);
+                  addToast("Identity manual review note saved successfully", "success");
+                  const res = await adoptionService.getAdopterIdentityVerification(String(application.id));
+                  setIdentityVerification(res?.data || res || null);
+                } catch (err: any) {
+                  addToast(err?.message || "Failed to submit manual review", "error");
+                }
+              }}
+            />
+          )}
 
           {/* Section 2: Complete Submitted Form Data */}
           <div>

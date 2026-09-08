@@ -34,6 +34,7 @@ import { unwrapList } from "../../utils/chartUtils";
 import LocationMapPreview from "../../components/common/LocationMapPreview";
 import RescueDetailModal from "../../components/rescue/RescueDetailModal";
 import RescueAssignModal from "../../components/rescue/RescueAssignModal";
+import RescueLifecycleTimeline from "../../components/rescue/RescueLifecycleTimeline";
 
 export interface RescueRequestTableRow {
   id: string;
@@ -181,37 +182,11 @@ const RescueRequests = () => {
       const response = await rescueService.getAllRescueCases(queryParams);
       const list = unwrapList(response?.data ?? response);
 
-      // Collect reporter and assigned agent user UUIDs for resolution
-      const userIdsToResolve = new Set<string>();
-      list.forEach((item: Record<string, unknown>) => {
-        const dispatchObj = (item.dispatch as Record<string, unknown>) || null;
-        const repId = String(item.reporter_id || item.reported_by_id || item.user_id || "").trim();
-        const agtId = String(item.assigned_agent_id || item.agent_id || dispatchObj?.assigned_driver_id || dispatchObj?.agent_id || "").trim();
-        const isAnon = Boolean(item.is_anonymous || item.anonymous);
-        if (repId && !isAnon) userIdsToResolve.add(repId.toLowerCase());
-        if (agtId) userIdsToResolve.add(agtId.toLowerCase());
-      });
-
-      const userMap = new Map<string, string>();
-      if (userIdsToResolve.size > 0) {
-        await Promise.all(
-          Array.from(userIdsToResolve).map(async (uid) => {
-            try {
-              const summary = await userService.getUserSummary(uid);
-              if (summary && (summary.full_name || summary.name)) {
-                userMap.set(uid, String(summary.full_name || summary.name));
-              }
-            } catch {
-              /* ignore summary error */
-            }
-          })
-        );
-      }
-
       let formatted: RescueRequestTableRow[] = list.map((item: Record<string, unknown>) => {
         const dispatchObj = (item.dispatch as Record<string, unknown>) || null;
         const assignedAgentId = String(item.assigned_agent_id || item.agent_id || dispatchObj?.assigned_driver_id || dispatchObj?.agent_id || item.assigned_agent || "");
-        const resolvedAgentName = assignedAgentId ? userMap.get(assignedAgentId.toLowerCase()) : "";
+        const userAgent = assignedAgentId ? users.find((u) => String((u as any).id || "").toLowerCase() === assignedAgentId.toLowerCase()) : null;
+        const resolvedAgentName = userAgent ? String((userAgent as any).full_name || (userAgent as any).name || "") : "";
         const assignedAgentName = String(item.assigned_agent_name || item.assigned_agent || dispatchObj?.assigned_driver_name || dispatchObj?.agent_name || resolvedAgentName || (assignedAgentId ? `Agent (${assignedAgentId.slice(0, 8)})` : ""));
         const assignedVehicleId = String(item.assigned_vehicle_id || dispatchObj?.assigned_vehicle_id || dispatchObj?.vehicle_id || "");
         const assignedVehicleNumber = String(item.assigned_vehicle_number || item.assigned_vehicle || dispatchObj?.assigned_vehicle_number || dispatchObj?.vehicle_number || (assignedVehicleId ? `Vehicle (${assignedVehicleId.slice(0, 8)})` : ""));
@@ -224,10 +199,11 @@ const RescueRequests = () => {
 
         const isAnon = Boolean(item.is_anonymous || item.anonymous);
         const reporterId = String(item.reporter_id || item.reported_by_id || item.user_id || "").trim();
-        const resolvedReporterName = reporterId ? userMap.get(reporterId.toLowerCase()) : "";
+        const userReporter = reporterId ? users.find((u) => String((u as any).id || "").toLowerCase() === reporterId.toLowerCase()) : null;
+        const resolvedReporterName = userReporter ? String((userReporter as any).full_name || (userReporter as any).name || "") : "";
         const reporterDisplayName = isAnon
           ? "Anonymous Reporter"
-          : String(item.reporter_name || item.reporter || resolvedReporterName || "Unknown Reporter");
+          : String(item.reporter_name || item.reporter || (item as any).reporter_full_name || resolvedReporterName || (reporterId ? `Reporter (${reporterId.slice(0, 8)})` : "Unknown Reporter"));
 
         const latVal = item.latitude !== undefined && item.latitude !== null ? (item.latitude as number | string) : ((item.location as any)?.latitude);
         const lngVal = item.longitude !== undefined && item.longitude !== null ? (item.longitude as number | string) : ((item.location as any)?.longitude);
@@ -277,6 +253,19 @@ const RescueRequests = () => {
     }
   }, []);
 
+  useEffect(() => {
+    if (selectedRequest && isViewModalOpen && requests.length > 0) {
+      const targetId = String(selectedRequest.id || (selectedRequest.raw as Record<string, unknown>)?.id || "");
+      const updated = requests.find((c) => {
+        const cId = String(c.id || (c.raw as Record<string, unknown>)?.id || "");
+        return cId === targetId || String(c.ticket_number) === targetId;
+      });
+      if (updated) {
+        setSelectedRequest(updated);
+      }
+    }
+  }, [requests, isViewModalOpen]);
+
   // Fetch available vehicles
   useEffect(() => {
     vehicleService.getVehicles().then((res: any) => {
@@ -285,12 +274,46 @@ const RescueRequests = () => {
     }).catch(() => setVehicles([]));
   }, []);
 
-  // Fetch available users / staff
+  // Fetch available users / staff via authorized rescue agent availability API
   useEffect(() => {
-    userService.getUsers().then((res: any) => {
-      const list = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : Array.isArray(res?.items) ? res.items : [];
-      setUsers(list);
-    }).catch(() => setUsers([]));
+    const loadStaffUsers = async () => {
+      try {
+        // 1. Fetch authorized rescue agent availability (authorized for rescue_coordinator)
+        const agentAvailRes = await rescueService.getAgentAvailability().catch(() => null);
+        const agentsList = unwrapList(agentAvailRes?.data ?? agentAvailRes ?? []);
+
+        // 2. Fetch admin user directory ONLY if session is super_admin / rescue_centre_admin / shelter_manager
+        const userDirRes = await userService.getUsers().catch(() => null);
+        const userDirList = unwrapList(userDirRes?.data ?? userDirRes ?? []);
+
+        // 3. Include current authenticated user (so Rescue Coordinator can select themselves in Coordinator dropdown)
+        const current = getCurrentUser();
+        const currentArr = current ? [current] : [];
+
+        // Deduplicate merged user dataset by user ID
+        const combined = [...currentArr, ...agentsList, ...userDirList];
+        const seenIds = new Set<string>();
+        const uniqueUsers: Record<string, unknown>[] = [];
+
+        for (const u of combined) {
+          if (u && typeof u === "object") {
+            const uId = String((u as any).id || (u as any).user_id || (u as any).userId || (u as any).agent_id || "").trim().toLowerCase();
+            const key = uId || String((u as any).email || (u as any).name || (u as any).full_name || "").trim().toLowerCase();
+            if (key && !seenIds.has(key)) {
+              seenIds.add(key);
+              uniqueUsers.push(u as Record<string, unknown>);
+            }
+          }
+        }
+
+        setUsers(uniqueUsers);
+      } catch {
+        const current = getCurrentUser();
+        setUsers(current ? [current as unknown as Record<string, unknown>] : []);
+      }
+    };
+
+    void loadStaffUsers();
   }, []);
 
   useEffect(() => {
@@ -1210,6 +1233,7 @@ const RescueRequests = () => {
         >
           {selectedRequest && (
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <RescueLifecycleTimeline rescue={selectedRequest} />
               {/* Information Grid */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", background: "#F8FAFC", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
                 <div>

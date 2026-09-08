@@ -1,38 +1,39 @@
-# PAWGUARD Admin Portal — Foster Coordinator Role Documentation
+# Foster Coordinator
 
-**Document:** `FOSTER_COORDINATOR.md`
-**Portal:** PAWGUARD Admin Portal
-**Role:** Foster Coordinator (`foster_coordinator`)
-**Purpose:** Complete role, access, workflow, module, and dashboard reference
+## Role Overview
+The Foster Coordinator manages the temporary foster care program within PawGuard. Responsible for recruiting, screening, and onboarding foster families, evaluating home environments, matching animals with suitable foster homes, and monitoring active placements, the Foster Coordinator provides temporary home care solutions for animals recovering from medical procedures or requiring social rehabilitation.
 
----
+## Responsibilities
+- Recruits, screens, and registers prospective foster caregivers and families.
+- Evaluates foster applicant preferences, home environments, animal experience, and household capacity.
+- Identifies rescue animals suitable for temporary foster placement (e.g., puppies, nursing mothers, post-surgery recovery, socialization needs).
+- Coordinates foster matches, care supplies handovers, and placement agreements.
+- Monitors active foster placements through regular progress updates and medical follow-up scheduling.
+- Manages foster placement conclusions, return to shelter, or transition to permanent adoption.
 
-## 1. About the Foster Coordinator Role
+## Workflow
+1. Log into the PawGuard Admin Portal as Foster Coordinator.
+2. Open the Foster Management module to review foster family registrations and placement requests.
+3. Match eligible animals with pre-screened, approved foster caregivers based on medical and behavioral requirements.
+4. Issue foster placement agreements and organize food, medicine, and care supply kits.
+5. Record placement activation and maintain regular contact with the foster family during the placement.
+6. Coordinate veterinary appointments or routine check-ups during the foster period.
+7. Facilitate animal return to the shelter or transfer to an approved adopter upon placement completion.
 
-The **Foster Coordinator** (`foster_coordinator`) is the internal Admin Portal role responsible for managing foster family registrations, home vetting, foster placement applications, animal placements, and foster care monitoring.
+## Modules / Areas Used
+- Foster Management & Directory
+- Foster Dogs & Profiles
+- Medical & Vaccination Reminders
+- Reports & Analytics
 
-### Distinction: Role vs Workflow Participant
+## Actions Available
+- Register and maintain foster caregiver profiles, home characteristics, capacity limits, and active availability.
+- Initiate, approve, extend, or conclude foster placements.
+- Log care notes, behavioral observations, and weight updates reported by foster families.
+- Schedule veterinary check-ups and supply replenishments for animals in foster care.
+- Generate foster program analytics, active placement reports, and program utilization metrics.
 
-- **Foster Coordinator**: The internal Admin Portal user/role responsible for administering foster care operations, evaluating applications, matching animals, and monitoring placements.
-- **Foster Family / Foster Caregiver**: External workflow participants and approved temporary care homes that provide home environments for animals.
-
-### Primary Responsibilities
-
-- **Foster Family & Caregiver Management**: Register, vet, approve, and maintain profiles of external foster families, caregivers, and temporary care homes.
-- **Foster Applications & Placements**: Process placement applications, match eligible animals with suitable foster homes, and manage foster agreements.
-- **Foster Care Monitoring**: Conduct periodic check-ins, monitor placement durations, and log medical/care updates during foster stay.
-- **Dog Master Profile Access**: Access profiles of animals assigned to or eligible for foster care.
-
----
-
-## 2. Authorized Modules & Access Matrix
-
-| Module | Access Level | Description |
-|---|---|---|
-| Dashboard (`/foster-dashboard`) | Foster Overview | Active foster placements, pending foster applications, available foster homes |
-| Dog Master Profile (`/pets`) | View Access | Review profiles of animals in or eligible for foster care |
-| Foster Management (`/fosters`) | Full Access | Manage foster families, placement applications, active foster care, and returns |
-| Notifications | System Utility | Placement alerts and check-in reminders |
-| User Admin, RBAC, Settings | **BLOCKED** | Reserved for Super Administrator |
-| Rescue Verification & Dispatch | **BLOCKED** | Operational owner: Rescue Coordinator |
-| Kennel Allocation | **BLOCKED** | Operational owner: Shelter Manager |
+## Role Handoffs
+- **From Shelter Manager / Veterinarian**: Receives animals needing home care, medical recovery, or social rehabilitation.
+- **To Foster Caregiver**: Provides animal, care instructions, medical supplies, and emergency contact details.
+- **To Adoption Coordinator**: Transitions animals from foster care to permanent adoption when ready.

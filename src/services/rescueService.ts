@@ -253,9 +253,12 @@ export const rescueService = {
     const payload: Record<string, unknown> = {};
     if (data.assigned_vehicle_id) payload.assigned_vehicle_id = data.assigned_vehicle_id;
     else if (data.vehicle_id) payload.assigned_vehicle_id = data.vehicle_id;
-    if (data.driver_id) payload.assigned_driver_id = data.driver_id;
     const agentIds = data.agent_ids && data.agent_ids.length > 0 ? data.agent_ids : data.agent_id ? [data.agent_id] : [];
     if (agentIds.length > 0) payload.assigned_agent_ids = agentIds;
+
+    const driverId = data.driver_id || data.agent_id || (agentIds.length > 0 ? agentIds[0] : undefined);
+    if (driverId) payload.assigned_driver_id = driverId;
+
     if (data.notes) payload.equipment_details = data.notes;
 
     const response = await api.post(`/rescue/${requestId}/dispatch`, payload);

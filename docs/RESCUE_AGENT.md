@@ -1,60 +1,36 @@
-# PAWGUARD Admin Portal — Rescue Agent Role Documentation
+# Rescue Agent
 
-**Document:** `RESCUE_AGENT.md`
-**Portal:** PAWGUARD Admin Portal
-**Role:** Rescue Agent (`rescue_agent`)
-**Purpose:** Complete role, access, workflow, module, and dashboard reference
+## Role Overview
+The Rescue Agent is the primary field responder responsible for executing physical animal rescue operations. Operating on-site with designated rescue vehicles, the Rescue Agent navigates to incident locations, locates distressed animals, safely secures them, and transports them to PawGuard shelter facilities or veterinary clinics.
 
----
+## Responsibilities
+- Receives dispatch notifications for assigned rescue calls.
+- Accepts assignments and updates operational status while traveling to incident locations.
+- Performs on-site assessment, animal location, and safe capture using appropriate equipment.
+- Updates real-time rescue status as field milestones are reached.
+- Transports secured animals to designated facilities and hands them over to shelter or medical staff.
 
-## 1. About the Rescue Agent Role
+## Workflow
+1. Log into the PawGuard Admin Portal on mobile or tablet as Rescue Agent.
+2. Access the Rescue Agent Dashboard to view assigned field dispatches.
+3. Review case details, reporter notes, animal condition info, and location coordinates.
+4. Mark assignment accepted and update status to En Route upon departing for the scene.
+5. Arrive at location, locate the animal, and update status to Located.
+6. Safely capture and secure the animal in the vehicle, updating status to Secured.
+7. Transport the animal to the assigned shelter or vet clinic, completing admission handover.
 
-The **Rescue Agent** (`rescue_agent`) is a field-operational role responsible for carrying out field rescue missions assigned by the Rescue Coordinator.
+## Modules / Areas Used
+- My Assigned Rescues
+- Rescue Dispatch & Tracking
+- Dog Management
+- Notifications
 
-The Rescue Agent receives case assignments, navigates to field locations, executes animal rescues, updates real-time operational status, provisions initial Safety Tags upon rescue, and transports rescued animals to shelter facilities.
+## Actions Available
+- View assigned rescue tickets, priority levels, location maps, and reporter contact information.
+- Update field rescue status (En Route, Located, Secured, Transporting, Admitted).
+- Upload field photo evidence and document physical condition observations.
+- Record transit updates and notify shelter staff of estimated arrival time.
 
-### Primary Responsibilities
-
-- **View Assigned Cases**: Access personal workspace of assigned field rescue cases.
-- **Field Status Updates**: Update live operational stages:
-  - `Start Dispatch` (`accepted` / `dispatched`)
-  - `Mark En Route` (`en_route`)
-  - `Mark Arrived / Located` (`arrived` / `located`)
-  - `Mark Completed / Rescued` (`rescued` / `completed`)
-- **Safety Tag Provisioning**: Provision initial Safety Tag for the rescued animal upon rescue completion.
-- **Shelter Handover**: Transport rescued animal to shelter facility and initiate shelter admission handover.
-
----
-
-## 2. Authorized Modules & Access Matrix
-
-| Module | Access Level | Description |
-|---|---|---|
-| Dashboard (`/rescue-agent-dashboard`) | Personal Workspace | View assigned cases, today's missions, and active dispatch status |
-| Assigned Rescue Cases | View & Update | Access case location, reporter contact, instructions, and update field status |
-| Safety Tag Provisioning | Provision Access | Provision initial Safety Tag for rescued animals |
-| Notifications | System Utility | Real-time dispatch alerts and mission updates |
-| Rescue Verification / Rejection | **BLOCKED** | Owned by Rescue Coordinator |
-| Dispatch & Agent Assignment | **BLOCKED** | Owned by Rescue Coordinator |
-| Kennel Allocation & Shelter Care | **BLOCKED** | Owned by Shelter Manager |
-| System Settings & User Admin | **BLOCKED** | Reserved for Super Administrator |
-
----
-
-## 3. Field Operation Workflow
-
-```text
-Dispatch Assigned by Rescue Coordinator
-        ↓
-Rescue Agent Receives Notification & Views Case Details
-        ↓
-Status Update: Start Dispatch / Mark En Route
-        ↓
-Agent Arrives at Field Location (Mark Arrived / Located)
-        ↓
-Field Rescue Executed (Mark Rescued / Completed)
-        ↓
-Provision Initial Safety Tag
-        ↓
-Transport Animal to Shelter Facility for Admission Handover
-```
+## Role Handoffs
+- **From Rescue Coordinator**: Receives field assignment, dispatch details, and vehicle allocation.
+- **To Shelter Manager / Veterinarian**: Delivers secured animal to facility staff for intake assessment and medical examination.

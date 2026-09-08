@@ -1,5 +1,6 @@
 import api from "../api/axios";
 import { publishActionEvent } from "../utils/eventSystem";
+import { getCurrentUser, getCurrentUserRole } from "../utils/roleUtils";
 
 export interface UserPayload {
   id?: string;
@@ -74,13 +75,16 @@ export const extractPermissionCodes = (raw: unknown): string[] => {
 
 export const userService = {
   getUsers: async (_params?: Record<string, unknown>) => {
+    const role = getCurrentUserRole();
+    if (role !== "super_admin" && role !== "rescue_centre_admin" && role !== "shelter_manager") {
+      return { success: true, data: [] };
+    }
     try {
       const response = await api.get("/admin/users");
       return response.data;
     } catch (err: unknown) {
       const e = err as { response?: { status?: number } };
       if (e?.response?.status === 403) {
-        console.warn("userService.getUsers: User directory is restricted to system:admin. Returning empty array for non-admin session.");
         return { success: true, data: [] };
       }
       throw err;
@@ -93,7 +97,18 @@ export const userService = {
 
   getUserSummary: function (userId: string): Promise<Record<string, unknown> | null> {
     const cleanId = String(userId || "").trim().toLowerCase();
-    if (!cleanId) return Promise.resolve(null);
+    if (!cleanId || cleanId === "undefined" || cleanId === "null") return Promise.resolve(null);
+
+    // Return current authenticated user object directly when matching cleanId
+    const currentUser = getCurrentUser();
+    const currentUserId = String(
+      currentUser?.id || (currentUser as any)?.user_id || (currentUser as any)?.userId || ""
+    ).trim().toLowerCase();
+
+    if (currentUser && currentUserId && currentUserId === cleanId) {
+      return Promise.resolve(currentUser as unknown as Record<string, unknown>);
+    }
+
     if (this._summaryCache.has(cleanId)) {
       return this._summaryCache.get(cleanId)!;
     }
@@ -104,8 +119,11 @@ export const userService = {
           const res = await api.get(`/auth/users/${cleanId}/summary`);
           data = res.data;
         } catch {
-          const res = await api.get(`/admin/users/${cleanId}`);
-          data = res.data;
+          const role = getCurrentUserRole();
+          if (role === "super_admin" || role === "rescue_centre_admin") {
+            const res = await api.get(`/admin/users/${cleanId}`);
+            data = res.data;
+          }
         }
         const inner = data?.data || data;
         return (inner?.user || inner) as Record<string, unknown>;

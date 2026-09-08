@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import StatCard from "../../../components/dashboard/StatCard";
 import DataTable from "../../../components/common/DataTable";
@@ -7,80 +7,23 @@ import Modal from "../../../components/common/Modal";
 import { useToast } from "../../../context/ToastContext";
 import {
   FaAmbulance,
-  FaUserPlus,
-  FaMapMarkerAlt,
   FaClipboardList,
   FaCheckCircle,
   FaExclamationTriangle,
   FaClock,
   FaTruck,
-  FaSearch,
   FaExternalLinkAlt,
-  FaTimesCircle,
-  FaEye,
-  FaBus,
+  FaShieldAlt,
+  FaArrowRight,
 } from "react-icons/fa";
-import dashboardService from "../../../services/dashboardService";
 import rescueService from "../../../services/rescueService";
-import volunteerService from "../../../services/volunteerService";
-import { useDataSync, notifyDataChanged } from "../../../utils/dataSync";
+import { useDataSync } from "../../../utils/dataSync";
 import { rescueStatusBadge } from "../../../utils/rescueStatus.tsx";
 import { formatDateTime } from "../../../utils/dateUtils";
+import { getCurrentUser } from "../../../utils/roleUtils";
 import LocationMapPreview from "../../../components/common/LocationMapPreview";
+import RescueLifecycleTimeline from "../../../components/rescue/RescueLifecycleTimeline";
 
-// ── Transport volunteer helpers ──
-const isTransportVol = (vol: any): boolean => {
-  if (!vol || typeof vol !== "object") return false;
-  const prefRole = String(vol.preferred_role || vol.volunteer_type || vol.applied_role || vol.role || "").toLowerCase();
-  const skills = String(vol.skills || vol.capabilities || "").toLowerCase();
-  const vehicle = String(vol.vehicle_type || vol.vehicle || vol.driver_license_number || vol.license || "").toLowerCase();
-
-  if (prefRole.includes("transport") || prefRole.includes("driver") || prefRole.includes("vehicle") || prefRole.includes("ambulance")) {
-    return true;
-  }
-  if (skills.includes("transport") || skills.includes("driver") || skills.includes("driving") || skills.includes("vehicle") || skills.includes("ambulance")) {
-    return true;
-  }
-  if (vehicle && vehicle !== "n/a" && vehicle !== "none" && vehicle !== "undefined") {
-    return true;
-  }
-  return false;
-};
-
-const isVolPending = (st?: string) => { const s = String(st || "").toLowerCase(); return s === "applied" || s === "pending" || s === "submitted"; };
-const isVolApproved = (st?: string) => { const s = String(st || "").toLowerCase(); return s === "approved" || s === "active" || s === "onboarded"; };
-
-const VolBadge = ({ status }: { status?: string }) => {
-  const s = String(status || "applied").toLowerCase();
-  const color = isVolApproved(s) ? "#15803D" : isVolPending(s) ? "#D97706" : s === "rejected" ? "#DC2626" : "#64748B";
-  const bg   = isVolApproved(s) ? "#ECFDF5" : isVolPending(s) ? "#FEF3C7" : s === "rejected" ? "#FEE2E2" : "#F1F5F9";
-  return <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 10px", borderRadius: "999px", background: bg, color, textTransform: "uppercase" }}>{s}</span>;
-};
-
-interface RescueDashboardData {
-  total_calls: number;
-  pending: number;
-  dispatched: number;
-  rescued: number;
-  recent_calls: Record<string, unknown>[];
-}
-
-type CardTab = "all" | "assigned" | "pending" | "rescued";
-
-const unwrapList = (v: unknown): Record<string, unknown>[] => {
-  if (!v || typeof v !== "object") return [];
-  if (Array.isArray(v)) return v as Record<string, unknown>[];
-  const obj = v as Record<string, unknown>;
-  if (Array.isArray(obj.data)) return obj.data as Record<string, unknown>[];
-  if (obj.data && typeof obj.data === "object" && Array.isArray((obj.data as Record<string, unknown>).data)) {
-    return (obj.data as Record<string, unknown>).data as Record<string, unknown>[];
-  }
-  if (Array.isArray(obj.items)) return obj.items as Record<string, unknown>[];
-  if (obj.data && typeof obj.data === "object" && Array.isArray((obj.data as Record<string, unknown>).items)) {
-    return (obj.data as Record<string, unknown>).items as Record<string, unknown>[];
-  }
-  return [];
-};
 
 const formatCase = (c: Record<string, unknown>) => {
   const rawStatus = String(c.status || "-").toLowerCase();
@@ -109,263 +52,143 @@ const formatCase = (c: Record<string, unknown>) => {
 const RescueCoordinatorDashboard = () => {
   const navigate = useNavigate();
   const { addToast } = useToast();
-  const [activeCard, setActiveCard] = useState<CardTab>("all");
-  const [searchQuery, setSearchQuery] = useState("");
 
   const [selectedRequest, setSelectedRequest] = useState<Record<string, unknown> | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
-  // GPS Tracking & Agent Suggestion State
-  const [agentGpsLocations, setAgentGpsLocations] = useState<any[]>([]);
-  const [isSuggestingAgents, setIsSuggestingAgents] = useState(false);
-  const [suggestedAgents, setSuggestedAgents] = useState<any[]>([]);
-  const [isSuggestModalOpen, setIsSuggestModalOpen] = useState(false);
-
-  // Rejection & Rationale State
+  // Rejection State
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectionRationale, setRejectionRationale] = useState("");
 
-  // Severity & Priority Edit State
+  // Priority Edit State
   const [editSeverity, setEditSeverity] = useState("medium");
   const [editIsUrgent, setEditIsUrgent] = useState(false);
   const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
-
-  const [dashboardData, setDashboardData] = useState<RescueDashboardData>({
-    total_calls: 0,
-    pending: 0,
-    dispatched: 0,
-    rescued: 0,
-    recent_calls: [],
-  });
 
   const [allCases, setAllCases] = useState<Record<string, unknown>[]>([]);
   const [assignedCases, setAssignedCases] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Transport Volunteers ──
-  const [transportVols, setTransportVols] = useState<any[]>([]);
-  const [volLoading, setVolLoading] = useState(true);
-  const [isVolSubmitting, setIsVolSubmitting] = useState(false);
-  const [selectedVol, setSelectedVol] = useState<any | null>(null);
-  const [isVolModalOpen, setIsVolModalOpen] = useState(false);
-
-  const fetchCasesData = async () => {
+  const fetchCasesData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const [dashRes, allRes, assignedRes, gpsRes] = await Promise.allSettled([
-        dashboardService.getRescueDashboard(),
-        rescueService.getAllRescueCases(),
-        rescueService.getAllRescueCases({ assigned_to_me: true }),
-        rescueService.getAgentLocations(),
-      ]);
+      // SINGLE authorized request: GET /rescue (page_size=50)
+      // page_size=50 confirmed to return HTTP 200 in browser.
+      // page_size=100 returns HTTP 422 — backend does not accept it.
+      // Removed: /dashboards/rescue → HTTP 500 (restricted to rescue_centre_admin only)
+      // Removed: assigned_to_me=true → HTTP 403 (only authorized for rescue_agent role)
+      // Removed: /rescue/agents/location → HTTP 422 (requires lat/lng/radius params;
+      //   GPS tracking is a dedicated per-case workflow, not a dashboard summary)
+      const allRes = await rescueService.getAllRescueCases({ page_size: 50 });
 
-      if (gpsRes.status === "fulfilled") {
-        setAgentGpsLocations(unwrapList(gpsRes.value));
-      }
+      if (allRes.success) {
+        // allRes.data is already a flat array (getAllRescueCases internally calls unwrapList)
+        const rawCases: Record<string, unknown>[] = Array.isArray(allRes.data) ? allRes.data : [];
+        const formatted = rawCases.map(formatCase);
+        setAllCases(formatted);
 
-      if (dashRes.status === "fulfilled") {
-        const data = (dashRes.value as { data?: Record<string, unknown> })?.data || (dashRes.value as Record<string, unknown>) || {};
-        setDashboardData({
-          total_calls: Number(data.total_calls ?? data.totalCalls ?? 0),
-          pending: Number(data.pending ?? data.pendingCases ?? 0),
-          dispatched: Number(data.dispatched ?? data.dispatchedCases ?? 0),
-          rescued: Number(data.rescued ?? data.rescuedAnimals ?? 0),
-          recent_calls: Array.isArray(data.recent_calls) ? (data.recent_calls as Record<string, unknown>[]) : Array.isArray(data.recentCalls) ? (data.recentCalls as Record<string, unknown>[]) : [],
-        });
-      }
+        // "My Assigned Cases" — filter client-side using coordinator_id from the backend response.
+        // Backend field confirmed: `coordinator_id` (RescueCaseTableRow line 123, formatCaseRow line 261).
+        // User ID: User.id (string|number|undefined); also stored as user_id/userId at login.
+        // We must NOT send assigned_to_me=true; the backend returns 403 for coordinator role.
+        const currentUser = getCurrentUser();
+        const rawUserId = currentUser?.id ?? (currentUser as Record<string, unknown> | null)?.user_id ?? (currentUser as Record<string, unknown> | null)?.userId;
+        const myIdStr = rawUserId !== undefined && rawUserId !== null ? String(rawUserId).trim().toLowerCase() : "";
 
-      if (allRes.status === "fulfilled") {
-        const rawAll = unwrapList(allRes.value?.data ?? allRes.value);
-        setAllCases(rawAll.map(formatCase));
+        const myAssigned = myIdStr
+          ? formatted.filter((c) => {
+              // Read coordinator_id from the raw backend object (before formatCase remapping)
+              const raw = c.raw as Record<string, unknown>;
+              const coordId = raw?.coordinator_id;
+              return coordId !== undefined && coordId !== null && String(coordId).trim().toLowerCase() === myIdStr;
+            })
+          : [];
+        setAssignedCases(myAssigned);
       } else {
+        // getAllRescueCases swallows HTTP errors and returns success:false.
+        // Do NOT silently show all-zero KPIs — surface the failure so the user knows
+        // the data could not be loaded rather than believing there are 0 rescue cases.
         setAllCases([]);
-      }
-
-      if (assignedRes.status === "fulfilled") {
-        const rawAssigned = unwrapList(assignedRes.value?.data ?? assignedRes.value);
-        setAssignedCases(rawAssigned.map(formatCase));
-      } else {
         setAssignedCases([]);
+        setError(
+          "Rescue cases could not be loaded. The server may be temporarily unavailable or your session may have expired. Please refresh or contact support."
+        );
       }
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string; message?: string } } };
       setError(
         e?.response?.data?.detail ||
         e?.response?.data?.message ||
-        "Failed to load rescue coordinator metrics. Access may be restricted."
+        "Failed to load rescue cases. Access may be restricted."
       );
     } finally {
       setLoading(false);
     }
-  };
-
-  const fetchTransportVols = useCallback(async () => {
-    try {
-      setVolLoading(true);
-      const combinedList: any[] = [];
-
-      try {
-        const appRes = await volunteerService.getApplications();
-        const apps = Array.isArray(appRes) ? appRes : Array.isArray(appRes?.data) ? appRes.data : Array.isArray(appRes?.items) ? appRes.items : [];
-        if (Array.isArray(apps)) combinedList.push(...apps);
-      } catch {
-        /* applications endpoint optional fallback */
-      }
-
-      try {
-        const volRes = await volunteerService.getVolunteers();
-        const vols = Array.isArray(volRes) ? volRes : Array.isArray(volRes?.data) ? volRes.data : Array.isArray(volRes?.items) ? volRes.items : [];
-        if (Array.isArray(vols)) {
-          const existingIds = new Set(combinedList.map((item: any) => String(item.id || item.profile_id || item.application_id)));
-          for (const v of vols) {
-            const vId = String(v.id || v.profile_id || v.application_id);
-            if (!existingIds.has(vId)) {
-              combinedList.push(v);
-            }
-          }
-        }
-      } catch {
-        /* volunteers endpoint fallback */
-      }
-
-      const transport = combinedList.filter(isTransportVol);
-      transport.sort((a, b) => new Date(b.created_at || b.submitted_at || 0).getTime() - new Date(a.created_at || a.submitted_at || 0).getTime());
-      setTransportVols(transport);
-    } catch {
-      setTransportVols([]);
-    } finally {
-      setVolLoading(false);
-    }
   }, []);
-
-  const handleVolApprove = async (vol: any) => {
-    const id = vol?.id || vol?.application_id || vol?.profile_id;
-    if (!id) { addToast("Invalid volunteer ID.", "error"); return; }
-    try {
-      setIsVolSubmitting(true);
-      try {
-        await volunteerService.approveApplication(id);
-      } catch (e: any) {
-        if (e?.response?.status === 404 || e?.response?.status === 405) {
-          await volunteerService.updateVolunteerProfile(id, { status: "active" });
-        } else {
-          throw e;
-        }
-      }
-      addToast("Transport volunteer approved!", "success");
-      setIsVolModalOpen(false);
-      await fetchTransportVols();
-      notifyDataChanged();
-    } catch (err: any) {
-      const errMsg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to approve transport volunteer.";
-      addToast(errMsg, "error");
-    } finally {
-      setIsVolSubmitting(false);
-    }
-  };
-
-  const handleVolReject = async (vol: any) => {
-    const id = vol?.id || vol?.application_id || vol?.profile_id;
-    if (!id) { addToast("Invalid volunteer ID.", "error"); return; }
-    try {
-      setIsVolSubmitting(true);
-      try {
-        await volunteerService.rejectApplication(id, "Rejected by Rescue Coordinator.");
-      } catch (e: any) {
-        if (e?.response?.status === 404 || e?.response?.status === 405) {
-          await volunteerService.updateVolunteerProfile(id, { status: "rejected" });
-        } else {
-          throw e;
-        }
-      }
-      addToast("Transport volunteer application rejected.", "info");
-      setIsVolModalOpen(false);
-      await fetchTransportVols();
-      notifyDataChanged();
-    } catch (err: any) {
-      const errMsg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to reject transport volunteer.";
-      addToast(errMsg, "error");
-    } finally {
-      setIsVolSubmitting(false);
-    }
-  };
 
   useEffect(() => {
     void fetchCasesData();
-    void fetchTransportVols();
-  }, [fetchTransportVols]);
+  }, [fetchCasesData]);
 
   useDataSync(() => {
     void fetchCasesData();
-    void fetchTransportVols();
   });
 
-  // Calculate dynamic card counts
-  const totalCount = allCases.length || dashboardData.total_calls;
-  const pendingCount = allCases.filter((c) => /reported|pending|new|verified/i.test(String(c.status || ""))).length || dashboardData.pending;
-  const rescuedCount = allCases.filter((c) => /rescued|located|secured|admitted|completed/i.test(String(c.status || ""))).length || dashboardData.rescued;
-
-  // Filter current active dataset
-  const getDisplayData = () => {
-    let list: Record<string, unknown>[];
-    if (activeCard === "assigned") {
-      list = assignedCases;
-    } else if (activeCard === "pending") {
-      list = allCases.filter((c) => {
-        const s = String(c.status || "").toLowerCase();
-        return s === "reported" || s === "pending" || s === "new" || s === "verified";
+  useEffect(() => {
+    if (selectedRequest && isViewModalOpen && allCases.length > 0) {
+      const targetId = String(selectedRequest.id || (selectedRequest.raw as Record<string, unknown>)?.id || "");
+      const updated = allCases.find((c) => {
+        const cId = String(c.id || (c.raw as Record<string, unknown>)?.id || "");
+        return cId === targetId || String(c.ticket) === targetId;
       });
-    } else if (activeCard === "rescued") {
-      list = allCases.filter((c) => {
-        const s = String(c.status || "").toLowerCase();
-        return s === "rescued" || s === "located" || s === "secured" || s === "admitted" || s === "completed";
-      });
-    } else {
-      list = allCases;
+      if (updated) {
+        setSelectedRequest(updated);
+      }
     }
+  }, [allCases, isViewModalOpen]);
 
-    if (!searchQuery.trim()) return list;
-    const q = searchQuery.toLowerCase().trim();
-    return list.filter((r) =>
-      String(r.ticket || "").toLowerCase().includes(q) ||
-      String(r.reporter || "").toLowerCase().includes(q) ||
-      String(r.location || "").toLowerCase().includes(q) ||
-      String(r.severity || "").toLowerCase().includes(q) ||
-      String(r.status || "").toLowerCase().includes(q)
-    );
-  };
+  // ── KPI counts ────────────────────────────────────────────────────────────
+  // IMPORTANT: use c.raw.status (the raw backend status) rather than c.status
+  // (the display status), because formatCase remaps "verified+assigned → accepted".
+  // Using c.raw.status ensures "Awaiting Dispatch" counts all verified cases accurately,
+  // and "Active Field" counts all dispatched/accepted/en_route/located/secured cases.
+  // Valid backend statuses per formatCaseRow statusPriority map:
+  //   submitted/reported → triage
+  //   verified           → awaiting dispatch
+  //   dispatched/accepted/en_route/in_progress/located/secured → active field
+  //   rescued/admitted/completed → rescued & admitted
+  //   rejected/cancelled → closed (not counted in active KPIs)
 
-  const displayData = getDisplayData();
+  const triageCount = allCases.filter((c) => {
+    const raw = c.raw as Record<string, unknown>;
+    const s = String(raw?.status || "").toLowerCase();
+    return s === "reported" || s === "submitted" || s === "new";
+  }).length;
 
-  const getTableTitle = () => {
-    switch (activeCard) {
-      case "assigned":
-        return "My Assigned Cases";
-      case "pending":
-        return "Pending Rescue Cases";
-      case "rescued":
-        return "Rescued Dogs / Completed Cases";
-      default:
-        return "All Rescue Calls";
-    }
-  };
+  const awaitingDispatchCount = allCases.filter((c) => {
+    const raw = c.raw as Record<string, unknown>;
+    const s = String(raw?.status || "").toLowerCase();
+    return s === "verified";
+  }).length;
 
-  const getEmptyMessage = () => {
-    switch (activeCard) {
-      case "assigned":
-        return "No cases are currently assigned to you.";
-      case "pending":
-        return "No pending rescue cases found.";
-      case "rescued":
-        return "No rescued dogs or completed cases found.";
-      default:
-        return "No rescue calls found.";
-    }
-  };
+  const activeFieldCount = allCases.filter((c) => {
+    const raw = c.raw as Record<string, unknown>;
+    const s = String(raw?.status || "").toLowerCase();
+    return ["dispatched", "accepted", "en_route", "located", "secured", "in_progress"].includes(s);
+  }).length;
+
+  const completedCount = allCases.filter((c) => {
+    const raw = c.raw as Record<string, unknown>;
+    const s = String(raw?.status || "").toLowerCase();
+    return ["admitted", "completed", "rescued"].includes(s);
+  }).length;
+
+  // Strict 5-row preview of most recent / priority cases (newest first)
+  const recentPreviewCases = allCases.slice(0, 5);
 
   const handleRowClick = (row: Record<string, unknown>) => {
     setSelectedRequest(row);
@@ -483,82 +306,46 @@ const RescueCoordinatorDashboard = () => {
     }
   };
 
-  const handleSuggestNearestAgents = async (requestId: string) => {
-    try {
-      setIsSuggestingAgents(true);
-      const res = await rescueService.suggestNearestAgents(requestId);
-      const agentsList = unwrapList(res);
-      setSuggestedAgents(agentsList);
-      setIsSuggestModalOpen(true);
-    } catch (err: any) {
-      addToast(err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Could not fetch GPS agent suggestions.", "error");
-    } finally {
-      setIsSuggestingAgents(false);
-    }
-  };
-
-  const approvedTransportVols = transportVols.filter((v) => isVolApproved(v.status));
-  const pendingTransportVols = transportVols.filter((v) => isVolPending(v.status));
-
   const stats = [
     {
-      title: "Total Rescue Calls",
-      value: loading ? "..." : String(totalCount),
-      trend: "All Rescue Requests",
+      title: "Pending Triage",
+      value: loading ? "..." : String(triageCount),
+      trend: "Needs Verification",
       color: "#DC2626",
       icon: <FaExclamationTriangle />,
-      selected: activeCard === "all",
-      onClick: () => {
-        setActiveCard("all");
-        const el = document.getElementById("rescue-table-section");
-        if (el) el.scrollIntoView({ behavior: "smooth" });
-      },
+      onClick: () => navigate("/rescue-requests?status=reported"),
+    },
+    {
+      title: "Awaiting Dispatch",
+      value: loading ? "..." : String(awaitingDispatchCount),
+      trend: "Verified & Ready",
+      color: "#F59E0B",
+      icon: <FaClock />,
+      onClick: () => navigate("/rescue-dispatch"),
+    },
+    {
+      title: "Active Field Operations",
+      value: loading ? "..." : String(activeFieldCount),
+      trend: "In-Progress Rescues",
+      color: "#7C3AED",
+      icon: <FaTruck />,
+      onClick: () => navigate("/rescue-dispatch"),
     },
     {
       title: "My Assigned Cases",
       value: loading ? "..." : String(assignedCases.length),
       trend: "Assigned to You",
       color: "#1E3A8A",
-      icon: <FaClipboardList />,
-      selected: activeCard === "assigned",
-      onClick: () => {
-        setActiveCard("assigned");
-        const el = document.getElementById("rescue-table-section");
-        if (el) el.scrollIntoView({ behavior: "smooth" });
-      },
+      icon: <FaShieldAlt />,
+      onClick: () => navigate("/rescue-requests"),
     },
     {
-      title: "Pending Cases",
-      value: loading ? "..." : String(pendingCount),
-      trend: "Awaiting Dispatch",
-      color: "#F59E0B",
-      icon: <FaClock />,
-      selected: activeCard === "pending",
-      onClick: () => {
-        setActiveCard("pending");
-        const el = document.getElementById("rescue-table-section");
-        if (el) el.scrollIntoView({ behavior: "smooth" });
-      },
-    },
-    {
-      title: "Dogs Rescued",
-      value: loading ? "..." : String(rescuedCount),
-      trend: "Successfully Completed",
+      title: "Rescued & Admitted",
+      value: loading ? "..." : String(completedCount),
+      trend: "Safely Admitted",
       color: "#16A34A",
       icon: <FaCheckCircle />,
-      selected: activeCard === "rescued",
-      onClick: () => {
-        setActiveCard("rescued");
-        const el = document.getElementById("rescue-table-section");
-        if (el) el.scrollIntoView({ behavior: "smooth" });
-      },
-    },
-    {
-      title: "Transport Volunteers",
-      value: volLoading ? "..." : String(transportVols.length),
-      trend: `${approvedTransportVols.length} Available`,
-      color: "#1E3A8A",
-      icon: <FaBus />,
+      onClick: () => navigate("/rescue-requests"),
     },
   ];
 
@@ -589,7 +376,7 @@ const RescueCoordinatorDashboard = () => {
   const rowActions = (row: Record<string, unknown>) => {
     const status = String(row.status || "").toLowerCase();
     const isVerified = status === "verified";
-    const canAssign = ["verified", "dispatched", "located"].includes(status);
+    const canAssign = ["verified", "dispatched", "located", "accepted", "en_route"].includes(status);
     return (
       <button
         onClick={(e) => {
@@ -612,14 +399,14 @@ const RescueCoordinatorDashboard = () => {
           opacity: canAssign ? 1 : 0.45,
         }}
       >
-        <FaTruck /> {isVerified ? "Accept & Assign Team" : "Assign Team"}
+        <FaTruck /> {isVerified ? "Dispatch" : "Manage"}
       </button>
     );
   };
 
   return (
     <div>
-      {/* Hero Banner */}
+      {/* High-Level Overview Header */}
       <div
         style={{
           marginBottom: "20px",
@@ -630,10 +417,10 @@ const RescueCoordinatorDashboard = () => {
         }}
       >
         <h1 style={{ margin: 0, fontSize: "24px", fontWeight: 800 }}>
-          Rescue Coordinator Control Center
+          Rescue Coordinator Dashboard
         </h1>
         <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "13px" }}>
-          Emergency response management: dispatch field agents, monitor rescue requests and coordinate rescue operations.
+          High-level operational summary of emergency intakes, pending dispatches, and active field rescues.
         </p>
       </div>
 
@@ -654,7 +441,7 @@ const RescueCoordinatorDashboard = () => {
         </div>
       )}
 
-      {/* Quick Action Cards */}
+      {/* Useful Operational Quick Action Shortcuts */}
       <div
         style={{
           display: "grid",
@@ -665,42 +452,34 @@ const RescueCoordinatorDashboard = () => {
       >
         <QuickActionCard
           icon={<FaAmbulance />}
-          title="New Emergency"
-          subtitle="Log Distress Call"
+          title="Log Emergency Call"
+          subtitle="New Incident Intake"
           color="#DC2626"
           onClick={() => navigate("/rescue-requests?action=new")}
         />
 
         <QuickActionCard
-          icon={<FaUserPlus />}
-          title="Assign Agent"
-          subtitle="Dispatch Field Agent"
-          color="#1E3A8A"
-          onClick={() => navigate("/rescue-dispatch")}
-        />
-
-        <QuickActionCard
-          icon={<FaMapMarkerAlt />}
-          title="Track Agents"
-          subtitle="Live Tracking"
-          color="#16A34A"
-          onClick={() => navigate("/rescue-dispatch")}
-        />
-
-        <QuickActionCard
           icon={<FaClipboardList />}
-          title="Shelter Directory"
-          subtitle="Handover Destination"
+          title="Review Rescue Requests"
+          subtitle="Triage & Verification"
+          color="#F59E0B"
+          onClick={() => navigate("/rescue-requests")}
+        />
+
+        <QuickActionCard
+          icon={<FaTruck />}
+          title="Manage Dispatch Console"
+          subtitle="Assign Team & Vehicle"
           color="#1E3A8A"
-          onClick={() => navigate("/shelters")}
+          onClick={() => navigate("/rescue-dispatch")}
         />
       </div>
 
-      {/* Dynamic Interactive Stat Cards */}
+      {/* Summary KPI Cards */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
+          gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))",
           gap: "16px",
           marginBottom: "20px",
         }}
@@ -710,53 +489,23 @@ const RescueCoordinatorDashboard = () => {
         ))}
       </div>
 
-      {/* Live Field Agent GPS Locations & Roster */}
-      <div className="soft-card" style={{ padding: "20px", marginBottom: "24px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "10px" }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#0F172A", display: "inline-flex", alignItems: "center", gap: "8px" }}>
-              <FaMapMarkerAlt style={{ color: "#16A34A" }} /> Live Field Agent GPS Locations &amp; Dispatch Radar
-            </h3>
-            <p style={{ margin: "2px 0 0", color: "#64748B", fontSize: "12.5px" }}>
-              Real-time telemetry and coordinates fetched directly from backend OpenAPI location stream.
-            </p>
-          </div>
-          <span style={{ fontSize: "12px", background: "#ECFDF5", color: "#15803D", padding: "4px 10px", borderRadius: "999px", fontWeight: 700 }}>
-            {agentGpsLocations.length} Active GPS Transmitters Connected
-          </span>
-        </div>
-
-        {agentGpsLocations.length === 0 ? (
-          <div style={{ padding: "16px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0", textAlign: "center", color: "#64748B", fontSize: "13px" }}>
-            No active agent GPS signals broadcasted in the last reporting window. Active agents automatically broadcast location during dispatches.
-          </div>
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "12px" }}>
-            {agentGpsLocations.map((agent: any, idx: number) => {
-              const statusLower = String(agent.status || agent.dispatch_status || "available").toLowerCase();
-              const isBusy = statusLower.includes("dispatch") || statusLower.includes("busy") || statusLower.includes("active");
-              return (
-                <div key={agent.agent_id || agent.id || idx} style={{ padding: "12px 14px", borderRadius: "10px", background: "#FFFFFF", border: "1px solid #E2E8F0", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                    <strong style={{ fontSize: "13.5px", color: "#0F172A" }}>{agent.agent_name || agent.full_name || agent.name || `Agent #${idx + 1}`}</strong>
-                    <span style={{ fontSize: "10px", fontWeight: 800, padding: "2px 6px", borderRadius: "4px", background: isBusy ? "#FEF3C7" : "#ECFDF5", color: isBusy ? "#D97706" : "#15803D", textTransform: "uppercase" }}>
-                      {isBusy ? "ON DISPATCH" : "AVAILABLE"}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#475569", display: "flex", flexDirection: "column", gap: "2px" }}>
-                    <div>📍 <strong>GPS:</strong> {agent.latitude ? `${Number(agent.latitude).toFixed(4)}, ${Number(agent.longitude).toFixed(4)}` : agent.location || "Sector Radar"}</div>
-                    {agent.battery_level !== undefined && <div>🔋 <strong>Battery:</strong> {agent.battery_level}%</div>}
-                    {agent.last_ping && <div>⏱️ <strong>Last Ping:</strong> {formatDateTime(agent.last_ping)}</div>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+      {/* Compact Field Operations Indicator */}
+      <div style={{ background: "#F8FAFC", padding: "12px 18px", borderRadius: "10px", border: "1px solid #E2E8F0", fontSize: "12.5px", color: "#64748B", marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+        <span>
+          📍 <strong>Field Operations Status:</strong> {activeFieldCount > 0 ? `${activeFieldCount} Active Field Rescue${activeFieldCount !== 1 ? "s" : ""} In Progress` : "No Active Field Operations"}
+        </span>
+        <button
+          type="button"
+          onClick={() => navigate("/rescue-dispatch")}
+          style={{ border: "none", background: "transparent", color: "#1E3A8A", fontWeight: 700, fontSize: "12px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+        >
+          Open Dispatch Radar <FaArrowRight size={10} />
+        </button>
       </div>
 
-      {/* Dynamic Rescue Operations Table */}
-      <div id="rescue-table-section" className="soft-card" style={{ padding: "20px" }}>
+
+      {/* Concise 5-Row Recent & Priority Rescue Cases Preview */}
+      <div className="soft-card" style={{ padding: "20px" }}>
         <div
           style={{
             display: "flex",
@@ -769,48 +518,43 @@ const RescueCoordinatorDashboard = () => {
         >
           <div>
             <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 800, color: "#0F172A" }}>
-              {getTableTitle()}
+              Recent &amp; Priority Rescue Cases
             </h3>
             <span style={{ fontSize: "12px", color: "#64748B" }}>
-              Showing {displayData.length} records matching {activeCard} filter
+              Showing top 5 recent emergency cases requiring attention
             </span>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <div style={{ position: "relative" }}>
-              <FaSearch style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#94A3B8", fontSize: "13px" }} />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search ticket, reporter, location..."
-                style={{
-                  padding: "8px 12px 8px 32px",
-                  borderRadius: "8px",
-                  border: "1px solid #CBD5E1",
-                  fontSize: "13px",
-                  outline: "none",
-                  width: "240px",
-                }}
-              />
-            </div>
-            {loading && (
-              <span style={{ color: "#1E3A8A", fontSize: "12px", fontWeight: 600 }}>
-                Loading...
-              </span>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={() => navigate("/rescue-requests")}
+            style={{
+              padding: "8px 16px",
+              borderRadius: "8px",
+              border: "1px solid #CBD5E1",
+              background: "#FFFFFF",
+              color: "#1E3A8A",
+              fontSize: "13px",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+          >
+            View All Requests <FaArrowRight size={11} />
+          </button>
         </div>
 
         <DataTable
           columns={columns}
-          data={displayData}
+          data={recentPreviewCases}
           loading={loading}
           error={error}
           onRetry={() => {
             fetchCasesData();
           }}
-          emptyMessage={getEmptyMessage()}
+          emptyMessage="No recent rescue requests found."
           renderRowActions={rowActions}
           onRowClick={(row) => handleRowClick(row)}
         />
@@ -842,13 +586,6 @@ const RescueCoordinatorDashboard = () => {
                     Reject Report
                   </button>
                   <button
-                    disabled={isActionLoading || isSuggestingAgents}
-                    onClick={() => handleSuggestNearestAgents(String(selectedRequest.id || ""))}
-                    style={{ padding: "8px 16px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
-                  >
-                    {isSuggestingAgents ? "Finding Agents..." : "📍 Suggest Nearest Agents (GPS)"}
-                  </button>
-                  <button
                     disabled={isActionLoading}
                     onClick={() => handleEscalateRequest(String(selectedRequest.id || ""))}
                     style={{ padding: "8px 16px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
@@ -868,7 +605,7 @@ const RescueCoordinatorDashboard = () => {
                     }}
                     style={{ padding: "8px 16px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
-                    <FaTruck size={12} /> Accept Case & Dispatch Team
+                    <FaTruck size={12} /> Accept Case &amp; Dispatch Team
                   </button>
                   <button
                     disabled={isActionLoading}
@@ -940,6 +677,7 @@ const RescueCoordinatorDashboard = () => {
       >
         {selectedRequest && (
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            <RescueLifecycleTimeline rescue={selectedRequest} />
             <div>
               <strong style={{ color: "#475569" }}>Reporter:</strong> {String(selectedRequest.reporter || "-")}
               {selectedRequest.phone ? ` (${selectedRequest.phone})` : ""}
@@ -1021,7 +759,7 @@ const RescueCoordinatorDashboard = () => {
 
             {selectedRequest.dispatch ? (
               <div style={{ background: "#F5F3FF", padding: "12px 14px", borderRadius: "8px", border: "1px solid #DDD6FE" }}>
-                <strong style={{ color: "#1E3A8A" }}>Dispatch & Field Operations</strong>
+                <strong style={{ color: "#1E3A8A" }}>Dispatch &amp; Field Operations</strong>
                 <div style={{ marginTop: "6px", fontSize: "13px", display: "flex", flexDirection: "column", gap: "4px" }}>
                   {(selectedRequest.dispatch as Record<string, unknown>).assigned_vehicle_id || (selectedRequest.dispatch as Record<string, unknown>).vehicle_id ? (
                     <div><strong>Vehicle:</strong> {String((selectedRequest.dispatch as Record<string, unknown>).assigned_vehicle_id || (selectedRequest.dispatch as Record<string, unknown>).vehicle_id)}</div>
@@ -1035,95 +773,6 @@ const RescueCoordinatorDashboard = () => {
                 </div>
               </div>
             ) : null}
-          </div>
-        )}
-      </Modal>
-      {/* Transport Volunteer Roster & Review Table */}
-      <div className="soft-card" style={{ padding: "20px", marginBottom: "24px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-          <h3 style={{ margin: 0, color: "#0F172A", fontSize: "16px", fontWeight: 700 }}>
-            Transport Response Volunteers ({approvedTransportVols.length} Active, {pendingTransportVols.length} Pending Review)
-          </h3>
-          {volLoading && <span style={{ fontSize: "13px", color: "#1E3A8A", fontWeight: 600 }}>Loading volunteers...</span>}
-        </div>
-        <DataTable
-          columns={[
-            {
-              key: "name",
-              title: "Volunteer Name & Contact",
-              render: (_: unknown, row: any) => (
-                <div>
-                  <div style={{ fontWeight: 700, color: "#0F172A" }}>{row.user?.full_name || row.full_name || row.emergency_contact_name || "Volunteer"}</div>
-                  <div style={{ fontSize: "12px", color: "#64748B" }}>{row.user?.email || row.email || `ID: ${String(row.id || "").slice(0, 8)}`}</div>
-                </div>
-              ),
-            },
-            {
-              key: "vehicle_type",
-              title: "Vehicle / Equipment",
-              render: (v: string, row: any) => <span style={{ color: "#475569", fontSize: "13px" }}>{v || row.vehicle || "Standard Rescue Transport"}</span>,
-            },
-            {
-              key: "status",
-              title: "Status",
-              render: (v: string) => <VolBadge status={v} />,
-            },
-            {
-              key: "actions",
-              title: "Actions",
-              render: (_: unknown, row: any) => (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setSelectedVol(row); setIsVolModalOpen(true); }}
-                  style={{ padding: "5px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", color: "#0F172A", fontSize: "12px", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
-                >
-                  <FaEye /> Review
-                </button>
-              ),
-            },
-          ]}
-          data={transportVols}
-          loading={volLoading}
-          emptyMessage="No transport volunteers registered."
-          onRowClick={(row: any) => { setSelectedVol(row); setIsVolModalOpen(true); }}
-        />
-      </div>
-
-      {/* Transport Volunteer Review Modal */}
-      <Modal isOpen={isVolModalOpen} onClose={() => setIsVolModalOpen(false)} title="Transport Volunteer Application Review">
-        {selectedVol && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", fontSize: "13px" }}>
-              <div><strong>Name:</strong> {selectedVol.user?.full_name || selectedVol.full_name || selectedVol.emergency_contact_name || "Volunteer"}</div>
-              <div><strong>Email:</strong> {selectedVol.user?.email || selectedVol.email || "N/A"}</div>
-              <div><strong>Phone:</strong> {selectedVol.user?.phone || selectedVol.phone || "N/A"}</div>
-              <div><strong>Status:</strong> <VolBadge status={selectedVol.status} /></div>
-              <div><strong>Vehicle Type:</strong> {selectedVol.vehicle_type || selectedVol.vehicle || "N/A"}</div>
-              <div><strong>License #:</strong> {selectedVol.driver_license_number || selectedVol.license || "N/A"}</div>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>
-              {isVolPending(selectedVol.status) && (
-                <>
-                  <button
-                    type="button"
-                    disabled={isVolSubmitting}
-                    onClick={() => handleVolApprove(selectedVol)}
-                    style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
-                  >
-                    <FaCheckCircle /> Approve Volunteer
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isVolSubmitting}
-                    onClick={() => handleVolReject(selectedVol)}
-                    style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#DC2626", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
-                  >
-                    <FaTimesCircle /> Reject Volunteer
-                  </button>
-                </>
-              )}
-            </div>
           </div>
         )}
       </Modal>
@@ -1168,49 +817,6 @@ const RescueCoordinatorDashboard = () => {
             </button>
           </div>
         </form>
-      </Modal>
-
-      {/* Nearest Agent GPS Suggestions Modal */}
-      <Modal
-        isOpen={isSuggestModalOpen}
-        onClose={() => setIsSuggestModalOpen(false)}
-        title="📍 Nearest Available Field Agents (GPS Radar)"
-        size="lg"
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-          <p style={{ margin: 0, fontSize: "13px", color: "#64748B" }}>
-            Calculated nearest active agents based on live GPS coordinates and proximity to incident location.
-          </p>
-          {suggestedAgents.length === 0 ? (
-            <div style={{ padding: "16px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0", textAlign: "center", color: "#64748B", fontSize: "13px" }}>
-              No nearby agents found within 50km radius.
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              {suggestedAgents.map((ag: any, i: number) => (
-                <div key={ag.agent_id || ag.id || i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
-                  <div>
-                    <strong style={{ fontSize: "14px", color: "#0F172A" }}>{ag.agent_name || ag.full_name || ag.name || `Agent #${i + 1}`}</strong>
-                    <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>
-                      📍 Proximity: <strong>{ag.distance_km != null ? `${Number(ag.distance_km).toFixed(1)} km` : "Nearby"}</strong> | Status: <span style={{ textTransform: "uppercase", fontWeight: 700, color: "#16A34A" }}>{ag.status || "Active"}</span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsSuggestModalOpen(false);
-                      setIsViewModalOpen(false);
-                      navigate(`/rescue-dispatch?case_id=${encodeURIComponent(String(selectedRequest?.id || ""))}&agent_id=${encodeURIComponent(String(ag.agent_id || ag.id || ""))}`);
-                    }}
-                    style={{ padding: "6px 14px", background: "#1E3A8A", color: "#FFF", borderRadius: "6px", border: "none", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
-                  >
-                    Select &amp; Dispatch
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </Modal>
     </div>
   );

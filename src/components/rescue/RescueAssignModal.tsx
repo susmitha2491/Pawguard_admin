@@ -65,9 +65,17 @@ const isRescueAgentUser = (u: unknown): boolean => {
   const obj = u as Record<string, unknown>;
 
   const norm = normalizeRole(obj);
+  if (norm === "rescue_coordinator") return false;
   if (norm === "rescue_agent") return true;
 
   const roles = getUserRoles(obj);
+  if (roles.some((r) => normalizeRole(r) === "rescue_coordinator")) return false;
+
+  // Agent items from /rescue/agents/availability or availability objects
+  if (obj.agent_name || obj.agent_id || obj.is_agent || (obj.availability !== undefined && obj.role !== "rescue_coordinator")) {
+    return true;
+  }
+
   return roles.some((r) => {
     const rNorm = normalizeRole(r);
     if (rNorm === "rescue_agent") return true;
@@ -90,12 +98,12 @@ const isRescueCoordinatorUser = (u: unknown): boolean => {
   const obj = u as Record<string, unknown>;
 
   const norm = normalizeRole(obj);
-  if (norm === "rescue_coordinator") return true;
+  if (norm === "rescue_coordinator" || norm === "super_admin" || norm === "rescue_centre_admin") return true;
 
   const roles = getUserRoles(obj);
   return roles.some((r) => {
     const rNorm = normalizeRole(r);
-    if (rNorm === "rescue_coordinator") return true;
+    if (rNorm === "rescue_coordinator" || rNorm === "super_admin" || rNorm === "rescue_centre_admin") return true;
     const lower = String(r).toLowerCase().trim();
     return (
       lower === "rescue_coordinator" ||
@@ -105,28 +113,6 @@ const isRescueCoordinatorUser = (u: unknown): boolean => {
       lower.includes("rescue coordinator")
     );
   });
-};
-
-const canUserDrive = (u: unknown): boolean => {
-  if (!u || typeof u !== "object") return false;
-  const obj = u as Record<string, unknown>;
-
-  const checkValue = (val: unknown): boolean => {
-    if (val === true || val === 1) return true;
-    if (typeof val === "string" && val.toLowerCase().trim() === "true") return true;
-    return false;
-  };
-
-  if (checkValue(obj.can_drive)) return true;
-
-  for (const key of ["profile", "user_profile", "meta", "metadata", "attributes", "rawUser"]) {
-    if (obj[key] && typeof obj[key] === "object") {
-      const nested = obj[key] as Record<string, unknown>;
-      if (checkValue(nested.can_drive)) return true;
-    }
-  }
-
-  return false;
 };
 
 export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
@@ -142,7 +128,6 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
   const [assignForm, setAssignForm] = useState({
     coordinator_id: "",
     agent_id: "",
-    driver_id: "",
     vehicle_id: "",
     notes: "",
   });
@@ -165,20 +150,12 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
     if (rescue && isOpen) {
       const preAgentId = rescue.assigned_agent_id || String((rescue.rawItem as any)?.assigned_agent_id || (rescue.raw as any)?.assigned_agent_id || "");
       const agentIsEligible = safeUsersList.some(
-        (u) => String((u as any).id || "") === preAgentId && isRescueAgentUser(u)
-      );
-
-      const preDriverId = String(
-        (rescue.rawItem as any)?.assigned_driver_id || (rescue.raw as any)?.assigned_driver_id || (rescue.rawItem as any)?.dispatch?.assigned_driver_id || (rescue.raw as any)?.dispatch?.assigned_driver_id || ""
-      );
-      const driverIsEligible = safeUsersList.some(
-        (u) => String((u as any).id || "") === preDriverId && canUserDrive(u)
+        (u) => String((u as any).id || (u as any).user_id || (u as any).userId || (u as any).agent_id || "") === preAgentId && isRescueAgentUser(u)
       );
 
       setAssignForm({
         coordinator_id: rescue.coordinator_id || String((rescue.rawItem as any)?.coordinator_id || (rescue.raw as any)?.coordinator_id || ""),
         agent_id: agentIsEligible ? preAgentId : "",
-        driver_id: driverIsEligible ? preDriverId : "",
         vehicle_id: rescue.assigned_vehicle_id || String((rescue.rawItem as any)?.assigned_vehicle_id || (rescue.raw as any)?.assigned_vehicle_id || ""),
         notes: "",
       });
@@ -187,28 +164,17 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
 
   if (!rescue || !isOpen) return null;
 
-  // 1. Coordinators dropdown: only actual Rescue Coordinators
+  // 1. Coordinators dropdown: actual Rescue Coordinators or Super Admin / Rescue Centre Admin
   const coordinatorsList = safeUsersList.filter((u) => isRescueCoordinatorUser(u));
 
-  // 2. Field Rescue Agent dropdown: real Rescue Agents from user dataset
+  // 2. Field Rescue Agent dropdown: real Rescue Agents from availability / user dataset
   const agentsList = safeUsersList.filter((u) => isRescueAgentUser(u));
-
-  // 3. Authorized Driver dropdown: only users who explicitly have can_drive === true
-  const driversList = safeUsersList.filter((u) => canUserDrive(u));
-
-  const selectedDriver = safeUsersList.find(
-    (u) => String((u as any).id || "") === assignForm.driver_id.trim()
-  );
 
   const isFormValid = Boolean(
     assignForm.coordinator_id &&
       assignForm.coordinator_id.trim() !== "" &&
       assignForm.agent_id &&
       assignForm.agent_id.trim() !== "" &&
-      assignForm.driver_id &&
-      assignForm.driver_id.trim() !== "" &&
-      selectedDriver &&
-      canUserDrive(selectedDriver) &&
       assignForm.vehicle_id &&
       assignForm.vehicle_id.trim() !== ""
   );
@@ -222,24 +188,10 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
       !assignForm.coordinator_id.trim() ||
       !assignForm.agent_id ||
       !assignForm.agent_id.trim() ||
-      !assignForm.driver_id ||
-      !assignForm.driver_id.trim() ||
       !assignForm.vehicle_id ||
       !assignForm.vehicle_id.trim()
     ) {
-      addToast("Please select a Rescue Coordinator, Field Rescue Agent, Authorized Driver, and Fleet Vehicle.", "error");
-      return;
-    }
-
-    const selectedDriverObj = safeUsersList.find(
-      (u) => String((u as any).id || "") === assignForm.driver_id.trim()
-    );
-
-    if (!selectedDriverObj || !canUserDrive(selectedDriverObj)) {
-      const driverName = String(
-        (selectedDriverObj as any)?.full_name || (selectedDriverObj as any)?.name || (selectedDriverObj as any)?.email || "Selected driver"
-      );
-      addToast(`User '${driverName}' is not authorized to drive (can_drive=False).`, "error");
+      addToast("Please select a Rescue Coordinator, Field Rescue Agent, and Fleet Vehicle.", "error");
       return;
     }
 
@@ -250,13 +202,12 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
       // 1. Assign Coordinator
       await rescueService.assignCoordinator(realId, assignForm.coordinator_id.trim(), assignForm.notes?.trim() || undefined);
 
-      // 2. Assign Vehicle, Field Agent(s), and Authorized Driver Dispatch
+      // 2. Assign Vehicle and Field Agent(s) Dispatch
       await rescueService.createDispatch({
         case_id: realId,
         assigned_vehicle_id: assignForm.vehicle_id.trim(),
         agent_ids: [assignForm.agent_id.trim()],
         agent_id: assignForm.agent_id.trim(),
-        driver_id: assignForm.driver_id.trim(),
         notes: assignForm.notes?.trim() || undefined,
       });
 
@@ -314,8 +265,8 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
               <option value="">-- Select Rescue Coordinator --</option>
             )}
             {coordinatorsList.map((u) => {
-              const uId = String((u as any).id || "");
-              const rawName = String((u as any).full_name || (u as any).name || (u as any).email || "").trim();
+              const uId = String((u as any).id || (u as any).user_id || (u as any).userId || (u as any).agent_id || "");
+              const rawName = String((u as any).full_name || (u as any).name || (u as any).agent_name || (u as any).email || "").trim();
               const displayName = rawName && !isUuidString(rawName) ? rawName : `Coordinator #${uId.substring(0, 8)}`;
               const loc = String((u as any).service_area || (u as any).location || "").trim();
               const extra = loc && !isUuidString(loc) ? ` (${loc})` : "";
@@ -345,8 +296,8 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
               <option value="">-- Select Field Rescue Agent --</option>
             )}
             {agentsList.map((u) => {
-              const uId = String((u as any).id || "");
-              const rawName = String((u as any).full_name || (u as any).name || (u as any).email || "").trim();
+              const uId = String((u as any).id || (u as any).user_id || (u as any).userId || (u as any).agent_id || "");
+              const rawName = String((u as any).full_name || (u as any).name || (u as any).agent_name || (u as any).email || "").trim();
               const displayName = rawName && !isUuidString(rawName) ? rawName : `Agent #${uId.substring(0, 8)}`;
               const isBusy = (u as any).availability === "Busy" || (u as any).status === "busy" || (u as any).is_busy === true;
 
@@ -363,41 +314,7 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
           </select>
         </div>
 
-        {/* 3. Authorized Driver Dropdown */}
-        <div>
-          <label style={{ display: "block", fontSize: "12px", fontWeight: 700, marginBottom: "4px", color: "#334155" }}>
-            Select Authorized Driver *
-          </label>
-          <select
-            value={assignForm.driver_id}
-            onChange={(e) => setAssignForm({ ...assignForm, driver_id: e.target.value })}
-            style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px", background: "#FFF" }}
-          >
-            {driversList.length === 0 ? (
-              <option value="" disabled>-- No authorized drivers available --</option>
-            ) : (
-              <option value="">-- Select Authorized Driver --</option>
-            )}
-            {driversList.map((u) => {
-              const uId = String((u as any).id || "");
-              const rawName = String((u as any).full_name || (u as any).name || (u as any).email || "").trim();
-              const displayName = rawName && !isUuidString(rawName) ? rawName : `Driver #${uId.substring(0, 8)}`;
-              const isBusy = (u as any).availability === "Busy" || (u as any).status === "busy" || (u as any).is_busy === true;
-
-              const label = isBusy
-                ? `✕ ${displayName} (Busy on Rescue)`
-                : `✓ ${displayName} (Authorized Driver)`;
-
-              return (
-                <option key={uId} value={uId} disabled={isBusy}>
-                  {label}
-                </option>
-              );
-            })}
-          </select>
-        </div>
-
-        {/* 4. Fleet Vehicle Dropdown */}
+        {/* 3. Fleet Vehicle Dropdown */}
         <div>
           <label style={{ display: "block", fontSize: "12px", fontWeight: 700, marginBottom: "4px", color: "#334155" }}>
             Select Fleet Vehicle Unit *
@@ -433,7 +350,7 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
           </select>
         </div>
 
-        {/* 5. Equipment & Instructions / Notes */}
+        {/* 4. Equipment & Instructions / Notes */}
         <div>
           <label style={{ display: "block", fontSize: "12px", fontWeight: 700, marginBottom: "4px", color: "#334155" }}>
             Equipment &amp; Dispatch Instructions / Notes
@@ -479,4 +396,3 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
 };
 
 export default RescueAssignModal;
-
