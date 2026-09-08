@@ -6,6 +6,7 @@ import FinancialTrendChart from "../../components/dashboard/FinancialTrendChart"
 import { useToast } from "../../context/ToastContext";
 import { useDataSync } from "../../utils/dataSync";
 import { getCurrentUser, getCurrentUserRole } from "../../utils/roleUtils";
+import { unwrapList } from "../../utils/chartUtils";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -40,6 +41,9 @@ import {
   FaPills,
   FaCheckCircle,
   FaMapMarkerAlt,
+  FaExchangeAlt,
+  FaShieldAlt,
+  FaWarehouse,
 } from "react-icons/fa";
 import volunteerService from "../../services/volunteerService";
 import fosterService from "../../services/fosterService";
@@ -107,11 +111,11 @@ const Reports = () => {
   const [fosterPlacements, setFosterPlacements] = useState<any[]>([]);
 
   const [shelterDogs, setShelterDogs] = useState<any[]>([]);
+  const [shelterFacilities, setShelterFacilities] = useState<any[]>([]);
+  const [shelterTransfers, setShelterTransfers] = useState<any[]>([]);
+  const [shelterTransfersTotal, setShelterTransfersTotal] = useState(0);
   const [shelterName, setShelterName] = useState("Central Shelter");
   const [shelterCapacity, setShelterCapacity] = useState(0);
-  const [shelterSections, setShelterSections] = useState<any[]>([]);
-  const [vaccinationsCount, setVaccinationsCount] = useState(0);
-  const [prescriptionsCount, setPrescriptionsCount] = useState(0);
   const [adoptions, setAdoptions] = useState<any[]>([]);
 
   const [volunteers, setVolunteers] = useState<any[]>([]);
@@ -223,87 +227,162 @@ const Reports = () => {
       if (isShelterManager || isSuperAdmin) {
         try {
           const currentUser = getCurrentUser();
-          let currentShelterId =
+          // Only scope to a specific facility if the user EXPLICITLY has shelter_id or facility_id
+          // Do NOT fall back to rawFacList[0] — that would incorrectly exclude dogs from other facilities
+          const explicitShelterId =
             (currentUser as any)?.shelter_id ||
             (currentUser as any)?.shelterId ||
             (currentUser as any)?.facility_id ||
-            (currentUser as any)?.facilityId ||
-            (currentUser as any)?.organization_id ||
-            (currentUser as any)?.rescue_centre_id ||
-            (currentUser as any)?.rescue_center_id ||
-            (currentUser as any)?.rescue_facility_id;
+            (currentUser as any)?.facilityId;
+          // rescue_centre_id / organization_id may be a rescue org, not a shelter facility — don't use as shelter scope
 
-          if (!currentShelterId && isShelterManager) {
+          // Fetch all facilities + first page of dogs (paginate below) + first page of transfers
+          const [facilitiesRes, petPage1Res, transfersRes] = await Promise.allSettled([
+            shelterService.getShelters({ page: 1, page_size: 100 }),
+            dogService.getAllDogs({ page_size: 200 }),
+            shelterService.getTransfers({ page: 1, page_size: 200 }),
+          ]);
+
+          // Robust unwrapping using unwrapList
+          const rawFacList: any[] = facilitiesRes.status === "fulfilled"
+            ? unwrapList(facilitiesRes.value)
+            : [];
+
+          // Paginate dogs — start with page 1, fetch remaining pages
+          const petPage1Data: any = petPage1Res.status === "fulfilled" ? petPage1Res.value : null;
+          let allPets: any[] = unwrapList(petPage1Data);
+          const petMeta = petPage1Data?.meta || petPage1Data?.pagination;
+          const petTotal = Number(petMeta?.total ?? petMeta?.count ?? allPets.length);
+          const petPageSize = Number(petMeta?.page_size ?? petMeta?.limit ?? 200);
+          const petTotalPages = petPageSize > 0 ? Math.ceil(petTotal / petPageSize) : 1;
+          if (petTotalPages > 1) {
             try {
-              const facilitiesRes = await shelterService.getShelters({ page: 1, page_size: 50 });
-              const list = Array.isArray(facilitiesRes) ? facilitiesRes : Array.isArray(facilitiesRes?.data) ? facilitiesRes.data : [];
-              if (list.length > 0) currentShelterId = list[0].id || list[0].facility_id;
+              const petPagePromises: Promise<any>[] = [];
+              for (let p = 2; p <= Math.min(petTotalPages, 10); p++) {
+                petPagePromises.push(dogService.getAllDogs({ page: p, page_size: petPageSize }).catch(() => null));
+              }
+              const petPageResults = await Promise.allSettled(petPagePromises);
+              petPageResults.forEach((res) => {
+                if (res.status === "fulfilled" && res.value) {
+                  allPets.push(...unwrapList(res.value));
+                }
+              });
             } catch (err) {
-              console.error("Failed to load facilities fallback:", err);
+              console.error("Error fetching additional dog pages:", err);
             }
           }
 
-          const petRes = await dogService.getAllDogs();
-          const allPets = Array.isArray(petRes?.data) ? petRes.data : Array.isArray(petRes) ? petRes : [];
-          
+          // Paginate transfers
+          let rawTransfers: any[] = [];
+          let transfersTotalCount = 0;
+          if (transfersRes.status === "fulfilled") {
+            const tVal = transfersRes.value;
+            rawTransfers = unwrapList(tVal);
+            transfersTotalCount = Number(
+              (tVal as any)?.meta?.total ?? (tVal as any)?.total ?? rawTransfers.length
+            );
+
+            const totalTransferPages = Number((tVal as any)?.meta?.pages || Math.ceil(transfersTotalCount / 200) || 1);
+            if (totalTransferPages > 1 && rawTransfers.length < transfersTotalCount) {
+              try {
+                const pagePromises: Promise<any>[] = [];
+                for (let p = 2; p <= Math.min(totalTransferPages, 5); p++) {
+                  pagePromises.push(shelterService.getTransfers({ page: p, page_size: 200 }).catch(() => null));
+                }
+                const pageResults = await Promise.allSettled(pagePromises);
+                pageResults.forEach((res) => {
+                  if (res.status === "fulfilled" && res.value) {
+                    rawTransfers.push(...unwrapList(res.value));
+                  }
+                });
+              } catch (err) {
+                console.error("Error fetching additional transfer pages:", err);
+              }
+            }
+          }
+
+          // Deduplicate transfers by unique identifier
+          const seenTransferIds = new Set<string>();
+          const uniqueTransfers = rawTransfers.filter((t: any) => {
+            const id = String(t.id || t._id || `${t.from_facility_id}-${t.to_facility_id}-${t.created_at}`);
+            if (seenTransferIds.has(id)) return false;
+            seenTransferIds.add(id);
+            return true;
+          });
+
+          // SCOPE: Only filter to a specific facility when user profile EXPLICITLY has an assigned facility
+          // If no explicit assignment, show ALL facilities and ALL animals (unscoped manager)
+          let scopedFacilities = rawFacList;
           let scopedPets = allPets;
-          if (isShelterManager && currentShelterId) {
+
+          if (explicitShelterId) {
+            const explicitIdNorm = String(explicitShelterId).toLowerCase().trim();
+            const matchedFacs = rawFacList.filter(
+              (f: any) => String(f.id || f.facility_id || f.shelter_id || "").toLowerCase().trim() === explicitIdNorm
+            );
+            if (matchedFacs.length > 0) {
+              scopedFacilities = matchedFacs;
+            }
             scopedPets = allPets.filter((p: any) => {
               const pShelterId = p.shelter_facility_id || p.shelter_id || p.facility_id || p.shelterId || p.facilityId;
-              return String(pShelterId) === String(currentShelterId);
+              if (!pShelterId) return true; // animal with no facility assignment: include by default
+              return String(pShelterId).toLowerCase().trim() === explicitIdNorm;
             });
           }
 
+          // Build per-facility capacity by loading sections if direct capacity is missing
           let shelterNameVal = "Central Shelter Facility";
-          let sectionsList: any[] = [];
-          let totalCapacity = 0;
+          let primaryCapacity = 0;
 
-          if (currentShelterId) {
+          if (scopedFacilities.length > 0) {
+            shelterNameVal = scopedFacilities[0].name || shelterNameVal;
+            primaryCapacity = Number(scopedFacilities[0].total_capacity || scopedFacilities[0].capacity || 0);
+          }
+
+          // Load sections for facilities that have no direct capacity set
+          const facilitiesNeedingSections = scopedFacilities.filter((f: any) => {
+            const cap = Number(f.total_capacity || f.capacity || 0);
+            return cap === 0;
+          });
+
+          if (facilitiesNeedingSections.length > 0) {
             try {
-              const fac = await shelterService.getShelterById(currentShelterId);
-              if (fac?.name) shelterNameVal = fac.name;
-              if (fac?.total_capacity) totalCapacity = Number(fac.total_capacity);
-
-              const secRes = await shelterService.getFacilitySections(currentShelterId);
-              const secData = (secRes as any)?.data ?? secRes;
-              sectionsList = Array.isArray(secData) ? secData : Array.isArray(secData?.data) ? secData.data : [];
+              const secPromises = facilitiesNeedingSections.slice(0, 5).map((f: any) => {
+                const fId = String(f.id || f.facility_id || f.shelter_id || "").trim();
+                return fId
+                  ? shelterService.getFacilitySections(fId).catch(() => null)
+                  : Promise.resolve(null);
+              });
+              const secResults = await Promise.allSettled(secPromises);
+              secResults.forEach((res, idx) => {
+                if (res.status === "fulfilled" && res.value) {
+                  const secList = unwrapList(res.value);
+                  const secCap = secList.reduce((acc: number, s: any) => acc + (Number(s.capacity || s.total_capacity) || 0), 0);
+                  if (secCap > 0) {
+                    const fac = facilitiesNeedingSections[idx];
+                    const fId = String(fac.id || fac.facility_id || fac.shelter_id || "").toLowerCase().trim();
+                    const match = scopedFacilities.find((f: any) =>
+                      String(f.id || f.facility_id || f.shelter_id || "").toLowerCase().trim() === fId
+                    );
+                    if (match) match._section_capacity = secCap;
+                  }
+                }
+              });
             } catch (e) {
-              console.error("Failed to load shelter details:", e);
+              console.error("Failed to load facility sections:", e);
             }
           }
 
-          const shelterDogIds = new Set(scopedPets.map((p) => String(p.id)));
+          const totalScopedCapacity = scopedFacilities.reduce((acc: number, f: any) => {
+            return acc + Number(f.total_capacity || f.capacity || f._section_capacity || 0);
+          }, 0);
 
-          let vaccList: any[] = [];
-          let rxList: any[] = [];
-          try {
-            const vaccRes = await reminderService.getVaccinations({ page: 1, page_size: 50 });
-            const rawVacc = Array.isArray(vaccRes?.data) ? vaccRes.data : Array.isArray(vaccRes) ? vaccRes : [];
-            vaccList = isShelterManager ? rawVacc.filter((v: any) => shelterDogIds.has(String(v.dog_id || v.dogId))) : rawVacc;
-
-            const rxRes = await reminderService.getPrescriptions({ page: 1, page_size: 50 });
-            const rawRx = Array.isArray(rxRes?.data) ? rxRes.data : Array.isArray(rxRes) ? rxRes : [];
-            rxList = isShelterManager ? rawRx.filter((r: any) => shelterDogIds.has(String(r.dog_id || r.dogId))) : rawRx;
-          } catch (e) {
-            console.error("Failed to load medical records for reports:", e);
-          }
-
-          let adoptionList: any[] = [];
-          try {
-            const adoptRes = await adoptionService.getAdoptions({ page: 1, page_size: 50 });
-            const rawAdopt = Array.isArray(adoptRes?.data) ? adoptRes.data : Array.isArray(adoptRes) ? adoptRes : [];
-            adoptionList = isShelterManager ? rawAdopt.filter((a: any) => shelterDogIds.has(String(a.dog_id || a.dogId))) : rawAdopt;
-          } catch (e) {
-            console.error("Failed to load adoptions for reports:", e);
-          }
-
+          setShelterFacilities(scopedFacilities);
           setShelterDogs(scopedPets);
+          setShelterTransfers(uniqueTransfers);
+          setShelterTransfersTotal(transfersTotalCount > 0 ? transfersTotalCount : uniqueTransfers.length);
           setShelterName(shelterNameVal);
-          setShelterCapacity(totalCapacity || sectionsList.reduce((acc, s) => acc + (Number(s.capacity) || 0), 0) || 50);
-          setShelterSections(sectionsList);
-          setVaccinationsCount(vaccList.length);
-          setPrescriptionsCount(rxList.length);
-          setAdoptions(adoptionList);
+          setShelterCapacity(totalScopedCapacity > 0 ? totalScopedCapacity : primaryCapacity);
         } catch (e) {
           console.error("Error loading shelter reports data:", e);
         }
@@ -523,47 +602,314 @@ const Reports = () => {
     return points;
   }, [allAttendance]);
 
-  // Derived Shelter Metrics & Chart
-  const shelterChartPoints = useMemo(() => {
-    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const intakesByMonth = new Map<string, number>();
-    const adoptionsByMonth = new Map<string, number>();
+  // ------------------- SHELTER CAPACITY & TURNOVER METRIC CALCULATIONS -------------------
 
-    shelterDogs.forEach((dog) => {
-      const rawDate = dog.created_at || dog.date || dog.admission_date;
-      const d = new Date(rawDate);
-      if (isNaN(d.getTime())) return;
-      const key = `${d.getFullYear()}-${d.getMonth()}`;
-      intakesByMonth.set(key, (intakesByMonth.get(key) || 0) + 1);
-    });
+  // 1. Average Length of Stay per Animal (Strict Data Integrity)
+  const shelterStayDurationMetrics = useMemo(() => {
+    let validCompletedCount = 0;
+    let validCurrentCount = 0;
+    let departedWithoutExitDateCount = 0;
+    const completedStayDays: number[] = [];
+    const currentStayDays: number[] = [];
+    const allStayDays: number[] = [];
 
-    adoptions.forEach((ad) => {
-      const isApproved = String(ad.status).toLowerCase() === "approved" || String(ad.status).toLowerCase() === "completed";
-      if (!isApproved) return;
-      if (shelterDogs.length > 0) {
-        const hasDog = shelterDogs.some((d) => String(d.id) === String(ad.dog_id || ad.dogId));
-        if (!hasDog) return;
+    const now = Date.now();
+    const EXITED_STATUS_SET = new Set(["adopted", "fostered", "transferred", "deceased", "completed", "released", "rehomed", "returned"]);
+
+    shelterDogs.forEach((dog: any) => {
+      // Use only valid admission / intake timestamps
+      const rawIntake = dog.admission_date || dog.admitted_at || dog.intake_date || dog.intake_at || dog.rescue_date || dog.created_at;
+      if (!rawIntake) return;
+      const intakeTime = new Date(rawIntake).getTime();
+      if (isNaN(intakeTime) || intakeTime > now) return;
+
+      const st = String(dog.status || dog.lifecycle_status || dog.placement_status || "shelter").toLowerCase().trim();
+      const isDeparted = EXITED_STATUS_SET.has(st) || dog.is_adopted === true || dog.is_deceased === true || dog.is_transferred === true;
+
+      if (isDeparted) {
+        // For departed animals, use ONLY an explicit actual exit timestamp
+        // NEVER use generic updated_at or now as an exit date
+        const rawExit = dog.exit_date || dog.departure_date || dog.adopted_at || dog.fostered_at || dog.transferred_at || dog.released_at || dog.rehomed_at || dog.deceased_at;
+        if (rawExit) {
+          const exitTime = new Date(rawExit).getTime();
+          if (!isNaN(exitTime) && exitTime >= intakeTime) {
+            const days = Math.round((exitTime - intakeTime) / (1000 * 60 * 60 * 24));
+            if (days >= 0 && days <= 3650) {
+              completedStayDays.push(days);
+              allStayDays.push(days);
+              validCompletedCount++;
+            }
+          }
+        } else {
+          departedWithoutExitDateCount++;
+        }
+      } else {
+        // Active residents: calculate admission -> current date
+        const days = Math.round((now - intakeTime) / (1000 * 60 * 60 * 24));
+        if (days >= 0 && days <= 3650) {
+          currentStayDays.push(days);
+          allStayDays.push(days);
+          validCurrentCount++;
+        }
       }
-      const rawDate = ad.created_at || ad.updated_at || ad.date;
-      const d = new Date(rawDate);
-      if (isNaN(d.getTime())) return;
-      const key = `${d.getFullYear()}-${d.getMonth()}`;
-      adoptionsByMonth.set(key, (adoptionsByMonth.get(key) || 0) + 1);
     });
-    
-    const now = new Date();
-    const points: { month: string; intakes: number; adoptions: number }[] = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${d.getMonth()}`;
-      points.push({
-        month: MONTHS[d.getMonth()],
-        intakes: intakesByMonth.get(key) || 0,
-        adoptions: adoptionsByMonth.get(key) || 0,
+
+    const totalEvaluated = allStayDays.length;
+    const avgOverallDays = totalEvaluated > 0 ? Math.round(allStayDays.reduce((a, b) => a + b, 0) / totalEvaluated) : 0;
+    const avgCurrentDays = currentStayDays.length > 0 ? Math.round(currentStayDays.reduce((a, b) => a + b, 0) / currentStayDays.length) : 0;
+    const avgCompletedDays = completedStayDays.length > 0 ? Math.round(completedStayDays.reduce((a, b) => a + b, 0) / completedStayDays.length) : 0;
+    const minStayDays = allStayDays.length > 0 ? Math.min(...allStayDays) : 0;
+    const maxStayDays = allStayDays.length > 0 ? Math.max(...allStayDays) : 0;
+
+    const buckets = [
+      { range: "0–14 Days", label: "Short Stay / Intake & Quarantine", count: allStayDays.filter((d) => d <= 14).length },
+      { range: "15–30 Days", label: "Medium Stay / Care & Transition", count: allStayDays.filter((d) => d > 14 && d <= 30).length },
+      { range: "31–90 Days", label: "Extended Stay / Adoption Stage", count: allStayDays.filter((d) => d > 30 && d <= 90).length },
+      { range: "90+ Days", label: "Long Stay / Sanctuary Care", count: allStayDays.filter((d) => d > 90).length },
+    ].map((b) => ({
+      ...b,
+      pct: totalEvaluated > 0 ? ((b.count / totalEvaluated) * 100).toFixed(1) + "%" : "0%",
+    }));
+
+    return {
+      totalEvaluated,
+      validCurrentCount,
+      validCompletedCount,
+      departedWithoutExitDateCount,
+      avgOverallDays,
+      avgCurrentDays,
+      avgCompletedDays,
+      minStayDays,
+      maxStayDays,
+      buckets,
+      avgDisplay: totalEvaluated > 0 ? `${avgOverallDays} Days` : "No admission/stay records",
+    };
+  }, [shelterDogs]);
+
+  // 2. Kennel Utilization by Facility (Real backend capacities & occupancy)
+  const shelterKennelUtilizationMetrics = useMemo(() => {
+    const facMap = new Map<string, {
+      id: string;
+      name: string;
+      address: string;
+      facility_type: string;
+      totalCapacity: number;
+      occupied: number;
+    }>();
+
+    shelterFacilities.forEach((f: any) => {
+      const fId = String(f.id || f.facility_id || f.shelter_id || "").trim();
+      if (!fId) return;
+      // Use direct capacity, then section-computed capacity (_section_capacity injected by loadReportsData)
+      const cap = Number(f.total_capacity || f.capacity || f._section_capacity || 0);
+      facMap.set(fId.toLowerCase(), {
+        id: fId,
+        name: f.name || "Shelter Facility",
+        address: f.address || "Address not recorded",
+        facility_type: f.facility_type || "shelter",
+        totalCapacity: cap > 0 ? cap : 0,
+        occupied: 0,
+      });
+    });
+
+    const EXITED_STATUS_SET = new Set(["adopted", "fostered", "transferred", "deceased", "completed", "released", "rehomed", "returned"]);
+
+    shelterDogs.forEach((dog: any) => {
+      // Calculate occupied animals using ONLY animals actually housed at that facility
+      const st = String(dog.status || dog.lifecycle_status || dog.placement_status || "").toLowerCase().trim();
+      const isDeparted = EXITED_STATUS_SET.has(st) || dog.is_adopted === true || dog.is_deceased === true || dog.is_transferred === true;
+      if (isDeparted) return;
+
+      // Match animals to facilities using authoritative facility/shelter IDs only
+      const rawShelterId = dog.shelter_facility_id ?? dog.shelter_id ?? dog.facility_id ?? dog.shelterId ?? dog.facilityId ?? dog.organization_id;
+      const dFacId = rawShelterId ? String(rawShelterId).toLowerCase().trim() : "";
+
+      if (dFacId && facMap.has(dFacId)) {
+        const entry = facMap.get(dFacId)!;
+        entry.occupied++;
+      } else if (!dFacId && facMap.size === 1) {
+        // If single authorized facility in scope, attribute active resident
+        const singleEntry = Array.from(facMap.values())[0];
+        singleEntry.occupied++;
+      }
+      // Never assign an animal to a facility based on guesswork or name matching
+    });
+
+    if (facMap.size === 0) {
+      const activeDogsCount = shelterDogs.filter((dog: any) => {
+        const st = String(dog.status || dog.lifecycle_status || dog.placement_status || "").toLowerCase().trim();
+        return !EXITED_STATUS_SET.has(st) && dog.is_adopted !== true && dog.is_deceased !== true && dog.is_transferred !== true;
+      }).length;
+
+      facMap.set("default-shelter", {
+        id: "default-shelter",
+        name: shelterName || "Central Shelter Facility",
+        address: "Primary Facility Campus",
+        facility_type: "shelter",
+        totalCapacity: shelterCapacity > 0 ? shelterCapacity : 0,
+        occupied: activeDogsCount,
       });
     }
-    return points;
-  }, [shelterDogs, adoptions]);
+
+    const facilityList = Array.from(facMap.values()).map((f) => {
+      const vacant = Math.max(0, f.totalCapacity - f.occupied);
+      const utilNum = f.totalCapacity > 0 ? (f.occupied / f.totalCapacity) * 100 : 0;
+      const utilPct = f.totalCapacity > 0 ? utilNum.toFixed(1) + "%" : (f.occupied > 0 ? `${f.occupied} Occupied (No Cap)` : "0.0%");
+      let statusBadge = "Optimal (<75%)";
+      let statusColor = "#10B981";
+      if (f.totalCapacity === 0) {
+        statusBadge = "Capacity Unspecified";
+        statusColor = "#64748B";
+      } else if (utilNum >= 90) {
+        statusBadge = "Critical (>90%)";
+        statusColor = "#DC2626";
+      } else if (utilNum >= 75) {
+        statusBadge = "High (75–90%)";
+        statusColor = "#F59E0B";
+      }
+
+      return {
+        ...f,
+        vacant,
+        utilNum,
+        utilPct,
+        statusBadge,
+        statusColor,
+      };
+    });
+
+    const totalSystemCapacity = facilityList.reduce((acc, f) => acc + f.totalCapacity, 0);
+    const totalSystemOccupied = facilityList.reduce((acc, f) => acc + f.occupied, 0);
+    const totalSystemVacant = Math.max(0, totalSystemCapacity - totalSystemOccupied);
+    const systemUtilNum = totalSystemCapacity > 0 ? (totalSystemOccupied / totalSystemCapacity) * 100 : 0;
+    const systemUtilPct = totalSystemCapacity > 0 ? systemUtilNum.toFixed(1) + "%" : (totalSystemOccupied > 0 ? `${totalSystemOccupied} Occupied` : "0.0%");
+
+    return {
+      facilityList,
+      totalSystemCapacity,
+      totalSystemOccupied,
+      totalSystemVacant,
+      systemUtilNum,
+      systemUtilPct,
+    };
+  }, [shelterFacilities, shelterDogs, shelterName, shelterCapacity]);
+
+  // 3. Quarantine Clearing Speed (Actual quarantine start -> clearance timestamps only)
+  const shelterQuarantineMetrics = useMemo(() => {
+    let clearedCount = 0;
+    let activeQuarantineCount = 0;
+    let totalEvaluated = 0;
+    const clearingDays: number[] = [];
+
+    shelterDogs.forEach((dog: any) => {
+      const isPassed = dog.is_quarantine_passed === true;
+      const medStatus = String(dog.medical_status || "").toLowerCase();
+      const isInQuarantine = dog.is_quarantine_passed === false || medStatus.includes("quarantine") || medStatus.includes("isolation");
+
+      if (isInQuarantine) {
+        activeQuarantineCount++;
+        totalEvaluated++;
+      } else if (isPassed || medStatus.includes("cleared") || medStatus.includes("fit")) {
+        clearedCount++;
+        totalEvaluated++;
+
+        // Strict Quarantine Timestamps: require explicit quarantine start and clearance release dates
+        // NEVER use admission_date or created_at as quarantine start unless explicitly defined as quarantine entry
+        const rawStart = dog.quarantine_entered_at || dog.quarantine_start_date || dog.quarantine_start || dog.isolation_entered_at || dog.isolation_start_date;
+        // NEVER use generic updated_at as quarantine clearance
+        const rawEnd = dog.quarantine_cleared_at || dog.quarantine_cleared_date || dog.vet_clearance_date || dog.quarantine_exit_date || dog.isolation_cleared_at;
+
+        if (rawStart && rawEnd) {
+          const sTime = new Date(rawStart).getTime();
+          const eTime = new Date(rawEnd).getTime();
+          if (!isNaN(sTime) && !isNaN(eTime) && eTime >= sTime) {
+            const days = Math.round((eTime - sTime) / (1000 * 60 * 60 * 24));
+            if (days >= 0 && days <= 365) {
+              clearingDays.push(days);
+            }
+          }
+        }
+      }
+    });
+
+    const avgDays = clearingDays.length > 0 ? Math.round(clearingDays.reduce((a, b) => a + b, 0) / clearingDays.length) : null;
+    const minDays = clearingDays.length > 0 ? Math.min(...clearingDays) : null;
+    const maxDays = clearingDays.length > 0 ? Math.max(...clearingDays) : null;
+    const passRateNum = totalEvaluated > 0 ? (clearedCount / totalEvaluated) * 100 : 0;
+    const passRatePct = passRateNum.toFixed(1) + "%";
+
+    return {
+      totalEvaluated,
+      clearedCount,
+      activeQuarantineCount,
+      clearingSampleCount: clearingDays.length,
+      avgDays,
+      minDays,
+      maxDays,
+      avgDisplay: avgDays !== null ? `${avgDays} Days` : (clearedCount > 0 ? "No clearance timestamps recorded" : "No quarantine records"),
+      minDisplay: minDays !== null ? `${minDays} Days` : "N/A",
+      maxDisplay: maxDays !== null ? `${maxDays} Days` : "N/A",
+      passRatePct,
+    };
+  }, [shelterDogs]);
+
+  // 4. Inter-Facility Transfer Volume (Full transfer volume with pagination safety)
+  const shelterTransferMetrics = useMemo(() => {
+    const totalVolume = shelterTransfersTotal > 0 ? Math.max(shelterTransfersTotal, shelterTransfers.length) : shelterTransfers.length;
+    let completedCount = 0;
+    let inTransitCount = 0;
+    let pendingCount = 0;
+    let cancelledCount = 0;
+
+    const routeMap = new Map<string, { from: string; to: string; count: number }>();
+    const facNameMap = new Map<string, string>();
+    shelterFacilities.forEach((f: any) => {
+      const id = String(f.id || f.facility_id || f.shelter_id || "").trim().toLowerCase();
+      if (id) facNameMap.set(id, f.name || "Facility");
+    });
+
+    shelterTransfers.forEach((t: any) => {
+      const st = String(t.status || "completed").toLowerCase();
+      if (["completed", "received", "delivered", "accepted"].includes(st)) {
+        completedCount++;
+      } else if (["in_transit", "dispatched", "en_route"].includes(st)) {
+        inTransitCount++;
+      } else if (["cancelled", "rejected"].includes(st)) {
+        cancelledCount++;
+      } else {
+        pendingCount++;
+      }
+
+      const fromId = String(t.from_facility_id || t.from_facility?.id || "").trim().toLowerCase();
+      const toId = String(t.to_facility_id || t.to_facility?.id || "").trim().toLowerCase();
+
+      const fromName = t.from_facility?.name || t.from_facility_name || facNameMap.get(fromId) || (fromId ? `Facility (${fromId.slice(0, 8)})` : "Origin Facility");
+      const toName = t.to_facility?.name || t.to_facility_name || facNameMap.get(toId) || (toId ? `Facility (${toId.slice(0, 8)})` : "Destination Facility");
+
+      const routeKey = `${fromName} ➔ ${toName}`;
+      const existing = routeMap.get(routeKey);
+      if (existing) {
+        existing.count++;
+      } else {
+        routeMap.set(routeKey, { from: fromName, to: toName, count: 1 });
+      }
+    });
+
+    const routeList = Array.from(routeMap.values()).map((r) => ({
+      ...r,
+      route: `${r.from} ➔ ${r.to}`,
+      pct: shelterTransfers.length > 0 ? ((r.count / shelterTransfers.length) * 100).toFixed(1) + "%" : "0%",
+    })).sort((a, b) => b.count - a.count);
+
+    return {
+      totalVolume,
+      completedCount,
+      inTransitCount,
+      pendingCount,
+      cancelledCount,
+      routeList,
+    };
+  }, [shelterTransfers, shelterTransfersTotal, shelterFacilities]);
 
   // Authoritative total rescue cases count from meta.total or fallback to array length
   const totalRescueCasesCount = rescueMeta?.total ?? rescueCases.length;
@@ -1413,12 +1759,509 @@ const Reports = () => {
     );
   };
 
+  // SHELTER OPERATIONS & CAPACITY TURNOVER REPORT VIEW (REP-002 COMPLIANT)
+  const renderShelterReports = () => {
+    const shelterStatCards = [
+      {
+        title: "Avg Length of Stay",
+        value: loading ? "..." : shelterStayDurationMetrics.avgDisplay,
+        trend: `${shelterStayDurationMetrics.totalEvaluated} Animals Evaluated`,
+        color: "#2563EB",
+        icon: <FaClock />,
+      },
+      {
+        title: "Kennel Utilization",
+        value: loading ? "..." : shelterKennelUtilizationMetrics.systemUtilPct,
+        trend: `${shelterKennelUtilizationMetrics.totalSystemOccupied} / ${shelterKennelUtilizationMetrics.totalSystemCapacity} Kennels Occupied`,
+        color: "#10B981",
+        icon: <FaWarehouse />,
+      },
+      {
+        title: "Quarantine Clear Speed",
+        value: loading ? "..." : shelterQuarantineMetrics.avgDisplay,
+        trend: `${shelterQuarantineMetrics.passRatePct} Clearance Rate (${shelterQuarantineMetrics.clearedCount} Cleared)`,
+        color: "#F59E0B",
+        icon: <FaShieldAlt />,
+      },
+      {
+        title: "Transfer Volume",
+        value: loading ? "..." : `${shelterTransferMetrics.totalVolume} Transfers`,
+        trend: `${shelterTransferMetrics.completedCount} Completed • ${shelterTransferMetrics.inTransitCount} In Transit`,
+        color: "#6366F1",
+        icon: <FaExchangeAlt />,
+      },
+    ];
+
+    return (
+      <div style={{ width: "100%", boxSizing: "border-box" }}>
+        {/* Header */}
+        <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
+          <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Shelter Capacity &amp; Turnover Audit</h1>
+          <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
+            Official shelter capacity and movement report tracking average length of stay per animal, kennel utilization across facilities, quarantine clearing duration, and inter-facility transfer volumes.
+          </p>
+        </div>
+
+        {/* Quick Export Actions */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "14px", marginBottom: "24px" }}>
+          <QuickActionCard
+            icon={<FaFileAlt />}
+            title="Export PDF Report"
+            subtitle="Printable shelter capacity &amp; turnover audit"
+            color="#DC2626"
+            onClick={() => {
+              const headers = ["Animal ID", "Name", "Breed", "Facility", "Intake Date", "Status", "Quarantine Passed", "Stay (Days)"];
+              const rows = shelterDogs.map((d) => {
+                const rawIntake = d.admission_date || d.admitted_at || d.intake_date || d.created_at;
+                const intakeStr = rawIntake ? new Date(rawIntake).toLocaleDateString() : "-";
+                const intakeTime = rawIntake ? new Date(rawIntake).getTime() : 0;
+                const stayDays = intakeTime > 0 ? Math.round((Date.now() - intakeTime) / (1000 * 60 * 60 * 24)) : "-";
+                return [
+                  d.id ? String(d.id).slice(0, 8) : "-",
+                  d.name || "-",
+                  d.breed || "-",
+                  shelterName || "-",
+                  intakeStr,
+                  String(d.status || "shelter").toUpperCase(),
+                  d.is_quarantine_passed ? "YES (CLEARED)" : "IN QUARANTINE",
+                  String(stayDays),
+                ];
+              });
+              const auditSummary = `Total Animals: ${shelterStayDurationMetrics.totalEvaluated} | Avg Stay: ${shelterStayDurationMetrics.avgDisplay} | Kennel Util: ${shelterKennelUtilizationMetrics.systemUtilPct} | Transfers: ${shelterTransferMetrics.totalVolume}`;
+              handleExportPDF("Shelter Capacity & Turnover Audit", auditSummary, headers, rows);
+            }}
+          />
+          <QuickActionCard
+            icon={<FaFileAlt />}
+            title="Export CSV Dataset"
+            subtitle="Full shelter animal stay &amp; facility log dataset"
+            color="#2563EB"
+            onClick={() => {
+              const headers = "Animal_ID,Name,Breed,Facility,Intake_Date,Stay_Duration_Days,Status,Quarantine_Passed";
+              const rows = shelterDogs.map((d) => {
+                const rawIntake = d.admission_date || d.admitted_at || d.intake_date || d.created_at;
+                const intakeTime = rawIntake ? new Date(rawIntake).getTime() : 0;
+                const stayDays = intakeTime > 0 ? Math.round((Date.now() - intakeTime) / (1000 * 60 * 60 * 24)) : "-";
+                return `"${d.id || "-"}","${d.name || "-"}","${d.breed || "-"}","${shelterName || "-"}","${rawIntake ? String(rawIntake).slice(0, 10) : "-"}","${stayDays}","${d.status || "shelter"}","${Boolean(d.is_quarantine_passed)}"`;
+              });
+              handleExportCSV("shelter_capacity_and_turnover_report", headers, rows);
+            }}
+          />
+          <QuickActionCard
+            icon={<FaFileDownload />}
+            title="Export Excel (.xls)"
+            subtitle="Structured Excel spreadsheet dataset"
+            color="#10B981"
+            onClick={() => {
+              const headers = "Animal_ID,Name,Breed,Facility,Intake_Date,Stay_Duration_Days,Status,Quarantine_Passed";
+              const rows = shelterDogs.map((d) => {
+                const rawIntake = d.admission_date || d.admitted_at || d.intake_date || d.created_at;
+                const intakeTime = rawIntake ? new Date(rawIntake).getTime() : 0;
+                const stayDays = intakeTime > 0 ? Math.round((Date.now() - intakeTime) / (1000 * 60 * 60 * 24)) : "-";
+                return `"${d.id || "-"}","${d.name || "-"}","${d.breed || "-"}","${shelterName || "-"}","${rawIntake ? String(rawIntake).slice(0, 10) : "-"}","${stayDays}","${d.status || "shelter"}","${Boolean(d.is_quarantine_passed)}"`;
+              });
+              handleExportExcel("shelter_capacity_and_turnover_report", headers, rows);
+            }}
+          />
+        </div>
+
+        {/* 4 Top KPI Cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "24px" }}>
+          {shelterStatCards.map((card) => (
+            <StatCard key={card.title} {...card} />
+          ))}
+        </div>
+
+        {/* 1. AVERAGE LENGTH OF STAY PER ANIMAL */}
+        <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", marginBottom: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+            <FaClock color="#2563EB" size={22} />
+            <div>
+              <h2 style={{ margin: 0, fontSize: "20px", color: "#0F172A", fontWeight: 800 }}>1. Average Length of Stay per Animal (Stay Duration &amp; Turnover)</h2>
+              <p style={{ margin: "2px 0 0", color: "#64748B", fontSize: "13px" }}>
+                Tracks duration from original admission timestamp (<code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>created_at</code> / <code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>admission_date</code>) to exit or current active stay duration.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginBottom: "20px" }}>
+            <div style={{ background: "#EEF2FF", border: "1px solid #C7D2FE", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#3730A3", fontWeight: 700 }}>OVERALL AVERAGE STAY</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#312E81", marginTop: "4px" }}>{shelterStayDurationMetrics.avgOverallDays} Days</div>
+              <div style={{ fontSize: "12px", color: "#4338CA", marginTop: "4px" }}>Across {shelterStayDurationMetrics.totalEvaluated} evaluated animals</div>
+            </div>
+
+            <div style={{ background: "#F0FDF4", border: "1px solid #86EFAC", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#166534", fontWeight: 700 }}>CURRENT RESIDENTS AVERAGE</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#14532D", marginTop: "4px" }}>{shelterStayDurationMetrics.avgCurrentDays} Days</div>
+              <div style={{ fontSize: "12px", color: "#15803D", marginTop: "4px" }}>{shelterStayDurationMetrics.validCurrentCount} currently housed animals</div>
+            </div>
+
+            <div style={{ background: "#FAF5FF", border: "1px solid #E9D5FF", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#6B21A8", fontWeight: 700 }}>DISCHARGED / PLACED AVERAGE</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#581C87", marginTop: "4px" }}>{shelterStayDurationMetrics.avgCompletedDays} Days</div>
+              <div style={{ fontSize: "12px", color: "#7E22CE", marginTop: "4px" }}>{shelterStayDurationMetrics.validCompletedCount} adopted / placed animals</div>
+            </div>
+
+            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#475569", fontWeight: 700 }}>STAY DURATION RANGE</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#0F172A", marginTop: "4px" }}>
+                {shelterStayDurationMetrics.minStayDays}d – {shelterStayDurationMetrics.maxStayDays}d
+              </div>
+              <div style={{ fontSize: "12px", color: "#64748B", marginTop: "4px" }}>Shortest to longest stay interval</div>
+            </div>
+          </div>
+
+          {/* Stay Buckets Breakdown */}
+          <div style={{ marginTop: "16px", border: "1px solid #E2E8F0", borderRadius: "12px", overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+              <thead>
+                <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
+                  <th style={{ padding: "12px 14px", fontSize: "12px", color: "#64748B" }}>STAY DURATION BUCKET</th>
+                  <th style={{ padding: "12px 14px", fontSize: "12px", color: "#64748B" }}>CARE / TURNOVER STAGE</th>
+                  <th style={{ padding: "12px 14px", fontSize: "12px", color: "#64748B", textAlign: "center" }}>ANIMAL COUNT</th>
+                  <th style={{ padding: "12px 14px", fontSize: "12px", color: "#64748B", textAlign: "center" }}>PERCENTAGE SHARE</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shelterStayDurationMetrics.buckets.map((b, idx) => (
+                  <tr key={idx} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                    <td style={{ padding: "12px 14px", fontWeight: 800, color: "#0F172A", fontSize: "14px" }}>
+                      {b.range}
+                    </td>
+                    <td style={{ padding: "12px 14px", color: "#475569", fontSize: "13px" }}>
+                      {b.label}
+                    </td>
+                    <td style={{ padding: "12px 14px", textAlign: "center", fontWeight: 800, color: "#2563EB" }}>
+                      {b.count}
+                    </td>
+                    <td style={{ padding: "12px 14px", textAlign: "center" }}>
+                      <span style={{ background: "#EFF6FF", color: "#1D4ED8", padding: "3px 10px", borderRadius: "999px", fontWeight: 800, fontSize: "12px" }}>
+                        {b.pct}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* 2. KENNEL UTILIZATION BY FACILITY */}
+        <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", marginBottom: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+            <FaWarehouse color="#10B981" size={22} />
+            <div>
+              <h2 style={{ margin: 0, fontSize: "20px", color: "#0F172A", fontWeight: 800 }}>2. Kennel Utilization by Facility (Capacity Management)</h2>
+              <p style={{ margin: "2px 0 0", color: "#64748B", fontSize: "13px" }}>
+                Formula: <code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>(Occupied Kennels / Total Kennel Capacity) × 100</code> computed separately for each facility/shelter using real capacity and occupancy records.
+              </p>
+            </div>
+          </div>
+
+          {/* System Summary Grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginBottom: "20px" }}>
+            <div style={{ background: "linear-gradient(135deg, #10B981 0%, #059669 100%)", padding: "18px", borderRadius: "14px", color: "#FFF" }}>
+              <div style={{ fontSize: "12px", fontWeight: 800, opacity: 0.9 }}>SYSTEM-WIDE UTILIZATION</div>
+              <div style={{ fontSize: "32px", fontWeight: 900, marginTop: "4px" }}>{shelterKennelUtilizationMetrics.systemUtilPct}</div>
+              <div style={{ fontSize: "12px", marginTop: "2px", opacity: 0.95 }}>{shelterKennelUtilizationMetrics.totalSystemOccupied} of {shelterKennelUtilizationMetrics.totalSystemCapacity} Total Slots Occupied</div>
+            </div>
+
+            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#475569", fontWeight: 700 }}>TOTAL CAPACITY SLOTS</div>
+              <div style={{ fontSize: "28px", fontWeight: 900, color: "#0F172A", marginTop: "4px" }}>{shelterKennelUtilizationMetrics.totalSystemCapacity}</div>
+              <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>Registered across {shelterKennelUtilizationMetrics.facilityList.length} facilities</div>
+            </div>
+
+            <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#1E40AF", fontWeight: 700 }}>OCCUPIED KENNELS</div>
+              <div style={{ fontSize: "28px", fontWeight: 900, color: "#1E3A8A", marginTop: "4px" }}>{shelterKennelUtilizationMetrics.totalSystemOccupied}</div>
+              <div style={{ fontSize: "12px", color: "#2563EB", marginTop: "2px" }}>Currently housed animals</div>
+            </div>
+
+            <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#166534", fontWeight: 700 }}>AVAILABLE VACANT KENNELS</div>
+              <div style={{ fontSize: "28px", fontWeight: 900, color: "#14532D", marginTop: "4px" }}>{shelterKennelUtilizationMetrics.totalSystemVacant}</div>
+              <div style={{ fontSize: "12px", color: "#15803D", marginTop: "2px" }}>Ready for new intakes &amp; rescues</div>
+            </div>
+          </div>
+
+          {/* Facility Table */}
+          <div style={{ overflowX: "auto", border: "1px solid #E2E8F0", borderRadius: "12px" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+              <thead>
+                <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
+                  <th style={{ padding: "12px 14px", fontSize: "12px", color: "#64748B" }}>FACILITY / SHELTER NAME</th>
+                  <th style={{ padding: "12px 14px", fontSize: "12px", color: "#64748B" }}>TYPE &amp; LOCATION</th>
+                  <th style={{ padding: "12px 14px", fontSize: "12px", color: "#64748B", textAlign: "center" }}>CAPACITY</th>
+                  <th style={{ padding: "12px 14px", fontSize: "12px", color: "#64748B", textAlign: "center" }}>OCCUPIED</th>
+                  <th style={{ padding: "12px 14px", fontSize: "12px", color: "#64748B", textAlign: "center" }}>VACANT</th>
+                  <th style={{ padding: "12px 14px", fontSize: "12px", color: "#64748B" }}>UTILIZATION %</th>
+                  <th style={{ padding: "12px 14px", fontSize: "12px", color: "#64748B", textAlign: "center" }}>CAPACITY STATUS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shelterKennelUtilizationMetrics.facilityList.map((f, idx) => (
+                  <tr key={f.id || idx} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                    <td style={{ padding: "12px 14px", fontWeight: 800, color: "#0F172A", fontSize: "14px" }}>
+                      {f.name}
+                    </td>
+                    <td style={{ padding: "12px 14px", color: "#64748B", fontSize: "13px" }}>
+                      <span style={{ textTransform: "capitalize", fontWeight: 600, color: "#334155" }}>{f.facility_type}</span> • {f.address}
+                    </td>
+                    <td style={{ padding: "12px 14px", textAlign: "center", fontWeight: 700, color: "#0F172A" }}>
+                      {f.totalCapacity}
+                    </td>
+                    <td style={{ padding: "12px 14px", textAlign: "center", fontWeight: 800, color: "#2563EB" }}>
+                      {f.occupied}
+                    </td>
+                    <td style={{ padding: "12px 14px", textAlign: "center", fontWeight: 800, color: "#10B981" }}>
+                      {f.vacant}
+                    </td>
+                    <td style={{ padding: "12px 14px", minWidth: "160px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ flex: 1, height: "8px", background: "#E2E8F0", borderRadius: "999px", overflow: "hidden" }}>
+                          <div style={{ width: `${Math.min(100, f.utilNum)}%`, height: "100%", background: f.statusColor, borderRadius: "999px" }} />
+                        </div>
+                        <span style={{ fontWeight: 800, fontSize: "12px", color: f.statusColor }}>{f.utilPct}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: "12px 14px", textAlign: "center" }}>
+                      <span style={{ background: `${f.statusColor}15`, color: f.statusColor, border: `1px solid ${f.statusColor}30`, padding: "3px 10px", borderRadius: "999px", fontWeight: 800, fontSize: "11px" }}>
+                        {f.statusBadge}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* 3. QUARANTINE CLEARING SPEED */}
+        <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", marginBottom: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+            <FaShieldAlt color="#F59E0B" size={22} />
+            <div>
+              <h2 style={{ margin: 0, fontSize: "20px", color: "#0F172A", fontWeight: 800 }}>3. Quarantine Clearing Speed &amp; Medical Isolation</h2>
+              <p style={{ margin: "2px 0 0", color: "#64748B", fontSize: "13px" }}>
+                Tracks duration from quarantine entry to medical clearance (<code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>is_quarantine_passed</code> / <code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>vet_clearance_date</code>) using real clinical timestamps.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginBottom: "20px" }}>
+            <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#92400E", fontWeight: 700 }}>AVERAGE QUARANTINE DURATION</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#78350F", marginTop: "4px" }}>{shelterQuarantineMetrics.avgDisplay}</div>
+              <div style={{ fontSize: "12px", color: "#B45309", marginTop: "4px" }}>Quarantine Start ➔ Clearance Release</div>
+            </div>
+
+            <div style={{ background: "#F0FDF4", border: "1px solid #86EFAC", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#166534", fontWeight: 700 }}>FASTEST CLEARANCE</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#14532D", marginTop: "4px" }}>{shelterQuarantineMetrics.minDisplay}</div>
+              <div style={{ fontSize: "12px", color: "#15803D", marginTop: "4px" }}>Minimum recorded clearance interval</div>
+            </div>
+
+            <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#991B1B", fontWeight: 700 }}>LONGEST CLEARANCE</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#7F1D1D", marginTop: "4px" }}>{shelterQuarantineMetrics.maxDisplay}</div>
+              <div style={{ fontSize: "12px", color: "#991B1B", marginTop: "4px" }}>Extended medical hold interval</div>
+            </div>
+
+            <div style={{ background: "#EEF2FF", border: "1px solid #C7D2FE", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#3730A3", fontWeight: 700 }}>QUARANTINE CLEARANCE RATE</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#312E81", marginTop: "4px" }}>{shelterQuarantineMetrics.passRatePct}</div>
+              <div style={{ fontSize: "12px", color: "#4338CA", marginTop: "4px" }}>{shelterQuarantineMetrics.clearedCount} of {shelterQuarantineMetrics.totalEvaluated} animals certified</div>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "16px", borderRadius: "12px" }}>
+              <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A" }}>Active in Medical Quarantine / Isolation</div>
+              <div style={{ fontSize: "24px", fontWeight: 900, color: "#DC2626", marginTop: "4px" }}>{shelterQuarantineMetrics.activeQuarantineCount} Animals</div>
+              <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>Under mandatory observational isolation prior to general kennel transfer</div>
+            </div>
+
+            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "16px", borderRadius: "12px" }}>
+              <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A" }}>Cleared &amp; Health Certified</div>
+              <div style={{ fontSize: "24px", fontWeight: 900, color: "#10B981", marginTop: "4px" }}>{shelterQuarantineMetrics.clearedCount} Animals</div>
+              <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>Medically certified for kennel housing, foster care, or adoption matching</div>
+            </div>
+          </div>
+        </div>
+
+        {/* 4. INTER-FACILITY TRANSFER VOLUME */}
+        <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", marginBottom: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+            <FaExchangeAlt color="#6366F1" size={22} />
+            <div>
+              <h2 style={{ margin: 0, fontSize: "20px", color: "#0F172A", fontWeight: 800 }}>4. Inter-Facility Transfer Volume &amp; Movement Flow</h2>
+              <p style={{ margin: "2px 0 0", color: "#64748B", fontSize: "13px" }}>
+                Tracks animal relocation and capacity balancing movements across facilities (<code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "4px" }}>/shelter/transfers</code>) with origin and destination records.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginBottom: "20px" }}>
+            <div style={{ background: "#EEF2FF", border: "1px solid #C7D2FE", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#3730A3", fontWeight: 700 }}>TOTAL LOGGED TRANSFERS</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#312E81", marginTop: "4px" }}>{shelterTransferMetrics.totalVolume}</div>
+              <div style={{ fontSize: "12px", color: "#4338CA", marginTop: "4px" }}>All-time facility transfer operations</div>
+            </div>
+
+            <div style={{ background: "#F0FDF4", border: "1px solid #86EFAC", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#166534", fontWeight: 700 }}>COMPLETED HANDOVERS</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#14532D", marginTop: "4px" }}>{shelterTransferMetrics.completedCount}</div>
+              <div style={{ fontSize: "12px", color: "#15803D", marginTop: "4px" }}>Successfully arrived at destination</div>
+            </div>
+
+            <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#92400E", fontWeight: 700 }}>IN-TRANSIT MOVEMENTS</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#78350F", marginTop: "4px" }}>{shelterTransferMetrics.inTransitCount}</div>
+              <div style={{ fontSize: "12px", color: "#B45309", marginTop: "4px" }}>Currently en-route with transport team</div>
+            </div>
+
+            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "18px", borderRadius: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#475569", fontWeight: 700 }}>PENDING PLACEMENTS</div>
+              <div style={{ fontSize: "26px", fontWeight: 900, color: "#0F172A", marginTop: "4px" }}>{shelterTransferMetrics.pendingCount}</div>
+              <div style={{ fontSize: "12px", color: "#64748B", marginTop: "4px" }}>Awaiting sender / receiver confirmation</div>
+            </div>
+          </div>
+
+          {/* Route Flow Table */}
+          <div style={{ marginBottom: "24px" }}>
+            <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A", marginBottom: "10px" }}>
+              Transfer Route Flow Distribution ({shelterTransferMetrics.routeList.length} Active Routes)
+            </div>
+
+            {shelterTransferMetrics.routeList.length === 0 ? (
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "20px", textAlign: "center", color: "#64748B", fontSize: "13px" }}>
+                No inter-facility transfers currently recorded. All animals are currently managed within their initial intake facility.
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto", border: "1px solid #E2E8F0", borderRadius: "12px" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                  <thead>
+                    <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
+                      <th style={{ padding: "10px 14px", fontSize: "12px", color: "#64748B" }}>ORIGIN FACILITY (FROM)</th>
+                      <th style={{ padding: "10px 14px", fontSize: "12px", color: "#64748B" }}>DESTINATION FACILITY (TO)</th>
+                      <th style={{ padding: "10px 14px", fontSize: "12px", color: "#64748B", textAlign: "center" }}>TRANSFER COUNT</th>
+                      <th style={{ padding: "10px 14px", fontSize: "12px", color: "#64748B", textAlign: "center" }}>FLOW DENSITY %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shelterTransferMetrics.routeList.map((route, idx) => (
+                      <tr key={idx} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                        <td style={{ padding: "12px 14px", fontWeight: 700, color: "#0F172A", fontSize: "13px" }}>
+                          {route.from}
+                        </td>
+                        <td style={{ padding: "12px 14px", fontWeight: 700, color: "#2563EB", fontSize: "13px" }}>
+                          ➔ {route.to}
+                        </td>
+                        <td style={{ padding: "12px 14px", textAlign: "center", fontWeight: 800, color: "#0F172A" }}>
+                          {route.count}
+                        </td>
+                        <td style={{ padding: "12px 14px", textAlign: "center" }}>
+                          <span style={{ background: "#EFF6FF", color: "#1D4ED8", padding: "3px 10px", borderRadius: "999px", fontWeight: 800, fontSize: "11px" }}>
+                            {route.pct}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Recent Transfers Log Table */}
+          <div>
+            <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A", marginBottom: "10px" }}>
+              Recent Inter-Facility Transfer Records ({shelterTransfers.length})
+            </div>
+
+            {shelterTransfers.length === 0 ? (
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "20px", textAlign: "center", color: "#64748B", fontSize: "13px" }}>
+                No transfer records logged.
+              </div>
+            ) : (
+              <div style={{ maxHeight: "320px", overflowY: "auto", overflowX: "auto", border: "1px solid #E2E8F0", borderRadius: "12px" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                  <thead>
+                    <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
+                      <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", position: "sticky", top: 0, background: "#F8FAFC" }}>TRANSFER ID</th>
+                      <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", position: "sticky", top: 0, background: "#F8FAFC" }}>ANIMAL / DOG</th>
+                      <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", position: "sticky", top: 0, background: "#F8FAFC" }}>FROM FACILITY</th>
+                      <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", position: "sticky", top: 0, background: "#F8FAFC" }}>TO FACILITY</th>
+                      <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", position: "sticky", top: 0, background: "#F8FAFC", textAlign: "center" }}>STATUS</th>
+                      <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", position: "sticky", top: 0, background: "#F8FAFC" }}>DATE</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shelterTransfers.map((t: any, idx: number) => {
+                      const tId = t.id ? String(t.id).slice(0, 8) : `TR-${idx + 1}`;
+                      const matchedDog = shelterDogs.find((d: any) => String(d.id) === String(t.dog_id));
+                      const dogName = t.dog?.name || t.dog_name || matchedDog?.name || (t.dog_id ? `Animal (${String(t.dog_id).slice(0, 8)})` : "Shelter Resident");
+                      const fromName = t.from_facility?.name || t.from_facility_name || (t.from_facility_id ? `Facility ${String(t.from_facility_id).slice(0, 6)}` : "Origin Shelter");
+                      const toName = t.to_facility?.name || t.to_facility_name || (t.to_facility_id ? `Facility ${String(t.to_facility_id).slice(0, 6)}` : "Destination Shelter");
+                      const st = String(t.status || "completed").toLowerCase();
+                      const dateStr = t.created_at || t.transferred_at || t.date ? new Date(t.created_at || t.transferred_at || t.date).toLocaleDateString() : "-";
+
+                      let statusBadgeBg = "#EFF6FF";
+                      let statusBadgeColor = "#1D4ED8";
+                      if (["completed", "received", "delivered"].includes(st)) {
+                        statusBadgeBg = "#DCFCE7";
+                        statusBadgeColor = "#15803D";
+                      } else if (["in_transit", "en_route"].includes(st)) {
+                        statusBadgeBg = "#FEF3C7";
+                        statusBadgeColor = "#B45309";
+                      } else if (["cancelled", "rejected"].includes(st)) {
+                        statusBadgeBg = "#FEE2E2";
+                        statusBadgeColor = "#B91C1C";
+                      }
+
+                      return (
+                        <tr key={t.id || idx} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                          <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: "12px", fontWeight: 700, color: "#2563EB" }}>
+                            {tId}
+                          </td>
+                          <td style={{ padding: "10px 12px", fontWeight: 700, color: "#0F172A", fontSize: "13px" }}>
+                            {dogName}
+                          </td>
+                          <td style={{ padding: "10px 12px", color: "#475569", fontSize: "13px" }}>
+                            {fromName}
+                          </td>
+                          <td style={{ padding: "10px 12px", fontWeight: 600, color: "#2563EB", fontSize: "13px" }}>
+                            ➔ {toName}
+                          </td>
+                          <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                            <span style={{ background: statusBadgeBg, color: statusBadgeColor, padding: "2px 8px", borderRadius: "999px", fontWeight: 700, fontSize: "11px", textTransform: "uppercase" }}>
+                              {st}
+                            </span>
+                          </td>
+                          <td style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B" }}>
+                            {dateStr}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // VETERINARY & MEDICAL REPORT VIEW
   const renderMedicalReports = () => {
     const medicalStatCards = [
       { title: "Active Clinical Patients", value: loading ? "..." : String(shelterDogs.length), trend: "Under Care", color: "#2563EB", icon: <FaStethoscope /> },
-      { title: "Vaccinations Administered", value: loading ? "..." : String(vaccineReminders.length || vaccinationsCount), trend: "Vaccine Logs", color: "#10B981", icon: <FaSyringe /> },
-      { title: "Prescriptions Issued", value: loading ? "..." : String(prescriptionReminders.length || prescriptionsCount), trend: "Active Medications", color: "#F59E0B", icon: <FaPills /> },
+      { title: "Vaccinations Administered", value: loading ? "..." : String(vaccineReminders.length), trend: "Vaccine Logs", color: "#10B981", icon: <FaSyringe /> },
+      { title: "Prescriptions Issued", value: loading ? "..." : String(prescriptionReminders.length), trend: "Active Medications", color: "#F59E0B", icon: <FaPills /> },
       { title: "Medical Clearances", value: loading ? "..." : String(vaccineReminders.filter((v) => v.status === "completed").length), trend: "Clearance Granted", color: "#6366F1", icon: <FaCheckCircle /> },
     ];
 
@@ -1738,21 +2581,7 @@ const Reports = () => {
             <FinancialTrendChart data={financialChartPoints} />
           </div>
         )}
-        {adminTab === "shelter" && (
-          <div style={{ width: "100%" }}>
-            <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
-              <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Shelter Facilities &amp; Occupancy Analytics</h1>
-              <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-                Operational reports on kennel occupancy, shelter dog intakes, completed adoptions, and care areas.
-              </p>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-              <StatCard title="Total Shelter Dogs" value={loading ? "..." : String(shelterDogs.length)} trend="All Facilities" color="#2563EB" icon={<FaUsers />} />
-              <StatCard title="Kennel Capacity" value={loading ? "..." : `${shelterCapacity} slots`} trend="Available Capacity" color="#10B981" icon={<FaUserCheck />} />
-              <StatCard title="Completed Adoptions" value={loading ? "..." : String(adoptions.filter((a) => ["approved", "completed"].includes(String(a.status).toLowerCase())).length)} trend="Adopted" color="#6366F1" icon={<FaCalendarAlt />} />
-            </div>
-          </div>
-        )}
+        {adminTab === "shelter" && renderShelterReports()}
         {adminTab === "overview" && (
           <div style={{ width: "100%" }}>
             <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
@@ -1801,87 +2630,7 @@ const Reports = () => {
 
   // SHELTER MANAGER
   if (isShelterManager) {
-    const shelterStatCards = [
-      { title: "Total Shelter Dogs", value: loading ? "..." : String(shelterDogs.length), trend: "Scoped to Shelter", color: "#2563EB", icon: <FaUsers /> },
-      { title: "Kennel Utilization", value: loading ? "..." : `${shelterCapacity > 0 ? Math.round((shelterDogs.length / shelterCapacity) * 100) : 0}%`, trend: `${shelterDogs.length} of ${shelterCapacity} occupied`, color: "#10B981", icon: <FaUserCheck /> },
-      { title: "Active Medical Reminders", value: loading ? "..." : String(vaccinationsCount + prescriptionsCount), trend: `${vaccinationsCount} Vacc, ${prescriptionsCount} Rx`, color: "#F59E0B", icon: <FaClipboardList /> },
-      { title: "Completed Adoptions", value: loading ? "..." : String(adoptions.filter((a: any) => String(a.status).toLowerCase() === "approved" || String(a.status).toLowerCase() === "completed").length), trend: "Successful Placements", color: "#6366F1", icon: <FaCalendarAlt /> },
-      { title: "Shelter Care Sections", value: loading ? "..." : String(shelterSections.length), trend: "Operational Areas", color: "#0284C7", icon: <FaChartBar /> },
-    ];
-
-    const totalIntakes = shelterChartPoints.reduce((sum, p) => sum + p.intakes, 0);
-    const totalAdoptions = shelterChartPoints.reduce((sum, p) => sum + p.adoptions, 0);
-    const thisMonthIntake = shelterChartPoints.length ? shelterChartPoints[shelterChartPoints.length - 1].intakes : 0;
-    const lastMonthIntake = shelterChartPoints.length > 1 ? shelterChartPoints[shelterChartPoints.length - 2].intakes : 0;
-    const intakeGrowthPct = lastMonthIntake > 0 ? Math.round(((thisMonthIntake - lastMonthIntake) / lastMonthIntake) * 100) : thisMonthIntake > 0 ? 100 : 0;
-
-    return (
-      <div style={{ width: "100%", boxSizing: "border-box" }}>
-        <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
-          <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Shelter Operations &amp; Analytical Reports</h1>
-          <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-            Live operational reports on kennel occupancy, shelter dog intakes, completed adoptions, medical logs, and care areas for {shelterName}.
-          </p>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-          {shelterStatCards.map((s) => (
-            <StatCard key={s.title} {...s} />
-          ))}
-        </div>
-
-        <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", marginTop: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.08)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "25px" }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: "22px", color: "#0F172A", fontWeight: 800 }}>Shelter Intake &amp; Adoption Trend</h2>
-              <p style={{ marginTop: "6px", color: "#64748B", fontSize: "14px" }}>Monthly animal intakes vs successful adoptions trend over the last 6 months</p>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: "40px", marginBottom: "24px", flexWrap: "wrap" }}>
-            <div>
-              <p style={{ margin: 0, color: "#64748B", fontSize: "13px", fontWeight: 600 }}>This Month Intake</p>
-              <h3 style={{ margin: "4px 0 0", color: "#16A34A", fontSize: "28px", fontWeight: 800 }}>{thisMonthIntake} Dogs</h3>
-            </div>
-            <div>
-              <p style={{ margin: 0, color: "#64748B", fontSize: "13px", fontWeight: 600 }}>Intake Growth</p>
-              <h3 style={{ margin: "4px 0 0", color: "#F59E0B", fontSize: "28px", fontWeight: 800 }}>{thisMonthIntake === 0 && lastMonthIntake === 0 ? "0%" : `${intakeGrowthPct >= 0 ? "+" : ""}${intakeGrowthPct}%`}</h3>
-            </div>
-            <div>
-              <p style={{ margin: 0, color: "#64748B", fontSize: "13px", fontWeight: 600 }}>Total Period Intakes</p>
-              <h3 style={{ margin: "4px 0 0", color: "#2563EB", fontSize: "28px", fontWeight: 800 }}>{totalIntakes} Dogs</h3>
-            </div>
-            <div>
-              <p style={{ margin: 0, color: "#64748B", fontSize: "13px", fontWeight: 600 }}>Total Period Adoptions</p>
-              <h3 style={{ margin: "4px 0 0", color: "#6366F1", fontSize: "28px", fontWeight: 800 }}>{totalAdoptions} Dogs</h3>
-            </div>
-          </div>
-
-          <div style={{ width: "100%", height: 320 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={shelterChartPoints} margin={{ top: 10, right: 20, left: 10, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorIntakes" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#10B981" stopOpacity={0.0} />
-                  </linearGradient>
-                  <linearGradient id="colorAdoptions" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366F1" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#6366F1" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                <XAxis dataKey="month" stroke="#94A3B8" fontSize={12} tickLine={false} />
-                <YAxis stroke="#94A3B8" fontSize={12} tickLine={false} />
-                <Tooltip contentStyle={{ backgroundColor: "#0F172A", border: "none", borderRadius: "8px", color: "#FFF", fontSize: "12px" }} formatter={(val: any, name: any) => [`${val} Dogs`, name === "intakes" ? "Intakes" : "Adoptions"]} />
-                <Area type="monotone" dataKey="intakes" stroke="#10B981" strokeWidth={3} fillOpacity={1} fill="url(#colorIntakes)" />
-                <Area type="monotone" dataKey="adoptions" stroke="#6366F1" strokeWidth={2} fillOpacity={1} fill="url(#colorAdoptions)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-    );
+    return renderShelterReports();
   }
 
   // FINANCE USER
