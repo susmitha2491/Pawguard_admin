@@ -270,15 +270,38 @@ export const volunteerService = {
     return response.data;
   },
 
-  // POST /volunteers/shifts/{shift_id}/join - Join or assign volunteer to shift
+  // POST /volunteers/shifts/{shift_id}/join - Normal volunteer self-service join shift
   joinShift: async (shiftInput: any, volunteerId?: string) => {
     const shiftId = extractShiftId(shiftInput);
     if (!shiftId) {
       throw new Error("Invalid shift ID provided for shift join/assignment.");
     }
-    const payload = volunteerId ? { volunteer_id: volunteerId, volunteer_profile_id: volunteerId } : undefined;
-    const response = await api.post(`/volunteers/shifts/${shiftId}/join`, payload);
+    // If volunteerId is provided, route to administrative assignment endpoint (/assign)
+    if (volunteerId) {
+      return volunteerService.assignShift(shiftId, volunteerId);
+    }
+    const response = await api.post(`/volunteers/shifts/${shiftId}/join`);
     return response.data;
+  },
+
+  // POST /volunteers/shifts/{shift_id}/assign - Coordinator administrative assignment
+  assignShift: async (shiftInput: any, volunteerId: string) => {
+    const shiftId = extractShiftId(shiftInput);
+    if (!shiftId) {
+      throw new Error("Invalid shift ID provided for shift assignment.");
+    }
+    if (!volunteerId) {
+      throw new Error("Volunteer ID is required for shift assignment.");
+    }
+    const response = await api.post(`/volunteers/shifts/${shiftId}/assign`, {
+      volunteer_id: volunteerId,
+    });
+    return response.data;
+  },
+
+  // Alias for coordinator administrative assignment
+  assignVolunteerToShift: async (shiftInput: any, volunteerId: string) => {
+    return volunteerService.assignShift(shiftInput, volunteerId);
   },
 
   // GET /volunteers/shifts/{shift_id}/attendance - List shift attendance

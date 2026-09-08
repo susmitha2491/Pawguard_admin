@@ -44,6 +44,88 @@ const DEFAULT_APPROVAL_MSG =
 const DEFAULT_REJECTION_MSG =
   "Thank you for your interest in volunteering with PawGuard. After reviewing your application, we are unable to proceed with your application at this time. We appreciate your interest in supporting animal welfare.";
 
+const VOLUNTEER_PAGE_SIZE = 50;
+
+type VolunteerPage = {
+  records: any[];
+  totalPages?: number;
+  hasNext?: boolean;
+};
+
+const parseVolunteerPage = (response: any): VolunteerPage => {
+  const body = response && typeof response === "object" ? response : {};
+  const nestedData = body.data && typeof body.data === "object" && !Array.isArray(body.data) ? body.data : null;
+  const meta = body.meta || body.pagination || nestedData?.meta || {};
+  const records = Array.isArray(response)
+    ? response
+    : Array.isArray(body.data)
+    ? body.data
+    : Array.isArray(body.items)
+    ? body.items
+    : Array.isArray(nestedData?.items)
+    ? nestedData.items
+    : [];
+  const totalPages = Number(meta.total_pages ?? body.total_pages ?? nestedData?.total_pages);
+  const hasNextValue = meta.has_next ?? meta.hasNext ?? body.has_next ?? body.hasNext;
+  const hasNext = typeof hasNextValue === "boolean"
+    ? hasNextValue
+    : meta.next !== undefined || body.next !== undefined
+      ? Boolean(meta.next ?? body.next)
+      : undefined;
+
+  return {
+    records,
+    totalPages: Number.isFinite(totalPages) && totalPages > 0 ? totalPages : undefined,
+    hasNext,
+  };
+};
+
+const fetchAllVolunteerPages = async (): Promise<any[]> => {
+  const allRecords: any[] = [];
+  const seenIds = new Set<string>();
+  const seenPageSignatures = new Set<string>();
+  let page = 1;
+
+  while (true) {
+    const response = await volunteerService.getVolunteers({
+      page,
+      page_size: VOLUNTEER_PAGE_SIZE,
+    });
+    const parsed = parseVolunteerPage(response);
+    const pageRecords = parsed.records;
+    const pageSignature = pageRecords
+      .map((record) => String(record?.id ?? record?.profile_id ?? record?.user?.id ?? ""))
+      .join("|");
+
+    if (pageSignature && seenPageSignatures.has(pageSignature)) break;
+    if (pageSignature) seenPageSignatures.add(pageSignature);
+
+    pageRecords.forEach((record) => {
+      const recordId = record?.id ?? record?.profile_id ?? record?.user?.id;
+      if (recordId === undefined || recordId === null) {
+        allRecords.push(record);
+        return;
+      }
+      const key = String(recordId);
+      if (!seenIds.has(key)) {
+        seenIds.add(key);
+        allRecords.push(record);
+      }
+    });
+
+    if (parsed.totalPages !== undefined) {
+      if (page >= parsed.totalPages) break;
+    } else if (parsed.hasNext === false || pageRecords.length < VOLUNTEER_PAGE_SIZE) {
+      break;
+    }
+
+    page += 1;
+    if (page > 1000) break;
+  }
+
+  return allRecords;
+};
+
 type TabKey = "overview" | "pipeline" | "roster" | "schedules" | "attendance" | "completed" | "performance_reports";
 
 const VolunteerCoordinatorDashboard = () => {
@@ -577,16 +659,14 @@ const VolunteerCoordinatorDashboard = () => {
       setError(null);
 
       const [volRes, shiftRes, facRes, statRes, dashRes] = await Promise.allSettled([
-        volunteerService.getVolunteers({ page_size: 500 }),
-        volunteerService.getShifts({ page_size: 500 }),
+        fetchAllVolunteerPages(),
+        volunteerService.getShifts({ page_size: 50 }),
         shelterService.getShelters({ page_size: 50 }),
         volunteerService.getVolunteerStats(),
         dashboardService.getVolunteerDashboard().catch(() => null),
       ]);
 
-      const volList = volRes.status === "fulfilled"
-        ? (Array.isArray(volRes.value) ? volRes.value : volRes.value?.data || volRes.value?.items || [])
-        : [];
+      const volList = volRes.status === "fulfilled" ? volRes.value : [];
       const shiftList = shiftRes.status === "fulfilled"
         ? (Array.isArray(shiftRes.value) ? shiftRes.value : shiftRes.value?.data || shiftRes.value?.items || [])
         : [];
@@ -828,7 +908,7 @@ const VolunteerCoordinatorDashboard = () => {
           ? volunteerService.extractShiftId(createdShift) 
           : (createdShift?.id || createdShift?.data?.id || (createdShift?.data as any)?.data?.id);
         if (shiftId) {
-          await volunteerService.joinShift(shiftId, shiftForm.assigned_volunteer_id).catch(() => {});
+          await volunteerService.assignShift(shiftId, shiftForm.assigned_volunteer_id).catch(() => {});
         }
       }
 
@@ -1046,7 +1126,7 @@ const VolunteerCoordinatorDashboard = () => {
 
     try {
       setIsSubmitting(true);
-      await volunteerService.joinShift(selectedShiftToAssign.id, selectedAssignVolunteerId);
+      await volunteerService.assignShift(selectedShiftToAssign.id, selectedAssignVolunteerId);
 
       const volObj = volunteers.find((v) => String(v.id) === String(selectedAssignVolunteerId));
       const volName = volObj?.user?.full_name || volObj?.full_name || "Volunteer";
@@ -1063,16 +1143,55 @@ const VolunteerCoordinatorDashboard = () => {
 
       setIsAssignModalOpen(false);
       setSelectedShiftToAssign(null);
-      fetchDashboardData();
+      await fetchDashboardData();
       notifyDataChanged();
     } catch (err: any) {
-      const errorMsg =
-        typeof err?.response?.data?.detail === "string"
-          ? err.response.data.detail
-          : Array.isArray(err?.response?.data?.detail)
-          ? err.response.data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ")
-          : err?.response?.data?.message || err?.message || "Failed to assign volunteer to shift.";
-      addToast(errorMsg, "error");
+      const status = err?.response?.status;
+      const data = err?.response?.data;
+      const rawDetail = data?.detail;
+      const rawMsg =
+        typeof rawDetail === "string"
+          ? rawDetail
+          : Array.isArray(rawDetail)
+          ? rawDetail.map((d: any) => d?.msg || d?.message || JSON.stringify(d)).join(", ")
+          : data?.error?.message || data?.message || err?.message;
+
+      if (status === 409) {
+        const lower = String(rawMsg || "").toLowerCase();
+        if (lower.includes("capacity") || lower.includes("full") || lower.includes("max")) {
+          addToast(rawMsg || "Shift is already at full capacity. Cannot assign additional volunteers.", "error");
+        } else if (
+          lower.includes("already") ||
+          lower.includes("enrolled") ||
+          lower.includes("assigned") ||
+          lower.includes("duplicate") ||
+          lower.includes("registered")
+        ) {
+          addToast(rawMsg || "Selected volunteer is already enrolled in this shift.", "error");
+        } else {
+          addToast(
+            rawMsg || "Assignment conflict: Shift is at full capacity or volunteer is already enrolled.",
+            "error"
+          );
+        }
+      } else if (status === 422) {
+        const lower = String(rawMsg || "").toLowerCase();
+        const isGeneric = !rawMsg || lower.includes("validation error") || lower.includes("field required");
+        addToast(
+          isGeneric
+            ? "Selected volunteer is not eligible, active, or approved for shift assignment."
+            : rawMsg,
+          "error"
+        );
+      } else if (status === 403) {
+        addToast(
+          rawMsg || "Permission denied: Only Volunteer Coordinators and authorized administrators can assign volunteers to shifts.",
+          "error"
+        );
+      } else {
+        const errorMsg = rawMsg || "Failed to assign volunteer to shift.";
+        addToast(errorMsg, "error");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -1159,7 +1278,7 @@ const VolunteerCoordinatorDashboard = () => {
       }
 
       try {
-        await volunteerService.joinShift(shiftId, assignWorkForm.volunteer_id);
+        await volunteerService.assignShift(shiftId, assignWorkForm.volunteer_id);
       } catch (joinErr: any) {
         const joinMsg = joinErr?.response?.data?.detail || joinErr?.response?.data?.message || joinErr?.message || "Failed to assign volunteer to shift.";
         addToast(`Work shift created, but volunteer assignment failed: ${joinMsg}`, "error");
@@ -1417,7 +1536,9 @@ const VolunteerCoordinatorDashboard = () => {
   const filteredRoster = useMemo(() =>
     volunteers.filter((v) => {
       const s = String(v.status || "applied").toLowerCase();
-      const matchesStatus = !statusFilter || s === statusFilter.toLowerCase();
+      const matchesStatus = statusFilter
+        ? s === statusFilter.toLowerCase()
+        : ["onboarded", "active"].includes(s);
       const role = String(v.preferred_role || v.skills || "").toLowerCase();
       const matchesRole = !roleFilter || role.includes(roleFilter.toLowerCase());
       const name = String(v.user?.full_name || v.full_name || v.emergency_contact_name || "").toLowerCase();
