@@ -1,6 +1,5 @@
 import api from "../api/axios";
 import { publishActionEvent } from "../utils/eventSystem";
-import { userService } from "./userService";
 
 export type DonationType = "one_time" | "recurring" | "sponsorship";
 export type DonationStatus = "pending" | "success" | "failed" | "refunded";
@@ -164,42 +163,7 @@ export const donationsService = {
     const body = response.data;
     const raw = extractArray(body);
     const rows = raw.map(normalizeDonationRow);
-
-    // Resolve donor names for rows with donor_id where name is unpopulated or "Unknown User" and not explicitly anonymous
-    const enrichedRows = await Promise.all(
-      rows.map(async (row) => {
-        if (
-          (!row.donorName || row.donorName === "Anonymous Donor" || row.donorName === "Unknown User") &&
-          row.donorId &&
-          !row.raw?.is_anonymous &&
-          !row.raw?.anonymous
-        ) {
-          try {
-            const userSummary = await userService.getUserSummary(row.donorId);
-            if (userSummary) {
-              const uObj = (userSummary.data || userSummary.user || userSummary) as Record<string, unknown>;
-              const fullName = uObj.full_name || uObj.name || (uObj.first_name ? `${uObj.first_name} ${uObj.last_name || ""}`.trim() : null);
-              if (fullName || uObj.email) {
-                const realName = String(fullName || uObj.email || "Registered User");
-                const realEmail = String(uObj.email || row.donorEmail || "Not available");
-                const realPhone = String(uObj.phone || uObj.phone_number || row.donorPhone || "Not provided");
-                return {
-                  ...row,
-                  donorName: realName,
-                  donorEmail: realEmail,
-                  donorPhone: realPhone,
-                };
-              }
-            }
-          } catch {
-            // Keep default row if lookup fails
-          }
-        }
-        return row;
-      })
-    );
-
-    return { ...body, data: enrichedRows, total: body?.meta?.total ?? body?.total ?? enrichedRows.length };
+    return { ...body, data: rows, total: body?.meta?.total ?? body?.total ?? rows.length };
   },
 
   // GET /donations/history - My donation history

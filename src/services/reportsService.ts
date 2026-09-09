@@ -38,19 +38,15 @@ export interface ReportFileResponse {
 }
 
 export const reportsService = {
-  // POST /reports/generate - backend-authoritative medical analytics payload (JSON report only)
+  // GET /reports/medical/analytics - backend-authoritative medical analytics JSON payload
+  getMedicalAnalytics: async (): Promise<Record<string, unknown>> => {
+    const response = await api.get("/reports/medical/analytics");
+    return (response.data?.data ?? response.data) as Record<string, unknown>;
+  },
+
+  // Alias for backward compatibility if needed
   generateMedicalReport: async (): Promise<Record<string, unknown>> => {
-    const response = await api.post("/reports/generate", { report_type: "medical" });
-    const payload = (response.data?.data ?? response.data) as Record<string, unknown>;
-    if (
-      payload &&
-      (payload.download_url || payload.format === "pdf" || payload.content_type === "application/pdf") &&
-      !payload.report &&
-      !payload.sections
-    ) {
-      throw new Error("Backend returned a PDF export metadata response instead of the medical analytics report.");
-    }
-    return payload;
+    return reportsService.getMedicalAnalytics();
   },
 
   // GET /reports/inventory/analytics - backend-authoritative inventory analytics JSON payload

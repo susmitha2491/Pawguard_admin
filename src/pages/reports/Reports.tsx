@@ -4,7 +4,6 @@ import QuickActionCard from "../../components/dashboard/QuickActionCard";
 import VolunteerActivityChart from "../../components/dashboard/VolunteerActivityChart";
 import FinancialTrendChart from "../../components/dashboard/FinancialTrendChart";
 import { useToast } from "../../context/ToastContext";
-import { useDataSync } from "../../utils/dataSync";
 import { getCurrentUser, getCurrentUserRole } from "../../utils/roleUtils";
 import { unwrapList } from "../../utils/chartUtils";
 import {
@@ -222,62 +221,6 @@ const resolveReportRows = (raw: unknown): any[] => {
   return [];
 };
 
-const findReportTableSection = (report: Record<string, unknown>, ...titles: string[]): any[] => {
-  if (!report || typeof report !== "object") return [];
-
-  const candidates: Record<string, unknown>[] = [report];
-  if (report.sections && typeof report.sections === "object" && !Array.isArray(report.sections)) {
-    candidates.push(report.sections as Record<string, unknown>);
-  }
-  if (report.report && typeof report.report === "object" && !Array.isArray(report.report)) {
-    candidates.push(report.report as Record<string, unknown>);
-    const r = report.report as Record<string, unknown>;
-    if (r.sections && typeof r.sections === "object" && !Array.isArray(r.sections)) {
-      candidates.push(r.sections as Record<string, unknown>);
-    }
-  }
-  if (report.data && typeof report.data === "object" && !Array.isArray(report.data)) {
-    candidates.push(report.data as Record<string, unknown>);
-    const d = report.data as Record<string, unknown>;
-    if (d.sections && typeof d.sections === "object" && !Array.isArray(d.sections)) {
-      candidates.push(d.sections as Record<string, unknown>);
-    }
-    if (d.report && typeof d.report === "object" && !Array.isArray(d.report)) {
-      candidates.push(d.report as Record<string, unknown>);
-    }
-  }
-
-  for (const title of titles) {
-    const wanted = normalizeReportKey(title);
-    for (const cand of candidates) {
-      for (const [key, value] of Object.entries(cand)) {
-        if (normalizeReportKey(key) === wanted) {
-          const rows = resolveReportRows(value);
-          if (rows.length > 0 || Array.isArray(value)) return rows;
-        }
-      }
-    }
-  }
-
-  // Substring match
-  for (const title of titles) {
-    const wanted = normalizeReportKey(title);
-    if (wanted.length >= 6) {
-      for (const cand of candidates) {
-        for (const [key, value] of Object.entries(cand)) {
-          const normKey = normalizeReportKey(key);
-          if ((normKey.includes(wanted) || wanted.includes(normKey)) && normKey.length >= 6) {
-            const rows = resolveReportRows(value);
-            if (rows.length > 0 || Array.isArray(value)) return rows;
-          }
-        }
-      }
-    }
-  }
-
-  return [];
-};
-
 const readReportMetric = (section: Record<string, unknown>, ...labels: string[]): unknown => {
   if (!section || typeof section !== "object") return undefined;
   for (const label of labels) {
@@ -303,25 +246,20 @@ const readReportMetric = (section: Record<string, unknown>, ...labels: string[])
   return undefined;
 };
 
-const reportMetricText = (value: unknown, formatter?: (value: unknown) => string): string => {
-  if (value === undefined || value === null || value === "") return "No value returned";
-  return formatter ? formatter(value) : String(value);
-};
-
 const Reports = () => {
   const { addToast } = useToast();
-  const rawRole = getCurrentUserRole() || "super_admin";
+  const rawRole = getCurrentUserRole() || "";
   const userRole = String(rawRole).toLowerCase();
 
-  const isSuperAdmin = userRole === "super_admin" || userRole === "admin";
+  const isVeterinarian = userRole === "veterinarian";
+  const isInventoryManager = userRole === "inventory_manager";
   const isFinanceUser = userRole === "finance_user";
   const isShelterManager = userRole === "shelter_manager";
   const isFosterCoordinator = userRole === "foster_coordinator";
   const isVolunteerCoordinator = userRole === "volunteer_coordinator" || userRole === "volunteer";
   const isRescueRole = ["rescue_centre_admin", "rescue_coordinator", "rescue_agent"].includes(userRole);
-  const isVeterinarian = userRole === "veterinarian";
   const isAdoptionCoordinator = userRole === "adoption_coordinator";
-  const isInventoryManager = userRole === "inventory_manager";
+  const isSuperAdmin = userRole === "super_admin" || userRole === "admin" || (userRole === "" && !isVeterinarian && !isInventoryManager);
 
   const [loading, setLoading] = useState(true);
   const [adminTab, setAdminTab] = useState<"overview" | "rescue" | "shelter" | "medical" | "adoptions" | "volunteers" | "finance">("overview");
@@ -349,12 +287,6 @@ const Reports = () => {
   const [rescueMeta, setRescueMeta] = useState<any>(null);
   const [dispatches, setDispatches] = useState<any[]>([]);
 
-  const veterinaryReportDogs: any[] = [];
-  const veterinaryVaccinations: any[] = [];
-  const veterinaryProtocols: any[] = [];
-  const veterinaryAppointments: any[] = [];
-  const veterinaryExpenses: any[] = [];
-  const veterinarySourceErrors: string[] = [];
   const [medicalReport, setMedicalReport] = useState<Record<string, unknown> | null>(null);
   const [medicalReportError, setMedicalReportError] = useState<string | null>(null);
 
@@ -376,8 +308,8 @@ const Reports = () => {
     try {
       setLoading(true);
 
-      // 1. Load Finance Data (if Finance, Super Admin)
-      if (isFinanceUser || isSuperAdmin) {
+      // 1. Load Finance Data (if Finance, Super Admin on finance/overview)
+      if (isFinanceUser || (isSuperAdmin && (adminTab === "finance" || adminTab === "overview"))) {
         try {
           const [sumRes, donRes] = await Promise.allSettled([
             financeService.getFinanceSummary().catch(() => null),
@@ -412,8 +344,8 @@ const Reports = () => {
         }
       }
 
-      // 2. Load Rescue Data (if Rescue Role, Super Admin)
-      if (isRescueRole || isSuperAdmin) {
+      // 2. Load Rescue Data (if Rescue Role, Super Admin on rescue/overview)
+      if (isRescueRole || (isSuperAdmin && (adminTab === "rescue" || adminTab === "overview"))) {
         try {
           const currentUser = getCurrentUser();
           const currentCentreId = (currentUser as any)?.rescue_centre_id || (currentUser as any)?.rescue_center_id;
@@ -451,8 +383,8 @@ const Reports = () => {
         }
       }
 
-      // 3. Load Shelter Data (if Shelter Manager, Super Admin)
-      if (isShelterManager || isSuperAdmin) {
+      // 3. Load Shelter Data (if Shelter Manager, Super Admin on shelter/overview)
+      if (isShelterManager || (isSuperAdmin && (adminTab === "shelter" || adminTab === "overview"))) {
         try {
           const currentUser = getCurrentUser();
           // Only scope to a specific facility if the user EXPLICITLY has shelter_id or facility_id
@@ -616,21 +548,21 @@ const Reports = () => {
         }
       }
 
-      // 4. Load Veterinarian Medical Data (if Veterinarian, Super Admin)
-      if (isVeterinarian) {
+      // 4. Load Veterinarian Medical Data (if Veterinarian, Super Admin on medical/overview)
+      if (isVeterinarian || (isSuperAdmin && (adminTab === "medical" || adminTab === "overview"))) {
         try {
           setMedicalReportError(null);
-          setMedicalReport(await reportsService.generateMedicalReport());
+          setMedicalReport(await reportsService.getMedicalAnalytics());
         } catch (e: any) {
-          const message = e?.response?.data?.detail || e?.response?.data?.message || e?.message || "Failed to generate the medical report.";
+          const message = e?.response?.data?.detail || e?.response?.data?.message || e?.message || "Medical analytics could not be loaded.";
           setMedicalReport(null);
           setMedicalReportError(String(message));
           console.error("Error loading medical reports data:", e);
         }
       }
 
-      // 5. Load Adoption Data (if Adoption Coordinator, Super Admin)
-      if (isAdoptionCoordinator || isSuperAdmin) {
+      // 5. Load Adoption Data (if Adoption Coordinator, Super Admin on adoptions/overview)
+      if (isAdoptionCoordinator || (isSuperAdmin && (adminTab === "adoptions" || adminTab === "overview"))) {
         try {
           const [adoptRes, petRes] = await Promise.allSettled([
             adoptionService.getAdoptions({ page: 1, page_size: 50 }),
@@ -646,8 +578,8 @@ const Reports = () => {
         }
       }
 
-      // 6. Load Foster Data (if Foster Coordinator, Super Admin)
-      if (isFosterCoordinator || isSuperAdmin) {
+      // 6. Load Foster Data (if Foster Coordinator, Super Admin on overview)
+      if (isFosterCoordinator || (isSuperAdmin && adminTab === "overview")) {
         try {
           const [fosterRes] = await Promise.allSettled([fosterService.getFosterProfiles()]);
           const rawVal: any = fosterRes.status === "fulfilled" ? fosterRes.value : null;
@@ -692,8 +624,8 @@ const Reports = () => {
         }
       }
 
-      // 7. Load Volunteer Data (if Volunteer Coordinator, Super Admin)
-      if (isVolunteerCoordinator || isSuperAdmin) {
+      // 7. Load Volunteer Data (if Volunteer Coordinator, Super Admin on volunteers/overview)
+      if (isVolunteerCoordinator || (isSuperAdmin && (adminTab === "volunteers" || adminTab === "overview"))) {
         try {
           const [volRes, shiftRes, statRes] = await Promise.allSettled([
             volunteerService.getVolunteers(),
@@ -747,9 +679,7 @@ const Reports = () => {
 
   useEffect(() => {
     loadReportsData();
-  }, [userRole]);
-
-  useDataSync(loadReportsData);
+  }, [userRole, adminTab]);
 
   // Derived Financial Metrics
   const financialChartPoints = useMemo(() => {
@@ -1470,127 +1400,192 @@ const Reports = () => {
   // ----------------------- SUB-COMPONENT RENDERERS -----------------------
 
   const renderGeneratedVeterinaryReport = () => {
-    // ── Section resolution ─────────────────────────────────────────────────
+    // ── Section resolution directly against backend contract ────────────────
     const rawReport = medicalReport || {};
+    const reportData = (rawReport.report ?? (rawReport as any).data?.report ?? (rawReport as any).data ?? rawReport) as Record<string, any>;
+    const sections = (reportData.sections ?? (rawReport as any).sections ?? resolveReportSections(rawReport)) as Record<string, any>;
 
-    const summary = findReportSection(rawReport, "Medical Care & Immunization Compliance Summary", "Medical Care & Immunization Summary", "Immunization Compliance Summary");
-    const expenditure = findReportSection(rawReport, "Veterinary Expenditure Analysis", "Veterinary Expenditure", "Expenditure Analysis");
-    const surgerySection = findReportSection(rawReport, "Pending Surgery Backlog", "Surgery Backlog", "Pending Surgeries");
+    const vaccinationSection: Record<string, any> =
+      sections.vaccination_coverage_across_shelter_populations ??
+      findReportSection(rawReport, "vaccination_coverage_across_shelter_populations", "Vaccination Coverage Across Shelter Populations", "Vaccination Coverage", "Medical Care & Immunization Compliance Summary");
 
-    // Resolve surgery rows — using findReportTableSection
-    const surgeryRows: any[] = findReportTableSection(rawReport, "Pending Surgery Backlog", "Surgery Backlog", "Pending Surgeries", "Surgeries");
+    const surgerySection: Record<string, any> =
+      sections.pending_surgeries ??
+      findReportSection(rawReport, "pending_surgeries", "Pending Surgeries", "Pending Surgery Backlog", "Surgery Backlog");
 
-    // ── Stat card values (strictly from backend — no frontend calculation) ─
-    const vaccinationCoverageValue = readReportMetric(summary, "Vaccination Coverage Rate %");
-    const followUpComplianceValue  = readReportMetric(summary, "Follow-up Exam Compliance Rate %");
-    const totalExpenditureValue    =
-      readReportMetric(summary, "Total Veterinary Expenditure") ??
-      readReportMetric(expenditure, "Total Veterinary Expenditure");
-    const perDogExpenditureValue   =
-      readReportMetric(summary, "Total Veterinary Expenditure per Dog") ??
-      readReportMetric(expenditure, "Average Expenditure per Dog");
+    const followUpSection: Record<string, any> =
+      sections.follow_up_exam_compliance ??
+      findReportSection(rawReport, "follow_up_exam_compliance", "Follow-up Exam Compliance", "Follow-up Compliance");
 
-    // Pending surgeries: prefer explicit backend count, fall back to array length
-    const pendingSurgeriesBackendCount =
-      readReportMetric(surgerySection, "Total Pending Surgeries") ??
-      readReportMetric(surgerySection, "Pending Surgeries") ??
-      readReportMetric(surgerySection, "Count") ??
-      readReportMetric(surgerySection, "total");
-    const pendingSurgeriesDisplay: string = (() => {
-      if (pendingSurgeriesBackendCount !== undefined && pendingSurgeriesBackendCount !== null) {
-        return String(pendingSurgeriesBackendCount);
+    const expenditureSection: Record<string, any> =
+      sections.veterinary_expenditure_per_dog ??
+      findReportSection(rawReport, "veterinary_expenditure_per_dog", "Veterinary Expenditure Per Dog", "Veterinary Expenditure Analysis", "Veterinary Expenditure");
+
+    // ── Table rows resolution ───────────────────────────────────────────────
+    const vaccineBreakdownRows: any[] =
+      Array.isArray(vaccinationSection?.vaccine_breakdown)
+        ? vaccinationSection.vaccine_breakdown
+        : Array.isArray(vaccinationSection?.items)
+        ? vaccinationSection.items
+        : resolveReportRows(vaccinationSection);
+
+    const surgeryRows: any[] =
+      Array.isArray(surgerySection?.items)
+        ? surgerySection.items
+        : Array.isArray(surgerySection?.surgeries)
+        ? surgerySection.surgeries
+        : resolveReportRows(surgerySection);
+
+    // ── Zero-preserving metric formatting helper ───────────────────────────
+    const formatMetric = (val: unknown, isCurrency = false, isPct = false): string => {
+      if (val === undefined || val === null || val === "") return "No value returned";
+      if (typeof val === "number") {
+        if (isCurrency) return formatCurrency(val);
+        if (isPct) return `${val}%`;
+        return String(val);
       }
-      if (surgeryRows.length > 0) return String(surgeryRows.length);
-      if (Object.keys(surgerySection).length > 0) return "No data available";
-      return loading ? "..." : "No data available";
-    })();
+      const str = String(val).trim();
+      if (str === "") return "No value returned";
+      if (isCurrency && !str.startsWith("₹") && !str.startsWith("$") && !isNaN(Number(str))) {
+        return formatCurrency(Number(str));
+      }
+      if (isPct && !str.includes("%") && !isNaN(Number(str))) {
+        return `${str}%`;
+      }
+      return str;
+    };
+
+    // ── Stat card values (authoritative backend metrics) ────────────────────
+    const vaccinationCoverage =
+      vaccinationSection.vaccination_coverage_rate_pct ??
+      readReportMetric(vaccinationSection, "Vaccination Coverage Rate %") ??
+      readReportMetric(sections, "Vaccination Coverage Rate %");
+
+    const pendingSurgeriesCount =
+      surgerySection.total_pending_surgeries ??
+      surgerySection.total ??
+      readReportMetric(surgerySection, "Total Pending Surgeries") ??
+      (surgeryRows.length > 0 ? surgeryRows.length : 0);
+
+    const followUpCompliance =
+      followUpSection.compliance_rate_pct ??
+      readReportMetric(followUpSection, "Follow-up Exam Compliance Rate %") ??
+      readReportMetric(followUpSection, "Compliance Rate %") ??
+      readReportMetric(sections, "Follow-up Exam Compliance Rate %");
+
+    const totalExpenditure =
+      expenditureSection.total_veterinary_expenditure ??
+      expenditureSection.total_expenditure ??
+      readReportMetric(expenditureSection, "Total Veterinary Expenditure") ??
+      readReportMetric(sections, "Total Veterinary Expenditure");
+
+    const dogsWithExpenditure =
+      expenditureSection.dogs_with_veterinary_expenditure ??
+      expenditureSection.dogs_with_expenditure ??
+      readReportMetric(expenditureSection, "Dogs With Veterinary Expenditure") ??
+      readReportMetric(expenditureSection, "Dogs with Veterinary Expenditure") ??
+      readReportMetric(sections, "Dogs with Veterinary Expenditure") ??
+      0;
+
+    const totalShelterDogs =
+      expenditureSection.total_shelter_dogs ??
+      expenditureSection.total_dogs ??
+      readReportMetric(expenditureSection, "Total Shelter Dogs") ??
+      readReportMetric(sections, "Total Shelter Dogs");
+
+    let averageExpenditurePerDog =
+      expenditureSection.average_expenditure_per_dog ??
+      expenditureSection.average_veterinary_expenditure_per_dog ??
+      expenditureSection.total_veterinary_expenditure_per_dog ??
+      readReportMetric(expenditureSection, "Average Expenditure Per Dog") ??
+      readReportMetric(expenditureSection, "Average Expenditure per Dog") ??
+      readReportMetric(sections, "Average Expenditure per Dog");
+
+    if (averageExpenditurePerDog === undefined || averageExpenditurePerDog === null || averageExpenditurePerDog === "") {
+      const numDogs = Number(dogsWithExpenditure) || 0;
+      if (numDogs === 0) {
+        averageExpenditurePerDog = "₹0.00";
+      } else if (typeof totalExpenditure === "number") {
+        averageExpenditurePerDog = totalExpenditure / numDogs;
+      } else if (typeof totalExpenditure === "string") {
+        const numTot = parseFloat(totalExpenditure.replace(/[^0-9.-]/g, ""));
+        if (!isNaN(numTot)) {
+          averageExpenditurePerDog = numTot / numDogs;
+        } else {
+          averageExpenditurePerDog = "₹0.00";
+        }
+      } else {
+        averageExpenditurePerDog = "₹0.00";
+      }
+    }
 
     // ── Export rows (backend data only) ───────────────────────────────────
     const exportRows: (string | number)[][] = [
-      ["Vaccination Coverage Rate %",        reportMetricText(vaccinationCoverageValue)],
-      ["Follow-up Exam Compliance Rate %",   reportMetricText(followUpComplianceValue)],
-      ["Follow-ups Overdue",                 reportMetricText(readReportMetric(summary, "Follow-ups Overdue"))],
-      ["Follow-ups On Track",                reportMetricText(readReportMetric(summary, "Follow-ups On Track"))],
-      ["Total Veterinary Expenditure",       reportMetricText(totalExpenditureValue)],
-      ["Total Veterinary Expenditure per Dog", reportMetricText(perDogExpenditureValue)],
-      ["Total Treatments Rendered",          reportMetricText(readReportMetric(expenditure, "Total Treatments Rendered"))],
-      ["Average Expenditure per Dog",        reportMetricText(readReportMetric(expenditure, "Average Expenditure per Dog"))],
-      ["Pending Surgery Count",              pendingSurgeriesDisplay],
+      ["Total Shelter Animals",                       formatMetric(vaccinationSection.total_shelter_animals)],
+      ["Vaccinated Animals",                          formatMetric(vaccinationSection.vaccinated_animals)],
+      ["Vaccination Coverage Rate %",                 formatMetric(vaccinationCoverage, false, true)],
+      ["Total Pending Surgeries",                     formatMetric(pendingSurgeriesCount)],
+      ["Total Follow-ups Due",                        formatMetric(followUpSection.total_follow_ups_due)],
+      ["Completed Follow-ups",                        formatMetric(followUpSection.completed_follow_ups)],
+      ["On-Track Follow-ups",                         formatMetric(followUpSection.on_track_follow_ups)],
+      ["Overdue Follow-ups",                          formatMetric(followUpSection.overdue_follow_ups)],
+      ["No Follow-up Scheduled",                      formatMetric(followUpSection.no_follow_up_scheduled)],
+      ["Follow-up Compliance Rate %",                 formatMetric(followUpCompliance, false, true)],
+      ["Total Veterinary Expenditure",                formatMetric(totalExpenditure, true)],
+      ["Dogs with Veterinary Expenditure",            formatMetric(dogsWithExpenditure)],
+      ["Total Shelter Dogs",                          formatMetric(totalShelterDogs)],
+      ["Average Expenditure per Dog",                 formatMetric(averageExpenditurePerDog, true)],
+      ...vaccineBreakdownRows.map((row: any, idx) => [
+        `Vaccine Breakdown ${idx + 1}`,
+        `${row.vaccine_name || row.name || "Unknown"} | Doses: ${row.doses_administered ?? row.doses ?? 0} | Vaccinated Dogs: ${row.dogs_vaccinated ?? row.count ?? 0}`,
+      ]),
       ...surgeryRows.map((row: any, idx) => [
         `Pending Surgery ${idx + 1}`,
-        `${row.dog_name || row.name || row.dog_id || "Unknown"} | ${row.treatment_type || row.surgery_type || row.procedure || "-"} | ${row.status || "Pending"}`,
+        `Treatment ID: ${row.treatment_id || "—"} | Dog ID: ${row.dog_id || "—"} | Vet ID: ${row.vet_id || "—"} | Type: ${row.treatment_type || row.surgery_type || "—"} | Date: ${row.treatment_date || row.scheduled_date || "—"} | Notes: ${row.notes || "—"}`,
       ]),
     ];
     const csvRows = exportRows.map(([label, value]) =>
       `"${String(label).replace(/"/g, '""')}","${String(value ?? "").replace(/"/g, '""')}"`
     );
 
-    // ── 5 stat cards ──────────────────────────────────────────────────────
+    // ── 5 Stat Cards ──────────────────────────────────────────────────────
     const statCards = [
       {
         title: "Vaccination Coverage",
-        value: loading ? "..." : reportMetricText(vaccinationCoverageValue),
-        trend: "Backend — Medical Care & Immunization Compliance Summary",
+        value: loading ? "..." : formatMetric(vaccinationCoverage, false, true),
+        trend: "Backend — Vaccination Coverage Across Shelter Populations",
         color: "#10B981",
         icon: <FaSyringe />,
       },
       {
         title: "Pending Surgeries",
-        value: loading ? "..." : pendingSurgeriesDisplay,
-        trend: "Backend — Pending Surgery Backlog",
+        value: loading ? "..." : formatMetric(pendingSurgeriesCount),
+        trend: "Backend — Pending Surgeries",
         color: "#DC2626",
         icon: <FaStethoscope />,
       },
       {
         title: "Follow-up Compliance",
-        value: loading ? "..." : reportMetricText(followUpComplianceValue),
-        trend: "Backend — Medical Care & Immunization Compliance Summary",
+        value: loading ? "..." : formatMetric(followUpCompliance, false, true),
+        trend: "Backend — Follow-up Exam Compliance",
         color: "#2563EB",
         icon: <FaCheckCircle />,
       },
       {
         title: "Total Vet Expenditure",
-        value: loading ? "..." : reportMetricText(totalExpenditureValue),
-        trend: "Backend — Veterinary Expenditure Analysis",
+        value: loading ? "..." : formatMetric(totalExpenditure, true),
+        trend: "Backend — Veterinary Expenditure Per Dog",
         color: "#6366F1",
         icon: <FaCoins />,
       },
       {
         title: "Expenditure per Dog",
-        value: loading ? "..." : reportMetricText(perDogExpenditureValue),
-        trend: "Backend — Veterinary Expenditure Analysis",
+        value: loading ? "..." : formatMetric(averageExpenditurePerDog, true),
+        trend: "Backend — Veterinary Expenditure Per Dog",
         color: "#64748B",
         icon: <FaChartLine />,
       },
     ];
-
-    // ── Helpers ───────────────────────────────────────────────────────────
-    // Render a flat key-value table from a backend section object.
-    // Skips nested objects (they are sub-sections, not scalars).
-    const sectionTable = (title: string, section: Record<string, unknown>) => {
-      const scalarRows = Object.entries(section).filter(([, v]) => v !== null && v !== undefined && typeof v !== "object");
-      return (
-        <div className="soft-card" style={{ padding: "20px" }}>
-          <h3 style={{ margin: "0 0 14px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>{title}</h3>
-          {scalarRows.length === 0 ? (
-            <div style={{ color: "#64748B", fontSize: "13px", padding: "12px 0" }}>
-              {medicalReport ? "No data available for this section" : "Loading…"}
-            </div>
-          ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-              <tbody>
-                {scalarRows.map(([label, value]) => (
-                  <tr key={label} style={{ borderTop: "1px solid #E2E8F0" }}>
-                    <td style={{ padding: "9px 4px", color: "#64748B", fontSize: "13px", width: "60%" }}>{label}</td>
-                    <td style={{ padding: "9px 4px", fontWeight: 700, color: "#0F172A", fontSize: "13px" }}>{String(value)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      );
-    };
 
     // ── Render ────────────────────────────────────────────────────────────
     return (
@@ -1599,22 +1594,22 @@ const Reports = () => {
         <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
           <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Medical Care &amp; Immunization Compliance Report</h1>
           <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-            Backend-generated veterinary analytics — POST /reports/generate (report_type: "medical")
+            Backend-generated veterinary analytics — GET /api/v1/reports/medical/analytics
           </p>
         </div>
 
         {/* Error state */}
         {medicalReportError && (
           <div className="soft-card" style={{ padding: "16px 20px", marginBottom: "16px", color: "#991B1B", background: "#FEF2F2", border: "1px solid #FCA5A5" }}>
-            <strong>Medical report request failed:</strong> {medicalReportError}
-            <p style={{ margin: "6px 0 0", fontSize: "13px" }}>The backend did not return a valid medical report. No data is displayed.</p>
+            <strong>Medical analytics could not be loaded:</strong> {medicalReportError}
+            <p style={{ margin: "6px 0 0", fontSize: "13px" }}>The backend did not return a valid medical analytics response. No data is displayed.</p>
           </div>
         )}
 
         {/* Loading state */}
         {!medicalReportError && loading && !medicalReport && (
           <div className="soft-card" style={{ padding: "24px", color: "#64748B", textAlign: "center" }}>
-            Loading backend medical report…
+            Loading medical analytics…
           </div>
         )}
 
@@ -1622,9 +1617,9 @@ const Reports = () => {
         {!medicalReportError && !loading && !medicalReport && (
           <div className="soft-card" style={{ padding: "24px", color: "#64748B", border: "1px solid #E2E8F0", textAlign: "center" }}>
             <FaChartBar style={{ marginBottom: "8px", opacity: 0.4 }} size={32} />
-            <div style={{ fontWeight: 700, fontSize: "15px", color: "#0F172A" }}>No data available</div>
+            <div style={{ fontWeight: 700, fontSize: "15px", color: "#0F172A" }}>No records available.</div>
             <div style={{ marginTop: "6px", fontSize: "13px" }}>
-              The backend did not return medical report data. Check that the report_type="medical" endpoint is operational.
+              The backend did not return medical analytics data. Check that the medical analytics endpoint is operational.
             </div>
           </div>
         )}
@@ -1644,87 +1639,106 @@ const Reports = () => {
               <QuickActionCard
                 icon={<FaFileAlt />}
                 title="Export CSV"
-                subtitle="Backend medical report data"
+                subtitle="Server-generated medical compliance CSV"
                 color="#10B981"
-                onClick={() => handleExportCSV("medical_compliance_report", "Metric,Value", csvRows)}
+                onClick={async () => {
+                  try {
+                    addToast("Generating medical report CSV...", "info");
+                    await reportsService.generateAndDownloadReport({ report_type: "medical", format: "csv" });
+                    addToast("Medical report CSV downloaded successfully!", "success");
+                  } catch {
+                    handleExportCSV("medical_compliance_report", "Metric,Value", csvRows);
+                  }
+                }}
               />
               <QuickActionCard
                 icon={<FaFileDownload />}
                 title="Export Excel"
-                subtitle="Backend medical report data"
+                subtitle="Server-generated medical compliance Excel"
                 color="#2563EB"
-                onClick={() => handleExportExcel("medical_compliance_report", "Metric,Value", csvRows)}
+                onClick={async () => {
+                  try {
+                    addToast("Generating medical report XLSX...", "info");
+                    await reportsService.generateAndDownloadReport({ report_type: "medical", format: "xlsx" });
+                    addToast("Medical report XLSX downloaded successfully!", "success");
+                  } catch {
+                    handleExportExcel("medical_compliance_report", "Metric,Value", csvRows);
+                  }
+                }}
               />
               <QuickActionCard
                 icon={<FaFileAlt />}
-                title="Print PDF"
-                subtitle="Backend medical report data"
+                title="Export PDF"
+                subtitle="Server-generated medical compliance PDF"
                 color="#7C3AED"
-                onClick={() => handleExportPDF("Medical Care & Immunization Compliance Report", "Backend-generated — POST /reports/generate (report_type: medical)", ["Metric", "Value"], exportRows)}
+                onClick={async () => {
+                  try {
+                    addToast("Generating medical report PDF...", "info");
+                    await reportsService.generateAndDownloadReport({ report_type: "medical", format: "pdf" });
+                    addToast("Medical report PDF downloaded successfully!", "success");
+                  } catch {
+                    handleExportPDF("Medical Care & Immunization Compliance Report", "Backend-generated veterinary analytics — GET /api/v1/reports/medical/analytics", ["Metric", "Value"], exportRows);
+                  }
+                }}
               />
             </div>
 
-            {/* Section: Medical Care & Immunization Compliance Summary */}
-            {sectionTable("Medical Care & Immunization Compliance Summary", summary)}
-
-            {/* Spacer */}
-            <div style={{ height: "16px" }} />
-
-            {/* Section: Veterinary Expenditure Analysis */}
-            {sectionTable("Veterinary Expenditure Analysis", expenditure)}
-
-            {/* Spacer */}
-            <div style={{ height: "16px" }} />
-
-            {/* Section: Pending Surgery Backlog */}
-            <div className="soft-card" style={{ padding: "20px" }}>
-              <h3 style={{ margin: "0 0 14px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
-                Pending Surgery Backlog
-                {pendingSurgeriesDisplay !== "No data available" && pendingSurgeriesDisplay !== "..." && (
-                  <span style={{ marginLeft: "10px", fontSize: "14px", fontWeight: 600, color: "#DC2626", background: "#FEF2F2", padding: "2px 10px", borderRadius: "999px" }}>
-                    {pendingSurgeriesDisplay}
-                  </span>
-                )}
+            {/* SECTION 1: Vaccination Coverage Across Shelter Populations */}
+            <div className="soft-card" style={{ padding: "20px", marginBottom: "20px" }}>
+              <h3 style={{ margin: "0 0 16px", fontSize: "18px", fontWeight: 700, color: "#0F172A", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>Vaccination Coverage Across Shelter Populations</span>
+                <span style={{ fontSize: "13px", fontWeight: 600, color: "#10B981", background: "#ECFDF5", padding: "4px 12px", borderRadius: "999px" }}>
+                  Coverage: {formatMetric(vaccinationCoverage, false, true)}
+                </span>
               </h3>
-              {surgeryRows.length === 0 ? (
-                <div style={{ color: "#64748B", fontSize: "13px", padding: "12px 0" }}>
-                  {Object.keys(surgerySection).length === 0
-                    ? "No pending surgery backlog data available from backend"
-                    : "No pending surgery records"}
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", marginBottom: "18px" }}>
+                <div style={{ background: "#F8FAFC", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                  <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>TOTAL SHELTER ANIMALS</div>
+                  <div style={{ fontSize: "20px", fontWeight: 800, color: "#0F172A", marginTop: "4px" }}>
+                    {formatMetric(vaccinationSection.total_shelter_animals)}
+                  </div>
                 </div>
+                <div style={{ background: "#F8FAFC", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                  <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>VACCINATED ANIMALS</div>
+                  <div style={{ fontSize: "20px", fontWeight: 800, color: "#10B981", marginTop: "4px" }}>
+                    {formatMetric(vaccinationSection.vaccinated_animals)}
+                  </div>
+                </div>
+                <div style={{ background: "#F8FAFC", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                  <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>VACCINATION COVERAGE RATE</div>
+                  <div style={{ fontSize: "20px", fontWeight: 800, color: "#0F172A", marginTop: "4px" }}>
+                    {formatMetric(vaccinationCoverage, false, true)}
+                  </div>
+                </div>
+              </div>
+
+              <h4 style={{ margin: "16px 0 10px", fontSize: "14px", fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                Vaccine Breakdown
+              </h4>
+              {vaccineBreakdownRows.length === 0 ? (
+                <div style={{ color: "#64748B", fontSize: "13px", padding: "12px 0" }}>No records available.</div>
               ) : (
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
                     <thead>
                       <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
-                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>ANIMAL</th>
-                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>PROCEDURE / TYPE</th>
-                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>STATUS</th>
-                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>SCHEDULED DATE</th>
-                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>NOTES</th>
+                        <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", fontWeight: 700 }}>VACCINE NAME</th>
+                        <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", fontWeight: 700 }}>DOSES ADMINISTERED</th>
+                        <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", fontWeight: 700 }}>DOGS VACCINATED</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {surgeryRows.map((row: any, idx) => (
-                        <tr key={String(row.id || row.dog_id || idx)} style={{ borderTop: "1px solid #E2E8F0" }}>
-                          <td style={{ padding: "10px", fontWeight: 600, color: "#0F172A", fontSize: "13px" }}>
-                            {row.dog_name || row.name || row.dog_id || "—"}
+                      {vaccineBreakdownRows.map((row: any, idx: number) => (
+                        <tr key={String(row.vaccine_name || row.id || idx)} style={{ borderTop: "1px solid #E2E8F0" }}>
+                          <td style={{ padding: "10px 12px", fontWeight: 600, color: "#0F172A", fontSize: "13px" }}>
+                            {row.vaccine_name || row.name || "—"}
                           </td>
-                          <td style={{ padding: "10px", fontSize: "13px" }}>
-                            {row.treatment_type || row.surgery_type || row.procedure || row.appointment_type || "—"}
+                          <td style={{ padding: "10px 12px", fontSize: "13px", color: "#334155" }}>
+                            {formatMetric(row.doses_administered ?? row.doses)}
                           </td>
-                          <td style={{ padding: "10px", fontSize: "13px" }}>
-                            <span style={{ padding: "3px 10px", borderRadius: "999px", fontSize: "11px", fontWeight: 700, background: "#FEF2F2", color: "#991B1B" }}>
-                              {String(row.status || "Pending").toUpperCase()}
-                            </span>
-                          </td>
-                          <td style={{ padding: "10px", fontSize: "13px", color: "#64748B" }}>
-                            {row.scheduled_date || row.starts_at || row.date || row.created_at || "—"}
-                          </td>
-                          <td style={{ padding: "10px", fontSize: "13px", color: "#475569", maxWidth: "200px" }}>
-                            {row.post_op_notes !== undefined
-                              ? (row.post_op_notes ? String(row.post_op_notes).slice(0, 80) : <em style={{ color: "#94A3B8" }}>No post-op notes</em>)
-                              : (row.notes ? String(row.notes).slice(0, 80) : "—")}
+                          <td style={{ padding: "10px 12px", fontSize: "13px", color: "#334155", fontWeight: 600 }}>
+                            {formatMetric(row.dogs_vaccinated ?? row.count)}
                           </td>
                         </tr>
                       ))}
@@ -1732,6 +1746,142 @@ const Reports = () => {
                   </table>
                 </div>
               )}
+            </div>
+
+            {/* SECTION 2: Pending Surgeries */}
+            <div className="soft-card" style={{ padding: "20px", marginBottom: "20px" }}>
+              <h3 style={{ margin: "0 0 16px", fontSize: "18px", fontWeight: 700, color: "#0F172A", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>Pending Surgeries</span>
+                <span style={{ fontSize: "13px", fontWeight: 600, color: "#DC2626", background: "#FEF2F2", padding: "4px 12px", borderRadius: "999px" }}>
+                  Total Pending: {formatMetric(pendingSurgeriesCount)}
+                </span>
+              </h3>
+              {surgeryRows.length === 0 ? (
+                <div style={{ color: "#64748B", fontSize: "13px", padding: "12px 0" }}>No records available.</div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                    <thead>
+                      <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
+                        <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", fontWeight: 700 }}>TREATMENT ID</th>
+                        <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", fontWeight: 700 }}>DOG ID</th>
+                        <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", fontWeight: 700 }}>VET ID</th>
+                        <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", fontWeight: 700 }}>TREATMENT TYPE</th>
+                        <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", fontWeight: 700 }}>TREATMENT DATE</th>
+                        <th style={{ padding: "10px 12px", fontSize: "12px", color: "#64748B", fontWeight: 700 }}>NOTES</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {surgeryRows.map((row: any, idx: number) => (
+                        <tr key={String(row.treatment_id || row.id || idx)} style={{ borderTop: "1px solid #E2E8F0" }}>
+                          <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: "12px", color: "#64748B" }}>
+                            {row.treatment_id || "—"}
+                          </td>
+                          <td style={{ padding: "10px 12px", fontSize: "13px", fontWeight: 600, color: "#0F172A" }}>
+                            {row.dog_id || "—"}
+                          </td>
+                          <td style={{ padding: "10px 12px", fontSize: "13px", color: "#475569" }}>
+                            {row.vet_id || "—"}
+                          </td>
+                          <td style={{ padding: "10px 12px", fontSize: "13px", color: "#0F172A", fontWeight: 600 }}>
+                            {row.treatment_type || row.surgery_type || "—"}
+                          </td>
+                          <td style={{ padding: "10px 12px", fontSize: "13px", color: "#64748B" }}>
+                            {row.treatment_date || row.scheduled_date || row.date || "—"}
+                          </td>
+                          <td style={{ padding: "10px 12px", fontSize: "13px", color: "#475569", maxWidth: "250px" }}>
+                            {row.notes ? String(row.notes) : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* SECTION 3: Follow-up Exam Compliance */}
+            <div className="soft-card" style={{ padding: "20px", marginBottom: "20px" }}>
+              <h3 style={{ margin: "0 0 16px", fontSize: "18px", fontWeight: 700, color: "#0F172A", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>Follow-up Exam Compliance</span>
+                <span style={{ fontSize: "13px", fontWeight: 600, color: "#2563EB", background: "#EFF6FF", padding: "4px 12px", borderRadius: "999px" }}>
+                  Compliance: {formatMetric(followUpCompliance, false, true)}
+                </span>
+              </h3>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px" }}>
+                <div style={{ background: "#F8FAFC", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                  <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>TOTAL FOLLOW-UPS DUE</div>
+                  <div style={{ fontSize: "20px", fontWeight: 800, color: "#0F172A", marginTop: "4px" }}>
+                    {formatMetric(followUpSection.total_follow_ups_due)}
+                  </div>
+                </div>
+                <div style={{ background: "#F8FAFC", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                  <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>COMPLETED FOLLOW-UPS</div>
+                  <div style={{ fontSize: "20px", fontWeight: 800, color: "#10B981", marginTop: "4px" }}>
+                    {formatMetric(followUpSection.completed_follow_ups)}
+                  </div>
+                </div>
+                <div style={{ background: "#F8FAFC", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                  <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>ON-TRACK FOLLOW-UPS</div>
+                  <div style={{ fontSize: "20px", fontWeight: 800, color: "#2563EB", marginTop: "4px" }}>
+                    {formatMetric(followUpSection.on_track_follow_ups)}
+                  </div>
+                </div>
+                <div style={{ background: "#F8FAFC", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                  <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>OVERDUE FOLLOW-UPS</div>
+                  <div style={{ fontSize: "20px", fontWeight: 800, color: "#DC2626", marginTop: "4px" }}>
+                    {formatMetric(followUpSection.overdue_follow_ups)}
+                  </div>
+                </div>
+                <div style={{ background: "#F8FAFC", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                  <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>NO FOLLOW-UP SCHEDULED</div>
+                  <div style={{ fontSize: "20px", fontWeight: 800, color: "#64748B", marginTop: "4px" }}>
+                    {formatMetric(followUpSection.no_follow_up_scheduled)}
+                  </div>
+                </div>
+                <div style={{ background: "#F8FAFC", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                  <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>COMPLIANCE RATE</div>
+                  <div style={{ fontSize: "20px", fontWeight: 800, color: "#2563EB", marginTop: "4px" }}>
+                    {formatMetric(followUpCompliance, false, true)}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* SECTION 4: Veterinary Expenditure Per Dog */}
+            <div className="soft-card" style={{ padding: "20px", marginBottom: "20px" }}>
+              <h3 style={{ margin: "0 0 16px", fontSize: "18px", fontWeight: 700, color: "#0F172A", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>Veterinary Expenditure Per Dog</span>
+                <span style={{ fontSize: "13px", fontWeight: 600, color: "#6366F1", background: "#EEF2FF", padding: "4px 12px", borderRadius: "999px" }}>
+                  Avg / Dog: {formatMetric(averageExpenditurePerDog, true)}
+                </span>
+              </h3>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
+                <div style={{ background: "#F8FAFC", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                  <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>TOTAL VETERINARY EXPENDITURE</div>
+                  <div style={{ fontSize: "20px", fontWeight: 800, color: "#0F172A", marginTop: "4px" }}>
+                    {formatMetric(totalExpenditure, true)}
+                  </div>
+                </div>
+                <div style={{ background: "#F8FAFC", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                  <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>DOGS WITH VETERINARY EXPENDITURE</div>
+                  <div style={{ fontSize: "20px", fontWeight: 800, color: "#0F172A", marginTop: "4px" }}>
+                    {formatMetric(dogsWithExpenditure)}
+                  </div>
+                </div>
+                <div style={{ background: "#F8FAFC", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                  <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>TOTAL SHELTER DOGS</div>
+                  <div style={{ fontSize: "20px", fontWeight: 800, color: "#0F172A", marginTop: "4px" }}>
+                    {formatMetric(totalShelterDogs)}
+                  </div>
+                </div>
+                <div style={{ background: "#F8FAFC", padding: "14px 16px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                  <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>AVERAGE EXPENDITURE PER DOG</div>
+                  <div style={{ fontSize: "20px", fontWeight: 800, color: "#6366F1", marginTop: "4px" }}>
+                    {formatMetric(averageExpenditurePerDog, true)}
+                  </div>
+                </div>
+              </div>
             </div>
           </>
         )}
@@ -3268,225 +3418,6 @@ const Reports = () => {
     );
   };
 
-  // VETERINARY & MEDICAL REPORT VIEW
-  const renderMedicalReports = () => {
-    const eligibleDogs = veterinaryReportDogs.filter((dog) => dog.status === "shelter");
-    const eligibleDogIds = new Set(eligibleDogs.map((dog) => String(dog.id || dog.dog_id)));
-    const requiredProtocolNames = new Set(
-      veterinaryProtocols
-        .filter((protocol) => protocol.is_required === true)
-        .map((protocol) => String(protocol.name).trim().toLowerCase())
-    );
-    const currentVaccinesByDog = new Map<string, Set<string>>();
-    veterinaryVaccinations.forEach((record) => {
-      const dogId = String(record.dog_id || "");
-      const administeredAt = new Date(String(record.administered_at || "")).getTime();
-      const nextDueAt = record.next_due_at ? new Date(String(record.next_due_at)).getTime() : null;
-      const vaccineName = String(record.vaccine_name || "").trim().toLowerCase();
-      const isCurrent = Number.isFinite(administeredAt) && administeredAt <= Date.now() &&
-        (nextDueAt === null || (Number.isFinite(nextDueAt) && nextDueAt >= Date.now()));
-      if (eligibleDogIds.has(dogId) && requiredProtocolNames.has(vaccineName) && isCurrent) {
-        const protocols = currentVaccinesByDog.get(dogId) || new Set<string>();
-        protocols.add(vaccineName);
-        currentVaccinesByDog.set(dogId, protocols);
-      }
-    });
-    const vaccinatedDogIds = new Set(
-      Array.from(currentVaccinesByDog.entries())
-        .filter(([, protocols]) => Array.from(requiredProtocolNames).every((name) => protocols.has(name)))
-        .map(([dogId]) => dogId)
-    );
-    const overdueVaccinations = veterinaryVaccinations.filter((record) => {
-      const dueAt = record.next_due_at ? new Date(String(record.next_due_at)).getTime() : NaN;
-      const vaccineName = String(record.vaccine_name || "").trim().toLowerCase();
-      return eligibleDogIds.has(String(record.dog_id)) && requiredProtocolNames.has(vaccineName) && Number.isFinite(dueAt) && dueAt < Date.now();
-    });
-    const vaccinationCoverage = requiredProtocolNames.size > 0 && eligibleDogs.length > 0 ? (vaccinatedDogIds.size / eligibleDogs.length) * 100 : null;
-
-    // Treatments are completed medical records and have no status in the backend
-    // schema. Scheduled surgery work is represented by veterinary appointments.
-    const surgeryAppointments = veterinaryAppointments.filter((appointment) => {
-      const appointmentType = String(appointment.appointment_type || "").toLowerCase();
-      const reason = String(appointment.reason || "").toLowerCase();
-      return appointmentType.includes("surg") || reason.includes("surg");
-    });
-    const pendingSurgeryRows = surgeryAppointments.filter((appointment) =>
-      ["requested", "confirmed"].includes(String(appointment.status || "").toLowerCase())
-    );
-    const surgeryStatusBreakdown = pendingSurgeryRows.reduce<Record<string, number>>((counts, record) => {
-      const status = String(record.status || "unknown").toLowerCase();
-      counts[status] = (counts[status] || 0) + 1;
-      return counts;
-    }, {});
-    const completedSurgeryRows = surgeryAppointments.filter((appointment) => String(appointment.status || "").toLowerCase() === "completed");
-
-    const followUpRows = veterinaryAppointments.filter((appointment) => {
-      const appointmentType = String(appointment.appointment_type || "").toLowerCase();
-      const reason = String(appointment.reason || "").toLowerCase();
-      return appointmentType.includes("follow") || reason.startsWith("follow-up:");
-    });
-    const dueFollowUps = followUpRows.filter((appointment) => {
-      const date = new Date(String(appointment.starts_at || "")).getTime();
-      return Number.isFinite(date) && date <= Date.now();
-    });
-    const completedFollowUps = dueFollowUps.filter((appointment) => String(appointment.status || "").toLowerCase() === "completed");
-    const overdueFollowUps = dueFollowUps.filter((appointment) => {
-      const status = String(appointment.status || "").toLowerCase();
-      const date = new Date(String(appointment.starts_at || "")).getTime();
-      return status !== "completed" && date < Date.now();
-    });
-    const pendingFollowUps = dueFollowUps.filter((appointment) => ["requested", "pending", "confirmed"].includes(String(appointment.status || "").toLowerCase()));
-    const followUpCompliance = dueFollowUps.length > 0 ? (completedFollowUps.length / dueFollowUps.length) * 100 : null;
-
-    const expenseSourceFailed = veterinarySourceErrors.some((error) =>
-      error.startsWith("medical expenses:") || error.startsWith("veterinary expenses:")
-    );
-    const paidVeterinaryExpenses = veterinaryExpenses.filter((expense) => String(expense.status || "").toLowerCase() === "paid");
-    const veterinaryExpenseIds = new Set<string>();
-    const totalVeterinaryExpenditure = expenseSourceFailed ? null : paidVeterinaryExpenses.reduce((total, expense) => {
-      const expenseId = String(expense.id || expense.expense_number || "");
-      if (expenseId && veterinaryExpenseIds.has(expenseId)) return total;
-      if (expenseId) veterinaryExpenseIds.add(expenseId);
-      return total + numericValue(expense.amount);
-    }, 0);
-    const expenseDogIds = new Set(
-      paidVeterinaryExpenses
-        .map((expense) => expense.dog_id || expense.pet_id || expense.animal_id)
-        .filter(Boolean)
-        .map(String)
-    );
-    const averageVeterinaryExpenditure = totalVeterinaryExpenditure !== null && expenseDogIds.size > 0
-      ? totalVeterinaryExpenditure / expenseDogIds.size
-      : null;
-
-    const medicalReportRows = [
-      ["Vaccination coverage rate", vaccinationCoverage === null ? "Not computable: no required vaccine protocols returned" : `${vaccinationCoverage.toFixed(1)}%`],
-      ["Vaccinated eligible dogs", vaccinatedDogIds.size],
-      ["Eligible shelter dogs", eligibleDogs.length],
-      ["Required vaccine protocols", requiredProtocolNames.size],
-      ["Overdue vaccination records", overdueVaccinations.length],
-      ["Pending surgery appointments", pendingSurgeryRows.length],
-      ["Follow-up compliance", followUpCompliance === null ? "No due follow-ups" : `${followUpCompliance.toFixed(1)}%`],
-      ["Completed due follow-ups", completedFollowUps.length],
-      ["Due follow-ups", dueFollowUps.length],
-      ["Overdue follow-ups", overdueFollowUps.length],
-      ["Pending follow-ups", pendingFollowUps.length],
-      ["Total paid veterinary expenditure", totalVeterinaryExpenditure === null ? "Data source error" : formatCurrency(totalVeterinaryExpenditure)],
-      ["Dogs with recorded veterinary costs", expenseDogIds.size > 0 ? expenseDogIds.size : "Not derivable: expense schema has no dog association"],
-      ["Average expenditure per dog", averageVeterinaryExpenditure === null ? "Not derivable: expense schema has no dog association" : formatCurrency(averageVeterinaryExpenditure)],
-    ];
-    const csvValue = (value: unknown): string => `"${String(value).replace(/"/g, '""')}"`;
-    const exportRows = medicalReportRows.map(([label, value]) => `${csvValue(label)},${csvValue(value)}`);
-    const medicalStatCards = [
-      { title: "Vaccination Coverage", value: loading ? "..." : vaccinationCoverage === null ? "Not computable" : `${vaccinationCoverage.toFixed(1)}%`, trend: `${vaccinatedDogIds.size} / ${eligibleDogs.length} eligible dogs`, color: "#10B981", icon: <FaSyringe /> },
-      { title: "Pending Surgeries", value: loading ? "..." : String(pendingSurgeryRows.length), trend: Object.entries(surgeryStatusBreakdown).map(([status, count]) => `${status}: ${count}`).join(" | ") || "No pending surgery appointments", color: "#DC2626", icon: <FaStethoscope /> },
-      { title: "Follow-up Compliance", value: loading ? "..." : followUpCompliance === null ? "No due follow-ups" : `${followUpCompliance.toFixed(1)}%`, trend: `${completedFollowUps.length} completed / ${dueFollowUps.length} due`, color: "#2563EB", icon: <FaCheckCircle /> },
-      { title: "Veterinary Expenditure / Dog", value: loading ? "..." : totalVeterinaryExpenditure === null ? "Data source error" : averageVeterinaryExpenditure === null ? "No dog-linked costs" : formatCurrency(averageVeterinaryExpenditure), trend: expenseSourceFailed ? "Expense source failed" : `${expenseDogIds.size} dogs with recorded costs`, color: "#64748B", icon: <FaCoins /> },
-    ];
-
-    return (
-      <div style={{ width: "100%", boxSizing: "border-box" }}>
-        <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
-          <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Veterinary Reports &amp; Analytics</h1>
-          <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-            Medical Care &amp; Immunization Compliance Report
-          </p>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", marginBottom: "24px" }}>
-          <QuickActionCard
-            icon={<FaFileAlt />}
-            title="Export Veterinary Report (CSV)"
-            subtitle="Metrics and supported clinical counts"
-            color="#10B981"
-            onClick={() => handleExportCSV("veterinary_metrics_report", "Metric,Value", exportRows)}
-          />
-          <QuickActionCard
-            icon={<FaFileDownload />}
-            title="Export Veterinary Report (Excel)"
-            subtitle="Spreadsheet-compatible metrics"
-            color="#2563EB"
-            onClick={() => handleExportExcel("veterinary_metrics_report", "Metric,Value", exportRows)}
-          />
-          <QuickActionCard icon={<FaFileAlt />} title="Print Veterinary PDF" subtitle="Current clinical metrics" color="#7C3AED" onClick={() => handleExportPDF("Veterinary Reports & Analytics", "Authorized clinical metrics", ["Metric", "Value"], medicalReportRows)} />
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-          {medicalStatCards.map((card) => (
-            <StatCard key={card.title} {...card} />
-          ))}
-        </div>
-
-        {veterinarySourceErrors.length > 0 && (
-          <div className="soft-card" style={{ padding: "16px 20px", marginBottom: "16px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#991B1B" }}>
-            <strong>Veterinary report source errors</strong>
-            <ul style={{ margin: "8px 0 0", paddingLeft: "20px" }}>
-              {veterinarySourceErrors.map((message) => <li key={message}>{message}</li>)}
-            </ul>
-          </div>
-        )}
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "16px", marginBottom: "16px" }}>
-          <div className="soft-card" style={{ padding: "20px" }}>
-            <h3 style={{ margin: "0 0 12px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>Vaccination Coverage</h3>
-            <p style={{ margin: "0 0 12px", color: "#475569", fontSize: "13px" }}>
-              Required protocols: {requiredProtocolNames.size}. Current records are matched by `vaccine_name`, `administered_at`, and `next_due_at`.
-            </p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", fontSize: "13px" }}>
-              <strong>{veterinaryVaccinations.length === 0 ? "No records available" : vaccinatedDogIds.size}<br /><span style={{ color: "#64748B", fontWeight: 500 }}>vaccinated</span></strong>
-              <strong>{eligibleDogs.length}<br /><span style={{ color: "#64748B", fontWeight: 500 }}>eligible shelter dogs</span></strong>
-              <strong>{veterinaryVaccinations.length === 0 ? "No records available" : overdueVaccinations.length}<br /><span style={{ color: "#64748B", fontWeight: 500 }}>overdue records</span></strong>
-            </div>
-          </div>
-
-          <div className="soft-card" style={{ padding: "20px" }}>
-            <h3 style={{ margin: "0 0 12px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>Pending Surgeries</h3>
-            <p style={{ margin: "0 0 12px", color: "#475569", fontSize: "13px" }}>
-              {surgeryAppointments.length} surgery appointment records returned ({completedSurgeryRows.length} completed). Pending work uses the authoritative appointment `status`; treatment records are completed clinical records and are not counted as pending.
-            </p>
-            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              {Object.entries(surgeryStatusBreakdown).map(([status, count]) => <span key={status} style={{ padding: "5px 8px", background: "#FEF2F2", color: "#991B1B", borderRadius: "6px", fontSize: "12px" }}>{status}: {count}</span>)}
-              {pendingSurgeryRows.length === 0 && <span style={{ color: "#64748B", fontSize: "13px" }}>{surgeryAppointments.length === 0 ? "No surgery records available" : "No pending surgeries"}</span>}
-            </div>
-          </div>
-
-          <div className="soft-card" style={{ padding: "20px" }}>
-            <h3 style={{ margin: "0 0 12px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>Follow-up Compliance</h3>
-            <p style={{ margin: "0 0 12px", color: "#475569", fontSize: "13px" }}>{followUpRows.length} appointments identified from `appointment_type` or the follow-up reason. Due records use `starts_at` only.</p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", fontSize: "13px" }}>
-              <strong>{followUpRows.length === 0 ? "No records available" : completedFollowUps.length}<br /><span style={{ color: "#64748B", fontWeight: 500 }}>completed</span></strong>
-              <strong>{followUpRows.length === 0 ? "No records available" : dueFollowUps.length}<br /><span style={{ color: "#64748B", fontWeight: 500 }}>due</span></strong>
-              <strong>{followUpRows.length === 0 ? "No records available" : overdueFollowUps.length}<br /><span style={{ color: "#64748B", fontWeight: 500 }}>overdue</span></strong>
-            </div>
-          </div>
-
-          <div className="soft-card" style={{ padding: "20px" }}>
-            <h3 style={{ margin: "0 0 12px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>Veterinary Expenditure</h3>
-            <p style={{ margin: "0 0 12px", color: "#475569", fontSize: "13px" }}>Paid records from `/finance/expenses` filtered to categories `medical` and `veterinary`.</p>
-            <strong style={{ fontSize: "22px", color: "#0F172A" }}>{totalVeterinaryExpenditure === null ? "Data source error" : totalVeterinaryExpenditure === 0 && paidVeterinaryExpenses.length === 0 ? "No expense records available" : formatCurrency(totalVeterinaryExpenditure)}</strong>
-            <p style={{ margin: "8px 0 0", color: "#991B1B", fontSize: "12px" }}>
-              {expenseSourceFailed ? "The authoritative expense request failed; no replacement value is displayed." : "Dogs with costs require an authoritative dog association in the expense response."}
-            </p>
-          </div>
-        </div>
-
-        <div className="soft-card" style={{ padding: "20px" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>Auditable Veterinary Records</h3>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-              <thead><tr style={{ background: "#F8FAFC" }}><th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>SOURCE</th><th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>RECORD</th><th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>STATUS / VALUE</th><th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>CLINICAL DATE</th></tr></thead>
-              <tbody>
-                {[...pendingSurgeryRows.map((record) => ({ source: "Surgery appointment", record: record.id, status: record.status, date: record.starts_at })), ...dueFollowUps.map((record) => ({ source: "Follow-up", record: record.reason, status: record.status, date: record.starts_at })), ...paidVeterinaryExpenses.map((record) => ({ source: `Expense (${record.category})`, record: record.expense_number || record.id, status: formatCurrency(record.amount), date: record.expense_date }))].slice(0, 100).map((row, index) => (
-                  <tr key={`${row.source}-${row.record}-${index}`} style={{ borderTop: "1px solid #E2E8F0" }}><td style={{ padding: "10px", fontSize: "13px" }}>{row.source}</td><td style={{ padding: "10px", fontSize: "13px", fontWeight: 600 }}>{String(row.record || "-")}</td><td style={{ padding: "10px", fontSize: "13px" }}>{String(row.status || "-")}</td><td style={{ padding: "10px", fontSize: "13px", color: "#64748B" }}>{String(row.date || "-")}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   // ADOPTION OPERATIONS REPORT VIEW
   const renderAdoptionReports = () => {
     const approvedAdoptions = adoptions.filter((a) => ["approved", "completed"].includes(String(a.status).toLowerCase()));
@@ -3612,7 +3543,7 @@ const Reports = () => {
         </div>
 
         {adminTab === "rescue" && renderRescueReports()}
-        {adminTab === "medical" && renderMedicalReports()}
+        {adminTab === "medical" && renderGeneratedVeterinaryReport()}
         {adminTab === "adoptions" && renderAdoptionReports()}
         {adminTab === "volunteers" && (
           <div style={{ width: "100%" }}>
