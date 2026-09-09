@@ -106,6 +106,56 @@ export const storageService = {
   },
 
   /**
+   * Upload an image file directly (supports adoption_images, lost_found, dogs).
+   * Attempts direct POST /storage/upload-file multipart endpoint first,
+   * falling back to the presigned storage upload workflow.
+   */
+  uploadImage: async (file: File, folder = "dogs"): Promise<string> => {
+    // 1. Map folder name to valid backend FileFolder enum: "dogs" | "lost_found" | "shelters" | "adoptions"
+    let backendFolder = folder;
+    if (folder === "adoption_images" || folder === "adoptions") {
+      backendFolder = "adoptions";
+    } else if (folder === "dog_images" || folder === "dogs") {
+      backendFolder = "dogs";
+    } else if (folder === "lost_found") {
+      backendFolder = "lost_found";
+    } else if (folder === "shelters") {
+      backendFolder = "shelters";
+    }
+
+    // 2. Try direct upload endpoint POST /storage/upload-file with multipart/form-data and query folder parameter
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await api.post("/storage/upload-file", formData, {
+        params: { folder: backendFolder },
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const data = res.data?.data || res.data;
+      const url =
+        data?.cdn_url ||
+        data?.url ||
+        data?.file_url ||
+        data?.download_url ||
+        data?.media_url ||
+        data?.photo_url ||
+        data?.object_key ||
+        (typeof data === "string" ? data : "");
+      if (url && typeof url === "string") {
+        return url;
+      }
+    } catch {
+      // Fall through to presigned upload pipeline
+    }
+
+    return await storageService.uploadFile(file, {
+      folder: backendFolder,
+      entity_type: backendFolder === "lost_found" ? "lost_found" : "dog_profile",
+    });
+  },
+
+  /**
    * Complete end-to-end file upload workflow:
    * 1. Get presigned upload URL from backend
    * 2. PUT binary file directly to presigned S3/Supabase URL
@@ -120,8 +170,11 @@ export const storageService = {
       entity_id?: string;
     } = {}
   ): Promise<string> => {
-    const folder = options.folder || "dogs";
-    const entityType = options.entity_type || "dog_profile";
+    let folder = options.folder || "dogs";
+    if (folder === "adoption_images") {
+      folder = "adoptions";
+    }
+    const entityType = options.entity_type || (folder === "lost_found" ? "lost_found" : "dog_profile");
 
     // 1. Request presigned upload URL
     const uploadRes = await storageService.requestUploadUrl({
@@ -164,7 +217,8 @@ export const storageService = {
     }
 
     if (!persistentUrl && upload_url) {
-      persistentUrl = upload_url;
+      // Strip query parameters for persistent asset link if S3 URL
+      persistentUrl = upload_url.split("?")[0];
     }
 
     return persistentUrl;

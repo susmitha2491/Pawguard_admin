@@ -24,6 +24,7 @@ import {
   FaSync,
   FaHistory,
   FaCopy,
+  FaEdit,
 } from "react-icons/fa";
 
 import petService from "../../services/petService";
@@ -32,10 +33,11 @@ import medicalService from "../../services/medicalService";
 import storageService from "../../services/storageService";
 import { getCurrentUser, getCurrentUserRole, normalizeRole } from "../../utils/roleUtils";
 import { hasPermission } from "../../utils/rbac";
-import { notifyDataChanged } from "../../utils/dataSync";
+import { notifyDataChanged, useDataSync } from "../../utils/dataSync";
 import { publishActionEvent } from "../../utils/eventSystem";
 import { generateQrDataUrl, generateQrBlob } from "../../utils/qrGenerator";
 import DogLifecycleTimelineModal from "../../components/pets/DogLifecycleTimelineModal";
+import ImageUploader from "../../components/common/ImageUploader";
 
 const DOG_STATUSES = ["rescued", "clinic", "shelter", "fostered", "adopted"];
 const GENDERS = ["male", "female", "unknown"];
@@ -147,6 +149,7 @@ interface QrDogInfo {
 const emptyPetForm = {
   name: "",
   breed: "",
+  breed_classification: "",
   gender: "unknown",
   estimated_age: "",
   age_months: "",
@@ -155,6 +158,10 @@ const emptyPetForm = {
   tail_type: "unknown",
   is_adoptable: false,
   status: "shelter",
+  photos: [] as string[],
+  photo_url: "",
+  description: "",
+  microchip_number: "",
   rescue_case_id: "",
 };
 
@@ -197,8 +204,10 @@ const Pets = () => {
   const [allDogs, setAllDogs] = useState<any[]>([]);
   const [dogMasterCount, setDogMasterCount] = useState<number>(0);
   const [companionPetCount, setCompanionPetCount] = useState<number>(0);
-  const [globalTotalCount, setGlobalTotalCount] = useState<number | null>(null);
-  const [loadingAll, setLoadingAll] = useState(true);
+  const [totalCombinedCount, setTotalCombinedCount] = useState<number>(0);
+  const [companionDogCount, setCompanionDogCount] = useState<number>(0);
+  const [adoptableDogCount, setAdoptableDogCount] = useState<number>(0);
+  const [loadingCounts, setLoadingCounts] = useState<boolean>(true);
   const [rescueCases, setRescueCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -226,6 +235,7 @@ const Pets = () => {
   const [pendingPhotoUrl, setPendingPhotoUrl] = useState<string | null>(null);
   const [pendingPhotoFile, setPendingPhotoFile] = useState<File | null>(null);
   const [isSavingPhoto, setIsSavingPhoto] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   // QR modal state
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
@@ -294,9 +304,22 @@ const Pets = () => {
     return "";
   };
 
+  const isAdoptableDog = (dog: any): boolean => {
+    if (!dog) return false;
+    const status = String(dog.status || "").toLowerCase();
+    if (status === "adopted") return false;
+    return Boolean(
+      dog.is_adoptable === true ||
+      dog.is_adoptable === "true" ||
+      status === "adoptable" ||
+      String(dog.adoption_status || "").toLowerCase() === "ready for adoption"
+    );
+  };
+
   const formatDog = (dog: any) => {
     const rawStatus = String(dog.status || "").toLowerCase();
     const isFostered = rawStatus === "fostered" || (!!dog.foster_home_id && rawStatus !== "adopted");
+    const adoptable = isAdoptableDog(dog);
     return {
       ...dog,
       registration_number: dog.registration_number || dog.id || "-",
@@ -307,9 +330,10 @@ const Pets = () => {
       estimated_age: dog.estimated_age || dog.age || "-",
       age_months: dog.age_months ?? "",
       weight: dog.weight ?? "",
-      is_adoptable: !!dog.is_adoptable,
+      is_adoptable: adoptable,
       is_public_visible: dog.is_public_visible !== false,
       status: isFostered ? "fostered" : (dog.status || "-"),
+      adoption_status: adoptable ? "Ready for Adoption" : rawStatus === "adopted" ? "Adopted" : "In Shelter Care",
     };
   };
 
@@ -491,7 +515,7 @@ const Pets = () => {
 
       // Adoptable filter refinement:
       if (adoptableOnly) {
-        dogList = dogList.filter((d: any) => Boolean(d.is_adoptable));
+        dogList = dogList.filter((d: any) => isAdoptableDog(d));
       }
 
       // Search filter refinement:
@@ -536,9 +560,33 @@ const Pets = () => {
     }
   };
 
+  const fetchCounts = async () => {
+    try {
+      setLoadingCounts(true);
+      const currentUser = getCurrentUser();
+      const currentRole = normalizeRole(currentUser);
+      const userShelterId = (currentUser as any)?.shelter_id || (currentUser as any)?.shelter?.id || (currentUser as any)?.assigned_shelter_id;
+
+      const params: Record<string, any> = {};
+      if (currentRole === "shelter_manager" && userShelterId) {
+        params.shelter_id = userShelterId;
+      }
+
+      const counts = await petService.getRegistryCounts(params);
+      setDogMasterCount(counts.dogMasterCount);
+      setCompanionPetCount(counts.companionPetCount);
+      setTotalCombinedCount(counts.totalCombinedCount);
+      setCompanionDogCount(counts.companionDogCount);
+      setAdoptableDogCount(counts.adoptableDogCount);
+    } catch (err) {
+      console.warn("Failed to fetch registry counts:", err);
+    } finally {
+      setLoadingCounts(false);
+    }
+  };
+
   const fetchAllDogs = async () => {
     try {
-      setLoadingAll(true);
       const currentUser = getCurrentUser();
       const currentRole = normalizeRole(currentUser);
       const userShelterId = (currentUser as any)?.shelter_id || (currentUser as any)?.shelter?.id || (currentUser as any)?.assigned_shelter_id;
@@ -563,23 +611,20 @@ const Pets = () => {
         formatted = formatted.filter((d: any) => !d.is_companion_pet && d.status !== "companion");
       }
 
-      setAllDogs(formatted);
-
-      // Separate Dog Master profiles vs Companion Pets authoritatively
-      const masterList = formatted.filter((d: any) => !d.is_companion_pet);
-      const companionList = formatted.filter((d: any) => Boolean(d.is_companion_pet));
-
-      setDogMasterCount(masterList.length);
-      setCompanionPetCount(companionList.length);
-
-      const totalMeta = response?.meta?.total ?? response?.data?.meta?.total ?? formatted.length;
-      if (typeof totalMeta === "number" && totalMeta >= 0) {
-        setGlobalTotalCount(totalMeta);
+      // Deduplicate by unique dog identifier to avoid double-counting between Dog Master & Companion Pets
+      const seenIds = new Set<string>();
+      const uniqueList: any[] = [];
+      for (const d of formatted) {
+        const id = dogId(d) || d.id || d.registration_number;
+        if (id && !seenIds.has(id)) {
+          seenIds.add(id);
+          uniqueList.push(d);
+        }
       }
+
+      setAllDogs(uniqueList);
     } catch (err) {
-      console.warn("Failed to fetch global dogs list for summary cards:", err);
-    } finally {
-      setLoadingAll(false);
+      console.warn("Failed to fetch global dogs list for lookup:", err);
     }
   };
 
@@ -624,9 +669,16 @@ const Pets = () => {
   }, [search, page, statusFilter, adoptableOnly, registryTab]);
 
   useEffect(() => {
+    fetchCounts();
     fetchAllDogs();
     fetchRescueCases();
   }, []);
+
+  useDataSync(() => {
+    fetchDogs();
+    fetchCounts();
+    fetchAllDogs();
+  });
 
   useEffect(() => {
     if (searchParams.get("action") === "register") {
@@ -643,24 +695,39 @@ const Pets = () => {
     }
     try {
       setIsSubmitting(true);
-      await petService.createPet(
+      const photos = petForm.photos && petForm.photos.length > 0
+        ? petForm.photos
+        : petForm.photo_url
+        ? [petForm.photo_url]
+        : [];
+
+      await petService.createDog(
         cleanPayload({
           name: petForm.name,
-          breed: petForm.breed,
+          breed: petForm.breed || undefined,
+          breed_classification: petForm.breed_classification || undefined,
           gender: petForm.gender,
-          estimated_age: petForm.estimated_age,
+          estimated_age: petForm.estimated_age || undefined,
           age_months: petForm.age_months ? Number(petForm.age_months) : undefined,
           weight: petForm.weight ? Number(petForm.weight) : undefined,
+          weight_kg: petForm.weight ? Number(petForm.weight) : undefined,
           ear_shape: petForm.ear_shape && petForm.ear_shape !== "unknown" ? petForm.ear_shape : undefined,
           tail_type: petForm.tail_type && petForm.tail_type !== "unknown" ? petForm.tail_type : undefined,
-          is_adoptable: petForm.is_adoptable,
+          is_adoptable: Boolean(petForm.is_adoptable),
+          status: petForm.status || "shelter",
+          photos: photos,
+          image_urls: photos,
+          photo_url: photos[0] || undefined,
+          description: petForm.description || undefined,
+          microchip_number: petForm.microchip_number || undefined,
           rescue_case_id: petForm.rescue_case_id || undefined,
         })
       );
-      addToast(`Rescued pet "${petForm.name}" registered successfully!`, "success");
+      addToast(`Dog "${petForm.name}" registered successfully!`, "success");
       setIsRegisterModalOpen(false);
       setPetForm({ ...emptyPetForm });
       fetchDogs();
+      fetchCounts();
       fetchAllDogs();
       notifyDataChanged();
     } catch (err: any) {
@@ -685,6 +752,7 @@ const Pets = () => {
       setIsStatusModalOpen(false);
       setStatusUpdateForm({ dogId: "", status: "shelter" });
       fetchDogs();
+      fetchCounts();
       fetchAllDogs();
       notifyDataChanged();
     } catch (err: any) {
@@ -719,6 +787,7 @@ const Pets = () => {
       addToast(`${dog.name} is now marked Ready for Adoption!`, "success");
       setIsAdoptableModalOpen(false);
       fetchDogs();
+      fetchCounts();
       fetchAllDogs();
       notifyDataChanged();
     } catch (err: any) {
@@ -1247,6 +1316,44 @@ const extractTagData = (res: any) => {
     }
   };
 
+  const openEditModal = (dog: any) => {
+    setSelectedDog(dog);
+    const existingPhoto = getDogPhotoUrl(dog, dogPhotoMap);
+    const photos = Array.isArray(dog.image_urls) && dog.image_urls.length > 0
+      ? dog.image_urls
+      : Array.isArray(dog.photos) && dog.photos.length > 0
+      ? dog.photos
+      : Array.isArray(dog.photo_gallery_urls) && dog.photo_gallery_urls.length > 0
+      ? dog.photo_gallery_urls
+      : dog.photo_url
+      ? [dog.photo_url]
+      : dog.image_url
+      ? [dog.image_url]
+      : existingPhoto
+      ? [existingPhoto]
+      : [];
+
+    setPetForm({
+      name: dog.name || "",
+      breed: dog.breed || "",
+      breed_classification: dog.breed_classification || "",
+      gender: dog.gender || "unknown",
+      estimated_age: dog.estimated_age || "",
+      age_months: dog.age_months ?? "",
+      weight: dog.weight ?? dog.weight_kg ?? "",
+      ear_shape: dog.ear_shape || "unknown",
+      tail_type: dog.tail_type || "unknown",
+      is_adoptable: Boolean(dog.is_adoptable),
+      status: dog.status || "shelter",
+      photos: photos,
+      photo_url: dog.photo_url || photos[0] || "",
+      description: dog.description || "",
+      microchip_number: dog.microchip_id || dog.microchip_number || "",
+      rescue_case_id: dog.rescue_case_id || "",
+    });
+    setIsEditModalOpen(true);
+  };
+
   const handleEditDogSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const id = dogId(selectedDog);
@@ -1256,25 +1363,42 @@ const extractTagData = (res: any) => {
     }
     try {
       setIsSubmitting(true);
-      await petService.updatePet(
+      const photos = petForm.photos && petForm.photos.length > 0
+        ? petForm.photos
+        : petForm.photo_url
+        ? [petForm.photo_url]
+        : selectedDog.image_urls || (selectedDog.photo_url ? [selectedDog.photo_url] : []);
+
+      await petService.updateDog(
         id,
         cleanPayload({
           name: petForm.name,
-          breed: petForm.breed,
+          breed: petForm.breed || undefined,
+          breed_classification: petForm.breed_classification || undefined,
           gender: petForm.gender,
-          estimated_age: petForm.estimated_age,
+          estimated_age: petForm.estimated_age || undefined,
           age_months: petForm.age_months ? Number(petForm.age_months) : undefined,
           weight: petForm.weight ? Number(petForm.weight) : undefined,
+          weight_kg: petForm.weight ? Number(petForm.weight) : undefined,
           ear_shape: petForm.ear_shape && petForm.ear_shape !== "unknown" ? petForm.ear_shape : undefined,
           tail_type: petForm.tail_type && petForm.tail_type !== "unknown" ? petForm.tail_type : undefined,
-          is_adoptable: petForm.is_adoptable,
+          is_adoptable: Boolean(petForm.is_adoptable),
           status: DOG_STATUSES.includes(petForm.status) ? petForm.status : undefined,
+          photos: photos,
+          image_urls: photos,
+          photo_url: photos[0] || undefined,
+          description: petForm.description || undefined,
+          microchip_number: petForm.microchip_number || undefined,
         })
       );
+      if (photos.length > 0) {
+        setDogPhotoMap((prev) => ({ ...prev, [id]: photos[0] }));
+      }
       addToast(`Updated record for ${petForm.name}!`, "success");
       setIsEditModalOpen(false);
       setSelectedDog(null);
       fetchDogs();
+      fetchCounts();
       fetchAllDogs();
       notifyDataChanged();
     } catch (err: any) {
@@ -1298,6 +1422,7 @@ const extractTagData = (res: any) => {
       setIsDeleteModalOpen(false);
       setSelectedDog(null);
       fetchDogs();
+      fetchCounts();
       fetchAllDogs();
       notifyDataChanged();
     } catch (err: any) {
@@ -1312,11 +1437,7 @@ const extractTagData = (res: any) => {
   const currentRole = normalizeRole(currentUser);
   const isRescueAdmin = currentRole === "rescue_centre_admin" || currentRole === "rescue_coordinator" || currentRole === "rescue_agent" || String(currentRole || "").includes("rescue");
 
-  const totalRegisteredCount = (globalTotalCount && globalTotalCount > allDogs.length) ? globalTotalCount : allDogs.length;
-  const companionCount = allDogs.filter((dog) => Boolean(dog.is_companion_pet) || dog.status === "companion").length;
-  const adoptableCount = allDogs.filter((dog) => Boolean(dog.is_adoptable)).length;
-
-  const isCardsLoading = loadingAll && allDogs.length === 0 && (globalTotalCount === null || globalTotalCount === 0);
+  const isCardsLoading = loadingCounts;
 
   const stats = [
     {
@@ -1351,7 +1472,7 @@ const extractTagData = (res: any) => {
     },
     {
       title: "Total Combined Registry",
-      value: isCardsLoading ? "..." : totalRegisteredCount,
+      value: isCardsLoading ? "..." : totalCombinedCount,
       trend: "Combined Animals Count",
       color: "#16A34A",
       icon: <FaPaw />,
@@ -1366,7 +1487,7 @@ const extractTagData = (res: any) => {
     },
     ...(!isRescueAdmin ? [{
       title: "Companion Dogs",
-      value: isCardsLoading ? "..." : companionCount,
+      value: isCardsLoading ? "..." : companionDogCount,
       trend: "Citizen & Owner Registered",
       color: "#1E3A8A",
       icon: <FaDog />,
@@ -1381,7 +1502,7 @@ const extractTagData = (res: any) => {
     }] : []),
     {
       title: "Adoptable Dogs",
-      value: isCardsLoading ? "..." : adoptableCount,
+      value: isCardsLoading ? "..." : adoptableDogCount,
       trend: "Ready for Adoption",
       color: "#15803D",
       icon: <FaHeart />,
@@ -1438,6 +1559,30 @@ const extractTagData = (res: any) => {
 
   const rowActions = (row: any) => (
     <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+      <Can permission="edit_animals">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            openEditModal(row);
+          }}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            padding: "6px 12px",
+            borderRadius: "6px",
+            border: "1px solid #BFDBFE",
+            background: "#EFF6FF",
+            color: "#1D4ED8",
+            fontSize: "12px",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          <FaEdit /> Edit
+        </button>
+      </Can>
       <Can permission="delete_animals">
         <button
           type="button"
@@ -1872,6 +2017,32 @@ const extractTagData = (res: any) => {
           </div>
 
           <div>
+            <ImageUploader
+              label="Dog Photo(s)"
+              folder="adoption_images"
+              multiple={true}
+              value={petForm.photos}
+              onChange={(photos) => {
+                const arr = Array.isArray(photos) ? photos : photos ? [photos] : [];
+                setPetForm({ ...petForm, photos: arr, photo_url: arr[0] || "" });
+              }}
+              onUploadingChange={setIsUploadingPhoto}
+              helperText="Upload photos directly to media storage for Dog Profile and Public Adoption listing"
+            />
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Description / Bio</label>
+            <textarea
+              placeholder="Provide a friendly description, background, personality traits..."
+              value={petForm.description}
+              onChange={(e) => setPetForm({ ...petForm, description: e.target.value })}
+              rows={3}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px", boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }}
+            />
+          </div>
+
+          <div>
             <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Linked Rescue Case</label>
             <select
               value={petForm.rescue_case_id}
@@ -1897,10 +2068,10 @@ const extractTagData = (res: any) => {
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
-              style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 600, cursor: "pointer" }}
+              disabled={isSubmitting || isUploadingPhoto}
+              style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: isSubmitting || isUploadingPhoto ? "#94A3B8" : "#2563EB", color: "#FFF", fontWeight: 600, cursor: isSubmitting || isUploadingPhoto ? "not-allowed" : "pointer" }}
             >
-              {isSubmitting ? "Registering..." : "Register Dog"}
+              {isUploadingPhoto ? "Uploading..." : isSubmitting ? "Registering..." : "Register Dog"}
             </button>
           </div>
         </form>
@@ -2117,28 +2288,76 @@ const extractTagData = (res: any) => {
           </div>
 
           <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Status</label>
-            <select
-              value={petForm.status}
-              onChange={(e) => setPetForm({ ...petForm, status: e.target.value })}
-              style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px", boxSizing: "border-box" }}
-            >
-              {DOG_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                </option>
-              ))}
-            </select>
+            <ImageUploader
+              label="Dog Photo(s)"
+              folder="adoption_images"
+              multiple={true}
+              value={petForm.photos}
+              onChange={(photos) => {
+                const arr = Array.isArray(photos) ? photos : photos ? [photos] : [];
+                setPetForm({ ...petForm, photos: arr, photo_url: arr[0] || "" });
+              }}
+              onUploadingChange={setIsUploadingPhoto}
+              helperText="Upload or update photos directly to storage for Dog Profile and Public Adoption listing"
+            />
           </div>
 
-          <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", fontWeight: 600, color: "#334155" }}>
-            <input
-              type="checkbox"
-              checked={petForm.is_adoptable}
-              onChange={(e) => setPetForm({ ...petForm, is_adoptable: e.target.checked })}
+          <div>
+            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Description / Bio</label>
+            <textarea
+              placeholder="Provide a friendly description, background, personality traits..."
+              value={petForm.description}
+              onChange={(e) => setPetForm({ ...petForm, description: e.target.value })}
+              rows={3}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px", boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }}
             />
-            Ready for adoption
-          </label>
+          </div>
+
+          {/* Dedicated Adoption Availability Control */}
+          <div
+            style={{
+              padding: "14px 16px",
+              borderRadius: "10px",
+              background: petForm.is_adoptable ? "#F0FDF4" : "#F8FAFC",
+              border: `1px solid ${petForm.is_adoptable ? "#BBF7D0" : "#E2E8F0"}`,
+              transition: "all 0.2s ease",
+            }}
+          >
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                fontSize: "14px",
+                fontWeight: 700,
+                color: petForm.is_adoptable ? "#15803D" : "#334155",
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={petForm.is_adoptable}
+                onChange={(e) => setPetForm({ ...petForm, is_adoptable: e.target.checked })}
+                style={{
+                  width: "18px",
+                  height: "18px",
+                  accentColor: "#16A34A",
+                  cursor: "pointer",
+                }}
+              />
+              <span>Ready for adoption</span>
+            </label>
+            <p
+              style={{
+                margin: "4px 0 0 28px",
+                fontSize: "12px",
+                color: petForm.is_adoptable ? "#166534" : "#64748B",
+                lineHeight: 1.4,
+              }}
+            >
+              Make this dog available for adoption on the public website and eligible for adoption applications.
+            </p>
+          </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>
             <button
@@ -2153,10 +2372,10 @@ const extractTagData = (res: any) => {
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
-              style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 600, cursor: "pointer" }}
+              disabled={isSubmitting || isUploadingPhoto}
+              style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: isSubmitting || isUploadingPhoto ? "#94A3B8" : "#2563EB", color: "#FFF", fontWeight: 600, cursor: isSubmitting || isUploadingPhoto ? "not-allowed" : "pointer" }}
             >
-              {isSubmitting ? "Saving..." : "Save Changes"}
+              {isUploadingPhoto ? "Uploading..." : isSubmitting ? "Saving..." : "Save Changes"}
             </button>
           </div>
         </form>

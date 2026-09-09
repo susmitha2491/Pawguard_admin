@@ -1,5 +1,6 @@
 import api from "../api/axios";
 import { publishActionEvent } from "../utils/eventSystem";
+import type { LostReportCreate, FoundReportCreate } from "../types/pipeline";
 
 export type Species = "dog";
 export type ReportStatus = "active" | "resolved" | "expired";
@@ -189,13 +190,90 @@ export const lostFoundService = {
     return extractList<LostFoundMatch>(response.data);
   },
 
-  createLostReport: async (data: LostReportCreateData) => {
-    const response = await api.post("/lost-found/lost", data);
+  createLostReport: async (data: LostReportCreateData | LostReportCreate | Record<string, unknown>) => {
+    const d = data as any;
+    const photoUrls = Array.isArray(d.photo_urls)
+      ? d.photo_urls
+      : d.photo_url
+      ? [d.photo_url as string]
+      : [];
+
+    const breedVal = d.breed_observed || d.breed || "Mixed Breed";
+    const colorVal = d.color_pattern || d.color || "Not specified";
+    const locationVal = d.last_seen_location || d.location_address || "Unknown Location";
+    const dateVal = d.last_seen_date || d.lost_at || new Date().toISOString();
+    const genderVal = d.gender || "unknown";
+    const descVal = d.description || d.marker_description || "";
+
+    const payload: Record<string, unknown> = {
+      species: d.species || "dog",
+      pet_name: d.pet_name || "Unknown Dog",
+      breed_observed: breedVal,
+      breed: breedVal,
+      gender: genderVal,
+      color_pattern: colorVal,
+      color: colorVal,
+      last_seen_location: locationVal,
+      location_address: locationVal,
+      last_seen_date: dateVal,
+      lost_at: dateVal,
+      photo_urls: photoUrls,
+      ...(photoUrls.length > 0 ? { photo_url: photoUrls[0] } : {}),
+      ...(d.microchip_id ? { microchip_id: d.microchip_id } : {}),
+      ...(d.collar_color ? { collar_color: d.collar_color } : {}),
+      ...(d.collar_description ? { collar_description: d.collar_description } : {}),
+      ...(descVal ? { description: descVal, marker_description: descVal } : {}),
+      ...(d.contact_name ? { contact_name: d.contact_name } : {}),
+      ...(d.contact_phone ? { contact_phone: d.contact_phone } : {}),
+      ...(d.contact_email ? { contact_email: d.contact_email } : {}),
+      ...(d.latitude !== undefined && d.latitude !== null ? { latitude: Number(d.latitude) } : {}),
+      ...(d.longitude !== undefined && d.longitude !== null ? { longitude: Number(d.longitude) } : {}),
+    };
+
+    const response = await api.post("/lost-found/lost", payload);
     return response.data;
   },
 
-  createFoundReport: async (data: FoundReportCreateData) => {
-    const response = await api.post("/lost-found/found", data);
+  createFoundReport: async (data: FoundReportCreateData | FoundReportCreate | Record<string, unknown>) => {
+    const d = data as any;
+    const photoUrls = Array.isArray(d.photo_urls)
+      ? d.photo_urls
+      : d.photo_url
+      ? [d.photo_url as string]
+      : [];
+
+    const breedVal = d.breed_observed || d.breed || "Mixed Breed";
+    const colorVal = d.color_pattern || d.color_observed || d.color || "Not specified";
+    const locationVal = d.found_location || d.location_address || "Unknown Location";
+    const dateVal = d.found_date || d.found_at || new Date().toISOString();
+    const genderVal = d.gender || "unknown";
+    const descVal = d.description || d.marker_description || d.notes || "";
+
+    const payload: Record<string, unknown> = {
+      species: d.species || "dog",
+      breed_observed: breedVal,
+      breed: breedVal,
+      gender: genderVal,
+      color_pattern: colorVal,
+      color_observed: colorVal,
+      color: colorVal,
+      found_location: locationVal,
+      location_address: locationVal,
+      found_date: dateVal,
+      found_at: dateVal,
+      photo_urls: photoUrls,
+      ...(photoUrls.length > 0 ? { photo_url: photoUrls[0] } : {}),
+      ...(d.collar_color ? { collar_color: d.collar_color } : {}),
+      ...(d.collar_description ? { collar_description: d.collar_description } : {}),
+      ...(descVal ? { description: descVal, marker_description: descVal, notes: descVal } : {}),
+      ...(d.contact_name ? { contact_name: d.contact_name } : {}),
+      ...(d.contact_phone ? { contact_phone: d.contact_phone } : {}),
+      ...(d.contact_email ? { contact_email: d.contact_email } : {}),
+      ...(d.latitude !== undefined && d.latitude !== null ? { latitude: Number(d.latitude) } : {}),
+      ...(d.longitude !== undefined && d.longitude !== null ? { longitude: Number(d.longitude) } : {}),
+    };
+
+    const response = await api.post("/lost-found/found", payload);
     return response.data;
   },
 

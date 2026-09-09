@@ -31,6 +31,7 @@ import dogService from "../../services/dogService";
 import petService from "../../services/petService";
 import { notifyDataChanged, useDataSync } from "../../utils/dataSync";
 import QrScannerModal from "../../components/dashboard/QrScannerModal";
+import ImageUploader from "../../components/common/ImageUploader";
 
 const PAGE_SIZE = 8;
 
@@ -369,6 +370,7 @@ const LostAndFound = () => {
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -459,6 +461,10 @@ const LostAndFound = () => {
     photo_url: "",
     breed_observed: "",
     color_observed: "",
+    contact_name: "",
+    contact_phone: "",
+    contact_email: "",
+    description: "",
   });
 
   const handleCaptureGps = () => {
@@ -515,6 +521,10 @@ const LostAndFound = () => {
       photo_url: "",
       breed_observed: "",
       color_observed: "",
+      contact_name: "",
+      contact_phone: "",
+      contact_email: "",
+      description: "",
     }));
     setFormError(null);
   };
@@ -769,6 +779,11 @@ const LostAndFound = () => {
           longitude: toNumOrNull(formData.longitude),
           lost_at: new Date(formData.lost_at).toISOString(),
           photo_url: trimOrNull(formData.photo_url),
+          photo_urls: formData.photo_url ? [formData.photo_url] : [],
+          contact_name: trimOrNull(formData.contact_name),
+          contact_phone: trimOrNull(formData.contact_phone),
+          contact_email: trimOrNull(formData.contact_email),
+          description: trimOrNull(formData.description || formData.marker_description),
         });
         addToast("Lost pet report created successfully!", "success");
       } else {
@@ -784,6 +799,11 @@ const LostAndFound = () => {
           longitude: toNumOrNull(formData.longitude),
           found_at: new Date(formData.found_at).toISOString(),
           photo_url: trimOrNull(formData.photo_url),
+          photo_urls: formData.photo_url ? [formData.photo_url] : [],
+          contact_name: trimOrNull(formData.contact_name),
+          contact_phone: trimOrNull(formData.contact_phone),
+          contact_email: trimOrNull(formData.contact_email),
+          description: trimOrNull(formData.description || formData.marker_description),
         });
         addToast("Found pet report created successfully!", "success");
       }
@@ -2908,14 +2928,51 @@ const LostAndFound = () => {
           </div>
 
           <div>
-            <label style={labelStyle}>Photo URL</label>
-            <input
-              type="url"
+            <ImageUploader
+              label="Pet Photo"
+              folder="lost_found"
               value={formData.photo_url}
-              onChange={(e) => setFormData({ ...formData, photo_url: e.target.value })}
-              style={commonInputStyle}
-              placeholder="https://..."
+              onChange={(url) => setFormData({ ...formData, photo_url: url })}
+              onUploadingChange={setIsUploadingPhoto}
             />
+          </div>
+
+          <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: "12px", marginTop: "4px" }}>
+            <div style={{ fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "8px" }}>
+              Reporter Contact Information (Optional)
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+              <div>
+                <label style={{ ...labelStyle, fontSize: "11px", color: "#64748B" }}>Contact Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. John Doe"
+                  value={formData.contact_name}
+                  onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
+                  style={commonInputStyle}
+                />
+              </div>
+              <div>
+                <label style={{ ...labelStyle, fontSize: "11px", color: "#64748B" }}>Phone Number</label>
+                <input
+                  type="tel"
+                  placeholder="e.g. +91 98765 43210"
+                  value={formData.contact_phone}
+                  onChange={(e) => setFormData({ ...formData, contact_phone: e.target.value })}
+                  style={commonInputStyle}
+                />
+              </div>
+              <div>
+                <label style={{ ...labelStyle, fontSize: "11px", color: "#64748B" }}>Email</label>
+                <input
+                  type="email"
+                  placeholder="e.g. reporter@example.com"
+                  value={formData.contact_email}
+                  onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })}
+                  style={commonInputStyle}
+                />
+              </div>
+            </div>
           </div>
 
           {formError && (
@@ -2951,18 +3008,18 @@ const LostAndFound = () => {
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isUploadingPhoto}
               style={{
                 padding: "8px 16px",
                 borderRadius: "6px",
-                background: "#2563EB",
+                background: isSubmitting || isUploadingPhoto ? "#94A3B8" : "#2563EB",
                 color: "#FFF",
                 border: "none",
-                cursor: isSubmitting ? "wait" : "pointer",
+                cursor: isSubmitting || isUploadingPhoto ? "not-allowed" : "pointer",
                 fontWeight: 600,
               }}
             >
-              {isSubmitting ? "Submitting..." : "Save Listing"}
+              {isUploadingPhoto ? "Uploading Photo..." : isSubmitting ? "Submitting..." : "Save Listing"}
             </button>
           </div>
         </form>

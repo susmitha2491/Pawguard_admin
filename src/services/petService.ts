@@ -1,6 +1,7 @@
 import api from "../api/axios";
 import { publishActionEvent } from "../utils/eventSystem";
 import { getAccessToken } from "../utils/authStorage";
+import type { DogProfileCreate, DogProfileUpdate } from "../types/pipeline";
 
 export interface PetPayload {
   id?: string;
@@ -131,12 +132,17 @@ export const petService = {
     }
 
     // 3. Default: Unified query combining Dog Master & Companion Pets datasets
-    const dogRes = await api.get("/dogs", { params });
+    const cleanParams = { ...params };
+    delete cleanParams.record_type;
+    delete cleanParams.type;
+    delete cleanParams.category;
+
+    const dogRes = await api.get("/dogs", { params: cleanParams });
     const dogData = dogRes.data;
     const dogList = Array.isArray(dogData?.data) ? dogData.data : Array.isArray(dogData) ? dogData : [];
 
     try {
-      const compRes = await api.get("/companion-pets", { params });
+      const compRes = await api.get("/companion-pets", { params: cleanParams });
       const compData = compRes.data;
       const compList = Array.isArray(compData?.data) ? compData.data : Array.isArray(compData) ? compData : [];
 
@@ -152,7 +158,9 @@ export const petService = {
           }));
 
         const combined = [...dogList, ...normalizedCompPets];
-        const total = (dogData?.meta?.total || dogList.length) + normalizedCompPets.length;
+        const masterTotal = dogData?.meta?.total ?? dogData?.total ?? dogList.length;
+        const compTotal = compData?.meta?.total ?? compData?.total ?? normalizedCompPets.length;
+        const total = masterTotal + compTotal;
 
         return {
           ...dogData,
@@ -167,9 +175,91 @@ export const petService = {
     return dogData;
   },
 
+  /**
+   * Authoritative registry statistics for Dog Management KPI cards.
+   * Endpoints:
+   *   - Dog Master Count: GET /dogs (meta.total)
+   *   - Adoptable Dogs Count: GET /dogs?is_adoptable=true (meta.total)
+   *   - Companion Pets Count: GET /companion-pets (meta.total)
+   *   - Companion Dogs Count: count of companion pets with species=dog (<= companionPetCount)
+   *   - Total Combined: Dog Master Count + Companion Pet Count
+   */
+  getRegistryCounts: async (params?: Record<string, unknown>): Promise<{
+    dogMasterCount: number;
+    companionPetCount: number;
+    totalCombinedCount: number;
+    companionDogCount: number;
+    adoptableDogCount: number;
+  }> => {
+    let dogMasterCount = 0;
+    let companionPetCount = 0;
+    let companionDogCount = 0;
+    let adoptableDogCount = 0;
+
+    const dogParams: Record<string, unknown> = { page: 1, page_size: 1 };
+    if (params?.shelter_id) {
+      dogParams.shelter_id = params.shelter_id;
+    }
+
+    // 1. Dog Master Total from GET /api/v1/dogs
+    try {
+      const masterRes = await api.get("/dogs", { params: dogParams });
+      const masterData = masterRes.data;
+      dogMasterCount = masterData?.meta?.total ?? masterData?.total ?? (Array.isArray(masterData?.data) ? masterData.data.length : 0);
+    } catch (err) {
+      console.warn("Failed to fetch dog master count:", err);
+    }
+
+    // 2. Adoptable Dogs Total from GET /api/v1/dogs?is_adoptable=true
+    try {
+      const adoptRes = await api.get("/dogs", { params: { ...dogParams, is_adoptable: true } });
+      const adoptData = adoptRes.data;
+      adoptableDogCount = adoptData?.meta?.total ?? adoptData?.total ?? (Array.isArray(adoptData?.data) ? adoptData.data.length : 0);
+    } catch (err) {
+      console.warn("Failed to fetch adoptable dogs count:", err);
+    }
+
+    // 3. Companion Pets & Companion Dogs Count from GET /api/v1/companion-pets
+    try {
+      const compRes = await api.get("/companion-pets", { params: { page: 1, page_size: 100 } });
+      const compData = compRes.data;
+      const compList = Array.isArray(compData?.data) ? compData.data : Array.isArray(compData) ? compData : [];
+      companionPetCount = compData?.meta?.total ?? compData?.total ?? compList.length;
+
+      // Count companion dogs (species === 'dog' or unspecified)
+      const dogsInSample = compList.filter((p: any) => !p.species || String(p.species).toLowerCase() === "dog").length;
+      if (companionPetCount === compList.length) {
+        companionDogCount = dogsInSample;
+      } else if (compList.length > 0 && dogsInSample === compList.length) {
+        companionDogCount = companionPetCount;
+      } else {
+        companionDogCount = dogsInSample;
+      }
+    } catch {
+      // Access denied or not applicable for certain roles
+      companionPetCount = 0;
+      companionDogCount = 0;
+    }
+
+    const totalCombinedCount = dogMasterCount + companionPetCount;
+
+    return {
+      dogMasterCount,
+      companionPetCount,
+      totalCombinedCount,
+      companionDogCount,
+      adoptableDogCount,
+    };
+  },
+
   // In-memory cache to prevent 429 rate limits from repeated paginated scans
   _allDogsPromise: null as Promise<any> | null,
   _lastFetchTime: 0,
+
+  clearCache: function () {
+    this._allDogsPromise = null;
+    this._lastFetchTime = 0;
+  },
 
   // GET /dogs & /companion-pets — fetch single page for table/dashboard view without multi-page sequential loops
   getAllDogs: function (params?: Record<string, unknown>) {
@@ -245,8 +335,55 @@ export const petService = {
     }
   },
 
-  createPet: async (data: Record<string, unknown>) => {
-    const response = await api.post("/dogs", data);
+  createDog: async (data: DogProfileCreate | Record<string, unknown>) => {
+    return await petService.createPet(data);
+  },
+
+  createPet: async (data: DogProfileCreate | Record<string, unknown>) => {
+    petService.clearCache();
+
+    // Normalize photos array and field aliases
+    const photos = Array.isArray(data.photos)
+      ? data.photos
+      : Array.isArray(data.image_urls)
+      ? data.image_urls
+      : data.photo_url
+      ? [data.photo_url]
+      : [];
+
+    const weightVal = data.weight_kg !== undefined ? data.weight_kg : data.weight;
+    const microchipVal = data.microchip_number || data.microchip_id;
+    const medicalVal = data.medical_summary || data.medical_notes;
+    const facilityVal = data.managed_facility_id || data.shelter_facility_id;
+
+    const payload: Record<string, unknown> = {
+      ...data,
+      is_adoptable: Boolean(data.is_adoptable),
+    };
+
+    if (photos.length > 0) {
+      payload.photos = photos;
+      payload.image_urls = photos;
+      payload.photo_url = photos[0];
+    }
+    if (weightVal !== undefined) {
+      payload.weight = Number(weightVal);
+      payload.weight_kg = Number(weightVal);
+    }
+    if (microchipVal) {
+      payload.microchip_id = microchipVal;
+      payload.microchip_number = microchipVal;
+    }
+    if (medicalVal) {
+      payload.medical_notes = medicalVal;
+      payload.medical_summary = medicalVal;
+    }
+    if (facilityVal) {
+      payload.shelter_facility_id = facilityVal;
+      payload.managed_facility_id = facilityVal;
+    }
+
+    const response = await api.post("/dogs", payload);
     await publishActionEvent({
       module: "shelter",
       action: "create",
@@ -263,8 +400,58 @@ export const petService = {
     return response.data;
   },
 
-  updatePet: async (dogId: string, data: Record<string, unknown>) => {
-    const response = await api.put(`/dogs/${dogId}`, data);
+  updateDog: async (dogId: string, data: DogProfileUpdate | Record<string, unknown>) => {
+    return await petService.updatePet(dogId, data);
+  },
+
+  updatePet: async (dogId: string, data: DogProfileUpdate | Record<string, unknown>) => {
+    petService.clearCache();
+
+    // Normalize photos array and field aliases if provided
+    const payload: Record<string, unknown> = { ...data };
+    if (data.is_adoptable !== undefined) {
+      payload.is_adoptable = Boolean(data.is_adoptable);
+    }
+
+    if (data.photos || data.image_urls || data.photo_url) {
+      const photos = Array.isArray(data.photos)
+        ? data.photos
+        : Array.isArray(data.image_urls)
+        ? data.image_urls
+        : data.photo_url
+        ? [data.photo_url]
+        : [];
+      if (photos.length > 0) {
+        payload.photos = photos;
+        payload.image_urls = photos;
+        payload.photo_url = photos[0];
+      }
+    }
+
+    if (data.weight_kg !== undefined || data.weight !== undefined) {
+      const weightVal = data.weight_kg !== undefined ? data.weight_kg : data.weight;
+      if (weightVal !== undefined) {
+        payload.weight = Number(weightVal);
+        payload.weight_kg = Number(weightVal);
+      }
+    }
+    if (data.microchip_number || data.microchip_id) {
+      const microchipVal = data.microchip_number || data.microchip_id;
+      payload.microchip_id = microchipVal;
+      payload.microchip_number = microchipVal;
+    }
+    if (data.medical_summary || data.medical_notes) {
+      const medicalVal = data.medical_summary || data.medical_notes;
+      payload.medical_notes = medicalVal;
+      payload.medical_summary = medicalVal;
+    }
+    if (data.managed_facility_id || data.shelter_facility_id) {
+      const facilityVal = data.managed_facility_id || data.shelter_facility_id;
+      payload.shelter_facility_id = facilityVal;
+      payload.managed_facility_id = facilityVal;
+    }
+
+    const response = await api.put(`/dogs/${dogId}`, payload);
     await publishActionEvent({
       module: "shelter",
       action: "update",
@@ -275,7 +462,12 @@ export const petService = {
     return response.data;
   },
 
+  getAdoptableDogs: async (params?: Record<string, unknown>) => {
+    return await petService.getPets({ ...params, is_adoptable: true });
+  },
+
   updatePetStatus: async (dogId: string, status: string) => {
+    petService.clearCache();
     const response = await api.patch(`/dogs/${dogId}/status`, { status });
     await publishActionEvent({
       module: "shelter",
@@ -293,6 +485,7 @@ export const petService = {
   },
 
   markDogAdoptable: async (dogId: string) => {
+    petService.clearCache();
     let responseData: any;
     try {
       const res = await api.put(`/dogs/${dogId}`, { is_adoptable: true });
@@ -323,6 +516,7 @@ export const petService = {
   },
 
   deletePet: async (dogId: string) => {
+    petService.clearCache();
     const response = await api.delete(`/dogs/${dogId}`);
     await publishActionEvent({
       module: "shelter",

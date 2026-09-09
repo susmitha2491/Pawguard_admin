@@ -42,6 +42,13 @@ api.interceptors.request.use(
       }
     }
 
+    if (config.headers && typeof config.headers.set === "function") {
+      config.headers.set("X-Client-Type", "admin");
+    } else {
+      config.headers = config.headers || {};
+      (config.headers as Record<string, string>)["X-Client-Type"] = "admin";
+    }
+
     const isAuthEndpoint =
       typeof config.url === "string" &&
       (config.url.includes("/auth/login") || config.url.includes("/auth/register"));
