@@ -19,7 +19,7 @@ import shelterService from "../../services/shelterService";
 import ShelterDetailsModal from "../../components/shelters/ShelterDetailsModal";
 import KennelDetailsModal from "../../components/shelters/KennelDetailsModal";
 import KennelAssignmentModal from "../../components/shelters/KennelAssignmentModal";
-import { notifyDataChanged } from "../../utils/dataSync";
+import { notifyDataChanged, useDataSync } from "../../utils/dataSync";
 import { getCurrentUser, normalizeRole } from "../../utils/roleUtils";
 
 const FACILITY_STATUSES = ["active", "inactive", "maintenance"];
@@ -151,7 +151,6 @@ const RowActionMenu: React.FC<{ actions: RowActionItem[] }> = ({ actions }) => {
 export const Shelters = () => {
   const currentUser = getCurrentUser();
   const currentRole = normalizeRole(currentUser);
-  const userShelterId = (currentUser as any)?.shelter_id || (currentUser as any)?.shelter?.id || (currentUser as any)?.assigned_shelter_id || (currentUser as any)?.facility_id || (currentUser as any)?.shelter_facility_id;
 
   const canManageKennels = currentRole === "super_admin" || currentRole === "shelter_manager";
   const canManageShelters = currentRole === "super_admin" || currentRole === "rescue_centre_admin" || currentRole === "shelter_manager";
@@ -224,19 +223,11 @@ export const Shelters = () => {
     return () => clearTimeout(handler);
   }, [search]);
 
-  // Fetch Facilities — Enforce shelter-only & shelter_manager scope
+  // Fetch Facilities — Authoritative backend endpoint
   const fetchShelters = async () => {
     try {
       setLoading(true);
       setError(null);
-
-      // If shelter_manager has no assigned shelter facility, return empty immediately
-      if (currentRole === "shelter_manager" && !userShelterId) {
-        setShelters([]);
-        setTotalCount(0);
-        setLoading(false);
-        return;
-      }
 
       const queryParams: Record<string, any> = {
         search: debouncedSearch.trim() || undefined,
@@ -245,11 +236,6 @@ export const Shelters = () => {
         page,
         page_size: pageSize,
       };
-
-      if (currentRole === "shelter_manager" && userShelterId) {
-        queryParams.shelter_id = userShelterId;
-        queryParams.facility_id = userShelterId;
-      }
 
       const response = await shelterService.getShelters(queryParams);
       let facilityList = unwrapList(response);
@@ -260,14 +246,13 @@ export const Shelters = () => {
         return ft === "shelter";
       });
 
-      if (currentRole === "shelter_manager" && userShelterId) {
-        facilityList = facilityList.filter((f: any) => {
-          const fShelterId = String(f.id || f.shelter_id || f.facility_id || "").toLowerCase();
-          return fShelterId === String(userShelterId).toLowerCase();
-        });
-      }
+      const total =
+        response?.meta?.total ??
+        response?.data?.meta?.total ??
+        response?.data?.total ??
+        response?.total ??
+        facilityList.length;
 
-      const total = response?.meta?.total ?? response?.data?.meta?.total ?? facilityList.length;
       setTotalCount(total);
       setShelters(facilityList);
     } catch (err: any) {
@@ -355,24 +340,13 @@ export const Shelters = () => {
   // Fetch All Facilities for dropdowns & aggregate KPI calculations (with pagination aggregation)
   const fetchAllShelters = async () => {
     try {
-      if (currentRole === "shelter_manager" && !userShelterId) {
-        setAllShelters([]);
-        setAllSections([]);
-        setAllKennels([]);
-        return;
-      }
-
       const queryParams: Record<string, any> = { page: 1, page_size: 50, facility_type: "shelter" };
-      if (currentRole === "shelter_manager" && userShelterId) {
-        queryParams.shelter_id = userShelterId;
-        queryParams.facility_id = userShelterId;
-      }
 
       const page1Res = await shelterService.getShelters(queryParams);
       let facs = unwrapList(page1Res);
 
-      const total = page1Res?.meta?.total ?? page1Res?.data?.meta?.total;
-      const totalPages = page1Res?.meta?.total_pages ?? page1Res?.data?.meta?.total_pages ?? (total ? Math.ceil(total / 50) : 1);
+      const total = page1Res?.meta?.total ?? page1Res?.data?.meta?.total ?? page1Res?.data?.total ?? page1Res?.total;
+      const totalPages = page1Res?.meta?.total_pages ?? page1Res?.data?.meta?.total_pages ?? page1Res?.data?.pages ?? (total ? Math.ceil(total / 50) : 1);
 
       if (totalPages > 1) {
         const remainingPagePromises = [];
@@ -401,13 +375,6 @@ export const Shelters = () => {
         const ft = String(f.facility_type || "shelter").toLowerCase();
         return ft === "shelter";
       });
-
-      if (currentRole === "shelter_manager" && userShelterId) {
-        facs = facs.filter((f: any) => {
-          const fShelterId = String(f.id || f.shelter_id || f.facility_id || "").toLowerCase();
-          return fShelterId === String(userShelterId).toLowerCase();
-        });
-      }
 
       setAllShelters(facs);
       await fetchKennelsForFacilities(facs);
@@ -439,6 +406,11 @@ export const Shelters = () => {
       await fetchAllShelters();
     }
   };
+
+  useDataSync(() => {
+    fetchShelters();
+    fetchAllShelters();
+  });
 
   useEffect(() => {
     fetchShelters();
@@ -1158,7 +1130,11 @@ export const Shelters = () => {
             loading={loading}
             error={error}
             onRetry={fetchShelters}
-            emptyMessage={currentRole === "shelter_manager" && (!userShelterId || shelters.length === 0) ? "No shelter facilities assigned to this account." : "No shelter facilities registered in the system."}
+            emptyMessage={
+              currentRole === "shelter_manager"
+                ? "No shelter facilities assigned to this account."
+                : "No shelter facilities registered in the system."
+            }
             serverMode={true}
             totalCount={totalCount}
             page={page}

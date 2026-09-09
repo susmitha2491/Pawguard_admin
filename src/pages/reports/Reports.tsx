@@ -387,26 +387,33 @@ const Reports = () => {
       if (isShelterManager || (isSuperAdmin && (adminTab === "shelter" || adminTab === "overview"))) {
         try {
           const currentUser = getCurrentUser();
-          // Only scope to a specific facility if the user EXPLICITLY has shelter_id or facility_id
-          // Do NOT fall back to rawFacList[0] — that would incorrectly exclude dogs from other facilities
-          const explicitShelterId =
-            (currentUser as any)?.shelter_id ||
-            (currentUser as any)?.shelterId ||
-            (currentUser as any)?.facility_id ||
-            (currentUser as any)?.facilityId;
-          // rescue_centre_id / organization_id may be a rescue org, not a shelter facility — don't use as shelter scope
 
-          // Fetch all facilities + first page of dogs (paginate below) + first page of transfers
+          // Fetch facilities (shelter type), dogs, and transfers
           const [facilitiesRes, petPage1Res, transfersRes] = await Promise.allSettled([
-            shelterService.getShelters({ page: 1, page_size: 100 }),
+            shelterService.getShelters({ page: 1, page_size: 100, facility_type: "shelter" }),
             dogService.getAllDogs({ page_size: 200 }),
             shelterService.getTransfers({ page: 1, page_size: 200 }),
           ]);
 
           // Robust unwrapping using unwrapList
-          const rawFacList: any[] = facilitiesRes.status === "fulfilled"
+          let allRawFacilities: any[] = facilitiesRes.status === "fulfilled"
             ? unwrapList(facilitiesRes.value)
             : [];
+
+          if (allRawFacilities.length === 0) {
+            try {
+              const fallbackFacRes = await shelterService.getShelters({ page: 1, page_size: 100 });
+              allRawFacilities = unwrapList(fallbackFacRes);
+            } catch {
+              // Ignore fallback failure
+            }
+          }
+
+          // Keep strictly shelter-type facilities
+          const rawFacList = allRawFacilities.filter((f: any) => {
+            const ft = String(f.facility_type || "shelter").toLowerCase().trim();
+            return ft === "shelter" || ft === "" || ft === "undefined";
+          });
 
           // Paginate dogs — start with page 1, fetch remaining pages
           const petPage1Data: any = petPage1Res.status === "fulfilled" ? petPage1Res.value : null;
@@ -470,32 +477,127 @@ const Reports = () => {
             return true;
           });
 
-          // SCOPE: Only filter to a specific facility when user profile EXPLICITLY has an assigned facility
-          // If no explicit assignment, show ALL facilities and ALL animals (unscoped manager)
-          let scopedFacilities = rawFacList;
-          let scopedPets = allPets;
+          // AUTHORIZATION SCOPING:
+          let scopedFacilities: any[] = [];
+          let scopedPets: any[] = [];
+          let scopedTransfers: any[] = [];
 
-          if (explicitShelterId) {
-            const explicitIdNorm = String(explicitShelterId).toLowerCase().trim();
-            const matchedFacs = rawFacList.filter(
-              (f: any) => String(f.id || f.facility_id || f.shelter_id || "").toLowerCase().trim() === explicitIdNorm
-            );
-            if (matchedFacs.length > 0) {
-              scopedFacilities = matchedFacs;
-            }
-            scopedPets = allPets.filter((p: any) => {
-              const pShelterId = p.shelter_facility_id || p.shelter_id || p.facility_id || p.shelterId || p.facilityId;
-              if (!pShelterId) return true; // animal with no facility assignment: include by default
-              return String(pShelterId).toLowerCase().trim() === explicitIdNorm;
+          if (isShelterManager) {
+            // Extract all possible assigned/managed facility IDs from user profile
+            const userAssignedIds = new Set<string>();
+            const addId = (idVal: any) => {
+              if (idVal !== undefined && idVal !== null) {
+                const strVal = String(idVal).trim().toLowerCase();
+                if (strVal) userAssignedIds.add(strVal);
+              }
+            };
+
+            addId((currentUser as any)?.shelter_id);
+            addId((currentUser as any)?.shelterId);
+            addId((currentUser as any)?.facility_id);
+            addId((currentUser as any)?.facilityId);
+            addId((currentUser as any)?.managed_facility_id);
+            addId((currentUser as any)?.managed_shelter_id);
+            addId((currentUser as any)?.assigned_shelter_id);
+            addId((currentUser as any)?.assigned_facility_id);
+            addId((currentUser as any)?.shelter_facility_id);
+            addId((currentUser as any)?.shelter?.id);
+            addId((currentUser as any)?.facility?.id);
+
+            const arrayKeys = [
+              "managed_facility_ids",
+              "managed_shelter_ids",
+              "assigned_shelter_ids",
+              "assigned_facility_ids",
+              "managed_facilities",
+              "assigned_shelters",
+              "assigned_facilities",
+              "facilities",
+              "shelters",
+            ];
+            arrayKeys.forEach((k) => {
+              const arr = (currentUser as any)?.[k];
+              if (Array.isArray(arr)) {
+                arr.forEach((item: any) => {
+                  if (typeof item === "string" || typeof item === "number") {
+                    addId(item);
+                  } else if (item && typeof item === "object") {
+                    addId(item.id || item.facility_id || item.shelter_id);
+                  }
+                });
+              }
             });
+
+            // 1. If explicit facility IDs exist in the session, match them against rawFacList
+            if (userAssignedIds.size > 0) {
+              const matched = rawFacList.filter((f: any) => {
+                const fId = String(f.id || f.facility_id || f.shelter_id || "").trim().toLowerCase();
+                return fId && userAssignedIds.has(fId);
+              });
+              if (matched.length > 0) {
+                scopedFacilities = matched;
+              } else {
+                scopedFacilities = rawFacList;
+              }
+            } else {
+              // 2. Check if any facility in list designates currentUser as manager
+              const currentUserId = currentUser?.id || (currentUser as any)?._id;
+              const currentUserEmail = currentUser?.email ? String(currentUser.email).toLowerCase().trim() : "";
+              const managedFacs = rawFacList.filter((f: any) => {
+                const fMgrId = f.manager_id || f.user_id || f.created_by;
+                const fMgrEmail = f.manager_email ? String(f.manager_email).toLowerCase().trim() : "";
+                if (currentUserId && fMgrId && String(fMgrId).trim() === String(currentUserId).trim()) return true;
+                if (currentUserEmail && fMgrEmail && fMgrEmail === currentUserEmail) return true;
+                return false;
+              });
+              if (managedFacs.length > 0) {
+                scopedFacilities = managedFacs;
+              } else {
+                // 3. Backend-authorized facilities from /shelter/facilities (facility_type=shelter)
+                // Matches the exact behavior of /shelters (Shelters.tsx)
+                scopedFacilities = rawFacList;
+              }
+            }
+
+            if (scopedFacilities.length > 0) {
+              const authorizedFacilityIds = new Set<string>(
+                scopedFacilities.map((f: any) => String(f.id || f.facility_id || f.shelter_id || "").trim().toLowerCase()).filter(Boolean)
+              );
+
+              scopedPets = allPets.filter((p: any) => {
+                const pShelterId = String(p.shelter_facility_id || p.shelter_id || p.facility_id || p.shelterId || p.facilityId || "").trim().toLowerCase();
+                if (pShelterId) {
+                  return authorizedFacilityIds.has(pShelterId);
+                }
+                // If the animal has no explicit facility assignment in the DB record:
+                // Include if it's an active shelter resident and not explicitly assigned to an external facility
+                const st = String(p.status || p.lifecycle_status || p.placement_status || "").toLowerCase().trim();
+                const isExternal = ["fostered", "adopted", "released", "rehomed", "completed"].includes(st);
+                return !isExternal;
+              });
+
+              scopedTransfers = uniqueTransfers.filter((t: any) => {
+                const fromId = String(t.from_facility_id || t.from_facility?.id || "").trim().toLowerCase();
+                const toId = String(t.to_facility_id || t.to_facility?.id || "").trim().toLowerCase();
+                return (fromId && authorizedFacilityIds.has(fromId)) || (toId && authorizedFacilityIds.has(toId));
+              });
+            } else {
+              scopedPets = [];
+              scopedTransfers = [];
+            }
+          } else {
+            // Super Admin / other permitted roles: system-wide dataset
+            scopedFacilities = rawFacList;
+            scopedPets = allPets;
+            scopedTransfers = uniqueTransfers;
           }
 
           // Build per-facility capacity by loading sections if direct capacity is missing
-          let shelterNameVal = "Central Shelter Facility";
+          let shelterNameVal = "";
           let primaryCapacity = 0;
 
           if (scopedFacilities.length > 0) {
-            shelterNameVal = scopedFacilities[0].name || shelterNameVal;
+            shelterNameVal = scopedFacilities[0].name || "Shelter Facility";
             primaryCapacity = Number(scopedFacilities[0].total_capacity || scopedFacilities[0].capacity || 0);
           }
 
@@ -539,8 +641,8 @@ const Reports = () => {
 
           setShelterFacilities(scopedFacilities);
           setShelterDogs(scopedPets);
-          setShelterTransfers(uniqueTransfers);
-          setShelterTransfersTotal(transfersTotalCount > 0 ? transfersTotalCount : uniqueTransfers.length);
+          setShelterTransfers(scopedTransfers);
+          setShelterTransfersTotal(scopedTransfers.length);
           setShelterName(shelterNameVal);
           setShelterCapacity(totalScopedCapacity > 0 ? totalScopedCapacity : primaryCapacity);
         } catch (e) {
@@ -888,6 +990,17 @@ const Reports = () => {
     });
 
     if (facMap.size === 0) {
+      if (isShelterManager) {
+        return {
+          facilityList: [],
+          totalSystemCapacity: 0,
+          totalSystemOccupied: 0,
+          totalSystemVacant: 0,
+          systemUtilNum: 0,
+          systemUtilPct: "0.0%",
+        };
+      }
+
       const activeDogsCount = shelterDogs.filter((dog: any) => {
         const st = String(dog.status || dog.lifecycle_status || dog.placement_status || "").toLowerCase().trim();
         return !EXITED_STATUS_SET.has(st) && dog.is_adopted !== true && dog.is_deceased !== true && dog.is_transferred !== true;
@@ -2923,6 +3036,50 @@ const Reports = () => {
 
   // SHELTER OPERATIONS & CAPACITY TURNOVER REPORT VIEW (REP-002 COMPLIANT)
   const renderShelterReports = () => {
+    if (isShelterManager && !loading && shelterFacilities.length === 0) {
+      return (
+        <div style={{ width: "100%", boxSizing: "border-box" }}>
+          {/* Header */}
+          <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
+            <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Shelter Capacity &amp; Turnover Audit</h1>
+            <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
+              Official shelter capacity and movement report tracking average length of stay per animal, kennel utilization across authorized facilities, quarantine clearing duration, and inter-facility transfer volumes.
+            </p>
+          </div>
+
+          <div style={{
+            background: "#FFFFFF",
+            borderRadius: "20px",
+            padding: "48px 24px",
+            textAlign: "center",
+            border: "1px solid #E2E8F0",
+            boxShadow: "0 10px 30px rgba(15,23,42,0.06)",
+          }}>
+            <div style={{
+              width: "64px",
+              height: "64px",
+              borderRadius: "50%",
+              background: "#F1F5F9",
+              color: "#64748B",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 16px",
+              fontSize: "28px"
+            }}>
+              <FaWarehouse />
+            </div>
+            <h3 style={{ margin: "0 0 8px", fontSize: "18px", fontWeight: 800, color: "#0F172A" }}>
+              No shelter facility is assigned to this account.
+            </h3>
+            <p style={{ margin: 0, color: "#64748B", fontSize: "14px", maxWidth: "480px", marginInline: "auto" }}>
+              Reports and analytics will be available once your account is assigned to an authorized shelter facility by your administrator.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     const shelterStatCards = [
       {
         title: "Avg Length of Stay",
@@ -2960,7 +3117,7 @@ const Reports = () => {
         <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
           <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Shelter Capacity &amp; Turnover Audit</h1>
           <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-            Official shelter capacity and movement report tracking average length of stay per animal, kennel utilization across facilities, quarantine clearing duration, and inter-facility transfer volumes.
+            Official shelter capacity and movement report tracking average length of stay per animal, kennel utilization across authorized facilities, quarantine clearing duration, and inter-facility transfer volumes.
           </p>
         </div>
 

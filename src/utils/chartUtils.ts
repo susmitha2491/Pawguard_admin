@@ -1,12 +1,24 @@
 import type { AnyRecord } from "../types/dashboard";
 
 export const unwrapList = (value: unknown): AnyRecord[] => {
+  if (!value) return [];
   if (Array.isArray(value)) return value as AnyRecord[];
-  if (value && typeof value === "object") {
+  if (typeof value === "object") {
     const obj = value as AnyRecord;
-    for (const key of ["data", "results", "items", "records"]) {
+    // Check direct array properties
+    for (const key of ["data", "results", "items", "records", "facilities", "dogs", "transfers"]) {
       const v = obj[key];
       if (Array.isArray(v)) return v as AnyRecord[];
+    }
+    // Check nested array properties (e.g. data.items, data.facilities, results.items)
+    for (const parentKey of ["data", "result", "results", "response", "body"]) {
+      const parent = obj[parentKey];
+      if (parent && typeof parent === "object" && !Array.isArray(parent)) {
+        for (const childKey of ["items", "data", "results", "records", "facilities", "dogs", "transfers"]) {
+          const child = (parent as AnyRecord)[childKey];
+          if (Array.isArray(child)) return child as AnyRecord[];
+        }
+      }
     }
   }
   return [];
