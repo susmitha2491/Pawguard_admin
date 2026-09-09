@@ -34,6 +34,7 @@ import fosterService, {
 } from "../../services/fosterService";
 import petService from "../../services/petService";
 import vetService from "../../services/vetService";
+import storageService from "../../services/storageService";
 import { notifyDataChanged } from "../../utils/dataSync";
 import { formatDateTime } from "../../utils/dateUtils";
 import { getCurrentUserRole } from "../../utils/roleUtils";
@@ -263,6 +264,19 @@ const FosterManagement = () => {
   const [isPlaceModalOpen, setIsPlaceModalOpen] = useState(() => searchParams.get("action") === "place");
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
+  const [returnNotes, setReturnNotes] = useState("");
+  const [returnReason, setReturnReason] = useState("Foster Term Completed");
+
+  // Vet Check Modal State
+  const [isVetCheckModalOpen, setIsVetCheckModalOpen] = useState(false);
+  const [selectedPlacementForVetCheck, setSelectedPlacementForVetCheck] = useState<any | null>(null);
+  const [vetCheckForm, setVetCheckForm] = useState({
+    urgency: "routine" as "routine" | "urgent" | "emergency",
+    reason: "Routine Health Check",
+    preferred_date: new Date().toISOString().split("T")[0],
+    notes: "",
+  });
+
   const [isProgressModalOpen, setIsProgressModalOpen] = useState(false);
   const [isSupplyModalOpen, setIsSupplyModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -270,7 +284,41 @@ const FosterManagement = () => {
   const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
   const [selectedPlacementForConvert, setSelectedPlacementForConvert] = useState<any | null>(null);
   const [convertNotes, setConvertNotes] = useState("");
+  const [convertLegalConfirmed, setConvertLegalConfirmed] = useState(false);
+  const [convertConflictError, setConvertConflictError] = useState<string | null>(null);
   const [selectedFoster, setSelectedFoster] = useState<FosterProfileRow | null>(null);
+
+  // Background Check Management State (for Review Modal)
+  const [bgCheckProvider, setBgCheckProvider] = useState("PawGuard Registry");
+  const [bgCheckInitiateNotes, setBgCheckInitiateNotes] = useState("");
+  const [bgCheckOutcome, setBgCheckOutcome] = useState<"cleared" | "flagged" | "rejected">("cleared");
+  const [bgCheckOutcomeNotes, setBgCheckOutcomeNotes] = useState("");
+  const [isInitiatingBgCheck, setIsInitiatingBgCheck] = useState(false);
+
+  // Home Inspection Management State (for Review Modal)
+  const [inspectionActiveTab, setInspectionActiveTab] = useState<"schedule" | "audit" | "evidence" | "outcome">("schedule");
+  const [inspectionScheduleForm, setInspectionScheduleForm] = useState({
+    scheduled_at: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
+    inspector_name: "",
+    inspection_type: "in_person" as "in_person" | "virtual" | "shelter_visit",
+    address: "",
+    notes: "",
+  });
+  const [inspectionAuditForm, setInspectionAuditForm] = useState({
+    yard_condition: "Secure & Escape-Proof",
+    fencing_condition: "High Fence (6ft+)",
+    household_info: "Spacious & Pet-Proofed",
+    existing_pets_info: "Friendly & Vaccinated",
+    hazards: "None identified",
+    rating: 5,
+    notes: "",
+  });
+  const [inspectionEvidenceList, setInspectionEvidenceList] = useState<string[]>([]);
+  const [isUploadingEvidence, setIsUploadingEvidence] = useState(false);
+  const [inspectionOutcomeForm, setInspectionOutcomeForm] = useState({
+    outcome: "approved" as "approved" | "rejected",
+    notes: "",
+  });
 
   // Application Review Modal State
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
@@ -293,22 +341,274 @@ const FosterManagement = () => {
   const handleOpenReview = (foster: FosterProfileRow) => {
     const raw = foster.raw || {};
     setSelectedFoster(foster);
+    const bgPassed = Boolean(raw.background_check_passed ?? foster.background_check_passed);
+    const homePassed = Boolean(raw.home_inspection_passed ?? foster.home_inspection_passed);
     setReviewForm({
       max_capacity: Number(foster.max_capacity || 1),
       preferences: foster.preferences || "",
       notes: foster.notes || "",
-      background_check_passed: Boolean(raw.background_check_passed ?? foster.background_check_passed),
+      background_check_passed: bgPassed,
       background_check_notes: raw.background_check_notes || "",
       references_checked: Boolean(raw.references_checked),
       reference_notes: raw.reference_notes || "",
-      home_inspection_passed: Boolean(raw.home_inspection_passed ?? foster.home_inspection_passed),
+      home_inspection_passed: homePassed,
       home_inspection_notes: raw.home_inspection_notes || "",
       home_inspection_address: raw.home_inspection_address || "",
       vetting_notes: raw.vetting_notes || "",
       rejection_reason: "",
     });
+    setBgCheckProvider("PawGuard Registry");
+    setBgCheckInitiateNotes("");
+    setBgCheckOutcome(bgPassed ? "cleared" : "flagged");
+    setBgCheckOutcomeNotes(raw.background_check_notes || "");
+    setInspectionScheduleForm({
+      scheduled_at: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
+      inspector_name: "PawGuard Field Officer",
+      inspection_type: "in_person",
+      address: raw.home_inspection_address || "",
+      notes: raw.home_inspection_notes || "",
+    });
+    setInspectionEvidenceList(Array.isArray(raw.evidence_urls) ? raw.evidence_urls : []);
+    setInspectionOutcomeForm({
+      outcome: homePassed ? "approved" : "rejected",
+      notes: raw.home_inspection_notes || "",
+    });
+    setInspectionActiveTab(homePassed ? "outcome" : "schedule");
     setReviewStep("review");
     setIsReviewModalOpen(true);
+  };
+
+  const handleInitiateBackgroundCheck = async () => {
+    if (!selectedFoster) return;
+    try {
+      setIsSubmitting(true);
+      await fosterService.initiateBackgroundCheck(selectedFoster.id, {
+        provider: bgCheckProvider,
+        notes: bgCheckInitiateNotes,
+      });
+      addToast(`Background check initiated with ${bgCheckProvider}!`, "success");
+      setIsInitiatingBgCheck(false);
+      setReviewForm((prev) => ({
+        ...prev,
+        background_check_notes: `Initiated with ${bgCheckProvider} on ${new Date().toLocaleDateString()}: ${bgCheckInitiateNotes}`.trim(),
+      }));
+      fetchFosters();
+      notifyDataChanged();
+    } catch (err: any) {
+      const msg = extractBackendErrorMessage(err, "Failed to initiate background check.");
+      addToast(msg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSaveBackgroundCheckOutcome = async () => {
+    if (!selectedFoster) return;
+    if ((bgCheckOutcome === "flagged" || bgCheckOutcome === "rejected") && !bgCheckOutcomeNotes.trim()) {
+      addToast("Notes are mandatory when marking Background Check as Flagged or Rejected.", "error");
+      return;
+    }
+    try {
+      setIsSubmitting(true);
+      await fosterService.recordBackgroundCheckOutcome(selectedFoster.id, {
+        outcome: bgCheckOutcome,
+        notes: bgCheckOutcomeNotes.trim(),
+        references_checked: reviewForm.references_checked,
+        reference_notes: reviewForm.reference_notes,
+      });
+      const isPassed = bgCheckOutcome === "cleared";
+      setReviewForm((prev) => ({
+        ...prev,
+        background_check_passed: isPassed,
+        background_check_notes: `[${bgCheckOutcome.toUpperCase()}] ${bgCheckOutcomeNotes.trim()}`,
+      }));
+      addToast(`Background check outcome recorded as: ${bgCheckOutcome.toUpperCase()}`, "success");
+      fetchFosters();
+      notifyDataChanged();
+    } catch (err: any) {
+      const msg = extractBackendErrorMessage(err, "Failed to record background check outcome.");
+      addToast(msg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleScheduleHomeInspection = async () => {
+    if (!selectedFoster) return;
+    if (!inspectionScheduleForm.scheduled_at || !inspectionScheduleForm.inspector_name.trim()) {
+      addToast("Inspection date/time and Inspector name are required.", "error");
+      return;
+    }
+    try {
+      setIsSubmitting(true);
+      await fosterService.scheduleHomeInspection(selectedFoster.id, {
+        scheduled_at: new Date(inspectionScheduleForm.scheduled_at).toISOString(),
+        inspector_name: inspectionScheduleForm.inspector_name.trim(),
+        inspection_type: inspectionScheduleForm.inspection_type,
+        address: inspectionScheduleForm.address.trim() || reviewForm.home_inspection_address,
+        notes: inspectionScheduleForm.notes.trim(),
+      });
+      addToast("Home inspection successfully scheduled!", "success");
+      setReviewForm((prev) => ({
+        ...prev,
+        home_inspection_address: inspectionScheduleForm.address.trim() || prev.home_inspection_address,
+        home_inspection_notes: `Scheduled for ${inspectionScheduleForm.scheduled_at} by ${inspectionScheduleForm.inspector_name} (${inspectionScheduleForm.inspection_type})`,
+      }));
+      setInspectionActiveTab("audit");
+      fetchFosters();
+      notifyDataChanged();
+    } catch (err: any) {
+      const msg = extractBackendErrorMessage(err, "Failed to schedule home inspection.");
+      addToast(msg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSaveHomeInspectionAudit = async () => {
+    if (!selectedFoster) return;
+    try {
+      setIsSubmitting(true);
+      await fosterService.logHomeInspectionAudit(selectedFoster.id, {
+        yard_condition: inspectionAuditForm.yard_condition,
+        fencing_condition: inspectionAuditForm.fencing_condition,
+        household_info: inspectionAuditForm.household_info,
+        existing_pets_info: inspectionAuditForm.existing_pets_info,
+        hazards: inspectionAuditForm.hazards,
+        rating: inspectionAuditForm.rating,
+        evidence_urls: inspectionEvidenceList,
+        notes: inspectionAuditForm.notes,
+      });
+      addToast("Home inspection audit checklist saved!", "success");
+      setReviewForm((prev) => ({
+        ...prev,
+        home_inspection_notes: `Audit: Yard: ${inspectionAuditForm.yard_condition}, Fence: ${inspectionAuditForm.fencing_condition}, Rating: ${inspectionAuditForm.rating}/5. ${inspectionAuditForm.notes || ""}`.trim(),
+      }));
+      setInspectionActiveTab("outcome");
+      fetchFosters();
+      notifyDataChanged();
+    } catch (err: any) {
+      const msg = extractBackendErrorMessage(err, "Failed to save inspection audit.");
+      addToast(msg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUploadInspectionEvidence = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedFoster) return;
+    const allowed = ["image/jpeg", "image/png", "image/jpg", "application/pdf"];
+    if (!allowed.includes(file.type)) {
+      addToast("Invalid file type. Only JPEG, PNG, and PDF are allowed.", "error");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      addToast("File size exceeds 10MB limit.", "error");
+      return;
+    }
+    try {
+      setIsUploadingEvidence(true);
+      const url = await storageService.uploadFile(file, {
+        folder: "foster_inspections",
+        entity_type: "foster_profile",
+        entity_id: selectedFoster.id,
+      });
+      setInspectionEvidenceList((prev) => [...prev, url]);
+      addToast("Inspection evidence file uploaded successfully!", "success");
+    } catch (err: any) {
+      const msg = extractBackendErrorMessage(err, "Failed to upload inspection evidence.");
+      addToast(msg, "error");
+    } finally {
+      setIsUploadingEvidence(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleSaveHomeInspectionOutcome = async () => {
+    if (!selectedFoster) return;
+    if (inspectionOutcomeForm.outcome === "rejected" && !inspectionOutcomeForm.notes.trim()) {
+      addToast("Notes/Reason are mandatory when rejecting a Home Inspection.", "error");
+      return;
+    }
+    try {
+      setIsSubmitting(true);
+      await fosterService.recordHomeInspectionOutcome(selectedFoster.id, {
+        outcome: inspectionOutcomeForm.outcome,
+        notes: inspectionOutcomeForm.notes.trim(),
+        address: reviewForm.home_inspection_address,
+      });
+      const isApproved = inspectionOutcomeForm.outcome === "approved";
+      setReviewForm((prev) => ({
+        ...prev,
+        home_inspection_passed: isApproved,
+        home_inspection_notes: `[${inspectionOutcomeForm.outcome.toUpperCase()}] ${inspectionOutcomeForm.notes.trim()}`,
+      }));
+      addToast(`Home inspection outcome recorded: ${inspectionOutcomeForm.outcome.toUpperCase()}!`, "success");
+      fetchFosters();
+      notifyDataChanged();
+    } catch (err: any) {
+      const msg = extractBackendErrorMessage(err, "Failed to save inspection outcome.");
+      addToast(msg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleOpenVetCheckModal = (placement: any) => {
+    setSelectedPlacementForVetCheck(placement);
+    setVetCheckForm({
+      urgency: "routine",
+      reason: "Routine Health Check",
+      preferred_date: new Date().toISOString().split("T")[0],
+      notes: "",
+    });
+    setIsVetCheckModalOpen(true);
+  };
+
+  const handleConfirmVetCheckSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPlacementForVetCheck) return;
+    const placementId = String(selectedPlacementForVetCheck.id || selectedPlacementForVetCheck.placement_id || "");
+    const dogId = String(selectedPlacementForVetCheck.dog_id || selectedPlacementForVetCheck.dog?.id || "");
+    if (!placementId) {
+      addToast("Invalid placement ID for vet check request.", "error");
+      return;
+    }
+    try {
+      setIsSubmitting(true);
+      await fosterService.requestVetCheck(placementId, {
+        urgency: vetCheckForm.urgency,
+        reason: vetCheckForm.reason,
+        preferred_date: vetCheckForm.preferred_date ? new Date(vetCheckForm.preferred_date).toISOString() : new Date().toISOString(),
+        notes: vetCheckForm.notes,
+      });
+      if (dogId) {
+        await vetService.bookAppointment({
+          pet_id: dogId,
+          appointment_type: `Foster Vet Check: ${vetCheckForm.reason} (${vetCheckForm.urgency.toUpperCase()})`,
+          notes: vetCheckForm.notes || `Requested by Foster Coordinator for caregiver ${selectedPlacementForVetCheck.foster_family || ""}.`,
+          scheduled_at: vetCheckForm.preferred_date ? new Date(vetCheckForm.preferred_date).toISOString() : new Date().toISOString(),
+        }).catch(() => null);
+      }
+      addToast("Veterinary check request registered and dispatched to Veterinary Clinic!", "success");
+      setIsVetCheckModalOpen(false);
+      setSelectedPlacementForVetCheck(null);
+      fetchFosters();
+      notifyDataChanged();
+    } catch (err: any) {
+      const msg = extractBackendErrorMessage(err, "Failed to register veterinary check request.");
+      addToast(msg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleOpenReturnModal = (placement: any) => {
+    setSelectedPlacement(placement);
+    setReturnReason("Foster Term Completed");
+    setReturnNotes(`Foster stay completed successfully. Returning animal to shelter facility.`);
+    setIsReturnModalOpen(true);
   };
 
   const handleSaveVettingProgress = async () => {
@@ -341,6 +641,14 @@ const FosterManagement = () => {
 
   const handleConfirmApprove = async () => {
     if (!selectedFoster) return;
+    if (!reviewForm.background_check_passed) {
+      addToast("Cannot approve applicant: Background Check must be Cleared before approval.", "error");
+      return;
+    }
+    if (!reviewForm.home_inspection_passed) {
+      addToast("Cannot approve applicant: Home Inspection must be Approved before approval.", "error");
+      return;
+    }
     try {
       setIsSubmitting(true);
       await fosterService.updateProfile(selectedFoster.id, {
@@ -423,8 +731,6 @@ const FosterManagement = () => {
     background_check_passed: true,
     home_inspection_passed: true,
   });
-
-  const [returnNotes, setReturnNotes] = useState("");
 
   const [progressForm, setProgressForm] = useState<FosterProgressLogPayload>({
     weight_kg: undefined,
@@ -573,6 +879,8 @@ const FosterManagement = () => {
                 ...p,
                 foster_family: f.foster_family,
                 profile_id: f.id,
+                background_check_passed: f.background_check_passed,
+                home_inspection_passed: f.home_inspection_passed,
                 caregiver_email: f.user?.email || f.raw?.user?.email || "",
                 caregiver_phone: f.user?.phone || f.raw?.user?.phone || "",
                 caregiver_raw: f.raw,
@@ -710,6 +1018,17 @@ const FosterManagement = () => {
       return;
     }
 
+    if (targetFoster) {
+      if (!targetFoster.background_check_passed) {
+        addToast(`Cannot place dog: Foster family "${targetFoster.foster_family}" background check is not Cleared.`, "error");
+        return;
+      }
+      if (!targetFoster.home_inspection_passed) {
+        addToast(`Cannot place dog: Foster family "${targetFoster.foster_family}" home inspection is not Approved.`, "error");
+        return;
+      }
+    }
+
     const existingPlacement = activePlacements.find(
       (p) => String(p.dog_id || p.dog?.id) === placeForm.dog_id && (p.is_active || !p.returned_at)
     );
@@ -773,7 +1092,10 @@ const FosterManagement = () => {
     const dogId = String(selectedPlacement.dog_id || selectedPlacement.dog?.id || "");
     try {
       setIsSubmitting(true);
-      await fosterService.returnDog(selectedPlacement.id, returnNotes);
+      await fosterService.returnDog(selectedPlacement.id, {
+        reason: returnReason,
+        notes: returnNotes || `Concluded foster stay (${returnReason}). Returned animal to shelter facility.`,
+      });
       if (dogId) {
         await petService.updatePet(dogId, {
           status: "shelter_care",
@@ -781,11 +1103,13 @@ const FosterManagement = () => {
           is_adoptable: true,
         }).catch(() => null);
       }
-      addToast("Dog returned from foster care to shelter & Dog Master updated!", "success");
+      addToast("Dog returned from foster care to shelter & Shelter Management roster updated!", "success");
       setIsReturnModalOpen(false);
       setSelectedPlacement(null);
       setReturnNotes("");
+      setReturnReason("Foster Term Completed");
       fetchFosters();
+      fetchDogs();
       notifyDataChanged();
     } catch (err: any) {
       const msg = err?.response?.data?.detail || err?.response?.data?.message || "Failed to return dog.";
@@ -850,9 +1174,20 @@ const FosterManagement = () => {
     if (!selectedPlacement?.id) return;
     try {
       setIsSubmitting(true);
-      await fosterService.logSupplyDispatch(selectedPlacement.id, supplyForm);
-      addToast("Logged supply dispatch for foster placement!", "success");
+      const placementId = String(selectedPlacement.id || selectedPlacement.placement_id || "");
+      await fosterService.logSupplyDispatch(placementId, supplyForm);
+      addToast("Supply dispatch recorded!", "success");
       setIsSupplyModalOpen(false);
+
+      if (isPlacementDetailModalOpen && selectedPlacementDetail && String(selectedPlacementDetail.id) === placementId) {
+        try {
+          const suppRes = await fosterService.getSupplyDispatches(placementId);
+          setPlacementSuppliesList(unwrapList(suppRes));
+        } catch {
+          /* ignore refresh failure */
+        }
+      }
+
       fetchFosters();
       notifyDataChanged();
     } catch (err: any) {
@@ -863,13 +1198,22 @@ const FosterManagement = () => {
     }
   };
 
-  const handleOpenConvertModal = (placement: any) => {
+  const handleOpenConvertModal = async (placement: any) => {
     setSelectedPlacementForConvert(placement);
-    setConvertNotes(
-      placement?.notes
-        ? `Converted from active foster stay (${placement.notes})`
-        : "Finalized foster stay and converted to permanent adoption."
-    );
+    setConvertConflictError(null);
+    setConvertLegalConfirmed(false);
+    setConvertNotes("");
+    const dogId = String(placement?.dog_id || placement?.dog?.id || "");
+    if (dogId) {
+      try {
+        const dogData = await petService.getPetById(dogId);
+        if (dogData) {
+          setDogsMap((prev) => new Map(prev).set(dogId, dogData));
+        }
+      } catch {
+        /* ignore single dog fetch failure */
+      }
+    }
     setIsConvertModalOpen(true);
   };
 
@@ -889,46 +1233,46 @@ const FosterManagement = () => {
       return;
     }
 
+    if (!convertLegalConfirmed) {
+      addToast("Please confirm that the caregiver has signed the legal adoption agreement.", "error");
+      return;
+    }
+
+    setConvertConflictError(null);
+
     try {
       setIsSubmitting(true);
+      // Execute REAL backend conversion workflow
       await fosterService.convertToAdopt(placementId, convertNotes);
-      if (dogId) {
-        await petService.updatePet(dogId, {
-          status: "adopted",
-          shelter_status: "Adopted",
-          is_adoptable: false,
-        }).catch(() => null);
-      }
-      addToast("Foster placement successfully converted into permanent adoption!", "success");
+
+      // Only after backend confirms success:
+      addToast("Foster placement successfully converted into permanent adoption! Legal adoption workflow complete.", "success");
       setIsConvertModalOpen(false);
       setIsPlacementDetailModalOpen(false);
       setSelectedPlacementForConvert(null);
       setConvertNotes("");
-      fetchFosters();
-      fetchDogs();
+      setConvertConflictError(null);
+      await Promise.all([fetchFosters(), fetchDogs()]);
       notifyDataChanged();
     } catch (err: any) {
+      const status = err?.response?.status;
       const errMsg = extractBackendErrorMessage(err, "Failed to convert foster placement to adoption.");
-      addToast(errMsg, "error");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleRequestMedical = async (dogId: string, notes?: string) => {
-    if (!dogId) return;
-    try {
-      setIsSubmitting(true);
-      await vetService.bookAppointment({
-        pet_id: dogId,
-        appointment_type: "Foster Care Medical Check",
-        notes: notes || "Medical evaluation requested for fostered animal.",
-        scheduled_at: new Date().toISOString(),
-      });
-      addToast("Veterinary medical check request booked successfully!", "success");
-      notifyDataChanged();
-    } catch (err: any) {
-      addToast(err?.response?.data?.detail || "Failed to book medical evaluation.", "error");
+      if (status === 409) {
+        // Honest 409 handling: display real reason, refresh actual placement and dog state from backend
+        setConvertConflictError(errMsg || "Conflict: This dog has already been adopted or has a conflicting adoption record.");
+        addToast(`409 Conflict: ${errMsg}`, "error");
+        fetchFosters();
+        fetchDogs();
+        if (dogId) {
+          petService.getPetById(dogId).then((freshDog) => {
+            if (freshDog) {
+              setDogsMap((prev) => new Map(prev).set(dogId, freshDog));
+            }
+          }).catch(() => null);
+        }
+      } else {
+        addToast(errMsg, "error");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -1469,7 +1813,7 @@ const FosterManagement = () => {
                           {
                             label: "Request Vet Check",
                             icon: <FaStethoscope />,
-                            onClick: () => void handleRequestMedical(dogId),
+                            onClick: () => handleOpenVetCheckModal(p),
                           },
                           {
                             label: "Convert to Adopt",
@@ -1481,10 +1825,7 @@ const FosterManagement = () => {
                             label: "Return to Shelter",
                             icon: <FaUndo />,
                             variant: "danger",
-                            onClick: () => {
-                              setSelectedPlacement(p);
-                              setIsReturnModalOpen(true);
-                            },
+                            onClick: () => handleOpenReturnModal(p),
                           },
                         ]}
                       />
@@ -1525,10 +1866,15 @@ const FosterManagement = () => {
           <div>
             <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Foster Caregiver Family *</label>
             <select required value={placeTargetProfileId} onChange={(e) => setPlaceTargetProfileId(e.target.value)} style={inputStyle}>
-              <option value="">Select foster parent...</option>
-              {fosters.filter((f) => f.is_available).map((f) => (
-                <option key={f.id} value={f.id}>{f.foster_family} (Capacity: {f.active_count}/{f.max_capacity})</option>
-              ))}
+              <option value="">Select foster caregiver...</option>
+              {fosters.filter((f) => f.is_available).map((f) => {
+                const isEligible = Boolean(f.background_check_passed && f.home_inspection_passed);
+                return (
+                  <option key={f.id} value={f.id} disabled={!isEligible}>
+                    {f.foster_family} (Capacity: {f.active_count}/{f.max_capacity}) {!isEligible ? "⚠️ [INELIGIBLE — Vetting Incomplete]" : "✓ [Eligible]"}
+                  </option>
+                );
+              })}
             </select>
           </div>
           <div>
@@ -1604,20 +1950,197 @@ const FosterManagement = () => {
       </Modal>
 
       {/* Return Dog Modal */}
-      <Modal isOpen={isReturnModalOpen} onClose={() => setIsReturnModalOpen(false)} title="Return Dog to Shelter">
-        <form onSubmit={handleReturnSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <p style={{ color: "#334155", margin: 0 }}>
-            Confirm returning dog from placement <strong>{selectedPlacement?.id?.slice(0, 8)}</strong> to shelter facility?
-          </p>
-          <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Return Notes</label>
-            <textarea placeholder="e.g. Fully recovered, ready to return to shelter." value={returnNotes} onChange={(e) => setReturnNotes(e.target.value)} style={{ ...inputStyle, minHeight: "60px" }} />
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>
-            <button type="button" onClick={() => setIsReturnModalOpen(false)} style={{ padding: "10px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}>Cancel</button>
-            <button type="submit" disabled={isSubmitting} style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "#DC2626", color: "#FFF", fontWeight: 600 }}>{isSubmitting ? "Returning..." : "Confirm Return"}</button>
-          </div>
-        </form>
+      <Modal isOpen={isReturnModalOpen} onClose={() => setIsReturnModalOpen(false)} title="Return Dog to Shelter Care" maxWidth="600px">
+        {selectedPlacement && (() => {
+          const dogId = String(selectedPlacement.dog_id || selectedPlacement.dog?.id || "");
+          const dogObj = selectedPlacement.dog || dogsMap.get(dogId);
+          const dogName = dogObj?.name || (dogId ? `Pet #${dogId.slice(0, 8)}` : "Animal");
+          const breed = dogObj?.breed || dogObj?.breed_classification || null;
+
+          return (
+            <form onSubmit={handleReturnSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "10px", padding: "14px", display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                <FaUndo color="#DC2626" size={20} style={{ marginTop: "2px", flexShrink: 0 }} />
+                <div>
+                  <h4 style={{ margin: "0 0 4px", fontSize: "14px", fontWeight: 800, color: "#991B1B" }}>
+                    Conclude Foster Stay &amp; Return to Shelter
+                  </h4>
+                  <p style={{ margin: 0, fontSize: "12.5px", color: "#B91C1C", lineHeight: "1.4" }}>
+                    This action closes the active foster placement for <strong>{dogName}</strong> with family <strong>{selectedPlacement.foster_family}</strong>. The dog will be returned to shelter facility management.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: "12px" }}>
+                <div><strong>Animal:</strong> {dogName} {breed ? `(${breed})` : ""}</div>
+                <div><strong>Foster Caregiver:</strong> {selectedPlacement.foster_family}</div>
+                <div><strong>Placement Ref:</strong> <span style={{ fontFamily: "monospace" }}>{String(selectedPlacement.id || "").slice(0, 8)}</span></div>
+                <div><strong>Next Status:</strong> <span style={{ color: "#2563EB", fontWeight: 700 }}>In Shelter (Shelter Care)</span></div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                  Primary Return Reason *
+                </label>
+                <select
+                  required
+                  value={returnReason}
+                  onChange={(e) => setReturnReason(e.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="Foster Term Completed">Foster Term Completed (Standard conclusion)</option>
+                  <option value="Behavioral Mismatch / Training Needed">Behavioral Mismatch / Specialized Training Needed</option>
+                  <option value="Medical Escalation / Shelter Treatment">Medical Escalation / Shelter Clinical Treatment Required</option>
+                  <option value="Caregiver Moving / Unable to Continue">Caregiver Moving / Unable to Continue Fostering</option>
+                  <option value="Emergency Return">Emergency Return / Facility Recall</option>
+                  <option value="Other">Other Operational Reason</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                  Return Evaluation &amp; History Notes *
+                </label>
+                <textarea
+                  required
+                  placeholder="Describe pet condition, reason for concluding stay, care summary, or handoff instructions..."
+                  value={returnNotes}
+                  onChange={(e) => setReturnNotes(e.target.value)}
+                  style={{ ...inputStyle, minHeight: "75px" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  onClick={() => setIsReturnModalOpen(false)}
+                  style={{ padding: "10px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9", color: "#334155", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  style={{ padding: "10px 20px", borderRadius: "8px", border: "none", background: "#DC2626", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                >
+                  <FaUndo /> {isSubmitting ? "Returning..." : "Confirm Return to Shelter"}
+                </button>
+              </div>
+            </form>
+          );
+        })()}
+      </Modal>
+
+      {/* Request Vet Check Modal */}
+      <Modal isOpen={isVetCheckModalOpen} onClose={() => setIsVetCheckModalOpen(false)} title="Request Veterinary Medical Check" maxWidth="600px">
+        {selectedPlacementForVetCheck && (() => {
+          const p = selectedPlacementForVetCheck;
+          const dogId = String(p.dog_id || p.dog?.id || "");
+          const dogObj = p.dog || dogsMap.get(dogId);
+          const dogName = dogObj?.name || (dogId ? `Pet #${dogId.slice(0, 8)}` : "Animal");
+          const breed = dogObj?.breed || dogObj?.breed_classification || null;
+
+          return (
+            <form onSubmit={handleConfirmVetCheckSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div style={{ background: "#ECFDF5", border: "1px solid #A7F3D0", borderRadius: "10px", padding: "14px", display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                <FaStethoscope color="#047857" size={22} style={{ marginTop: "2px", flexShrink: 0 }} />
+                <div>
+                  <h4 style={{ margin: "0 0 4px", fontSize: "14px", fontWeight: 800, color: "#065F46" }}>
+                    Initiate Veterinary Examination
+                  </h4>
+                  <p style={{ margin: 0, fontSize: "12.5px", color: "#047857", lineHeight: "1.4" }}>
+                    Request a medical evaluation for foster dog <strong>{dogName}</strong>. This request will be routed to the veterinary queue and recorded on the dog&apos;s medical history.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: "12px" }}>
+                <div><strong>Pet:</strong> {dogName} {breed ? `(${breed})` : ""}</div>
+                <div><strong>Current Caregiver:</strong> {p.foster_family || "Foster Parent"}</div>
+                <div><strong>Pet ID:</strong> <span style={{ fontFamily: "monospace" }}>{dogId || "N/A"}</span></div>
+                <div><strong>Placement Ref:</strong> <span style={{ fontFamily: "monospace" }}>{String(p.id || "").slice(0, 8) || "N/A"}</span></div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Urgency Level *
+                  </label>
+                  <select
+                    value={vetCheckForm.urgency}
+                    onChange={(e) => setVetCheckForm({ ...vetCheckForm, urgency: e.target.value as any })}
+                    style={inputStyle}
+                  >
+                    <option value="routine">Routine Checkup (Standard priority)</option>
+                    <option value="urgent">Urgent (Needs attention within 24-48h)</option>
+                    <option value="emergency">Emergency (Immediate evaluation)</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                    Preferred Date *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={vetCheckForm.preferred_date}
+                    onChange={(e) => setVetCheckForm({ ...vetCheckForm, preferred_date: e.target.value })}
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                  Examination Reason *
+                </label>
+                <select
+                  value={vetCheckForm.reason}
+                  onChange={(e) => setVetCheckForm({ ...vetCheckForm, reason: e.target.value })}
+                  style={inputStyle}
+                >
+                  <option value="Routine Health Check">Routine Health &amp; Wellness Check</option>
+                  <option value="Vaccination Follow-up">Vaccination Booster / Rabies Follow-up</option>
+                  <option value="Illness / Symptom Evaluation">Illness / Symptom Evaluation (Coughing, Fever, Lethargy)</option>
+                  <option value="Post-Surgery Follow-up">Post-Surgery Wound / Recovery Check</option>
+                  <option value="Dietary / Weight Management">Dietary / Digestive or Weight Issue</option>
+                  <option value="Behavioral / Dental Assessment">Behavioral / Dental or Skin/Ear Assessment</option>
+                  <option value="Pre-Adoption Medical Clearance">Pre-Adoption Final Medical Clearance</option>
+                  <option value="Other">Other Clinical Reason</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                  Clinical Notes &amp; Caregiver Observations
+                </label>
+                <textarea
+                  placeholder="Enter details on symptoms, appetite, energy levels, behavior notes, or specific veterinary requests..."
+                  value={vetCheckForm.notes}
+                  onChange={(e) => setVetCheckForm({ ...vetCheckForm, notes: e.target.value })}
+                  style={{ ...inputStyle, minHeight: "75px" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  onClick={() => setIsVetCheckModalOpen(false)}
+                  style={{ padding: "10px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9", color: "#334155", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  style={{ padding: "10px 20px", borderRadius: "8px", border: "none", background: "#059669", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                >
+                  <FaStethoscope /> {isSubmitting ? "Requesting..." : "Submit Vet Check Request"}
+                </button>
+              </div>
+            </form>
+          );
+        })()}
       </Modal>
 
       {/* Progress Log Modal */}
@@ -1968,84 +2491,412 @@ const FosterManagement = () => {
 
                 {/* SECTION B: ELIGIBILITY & VERIFICATION CHECKS */}
                 <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "16px" }}>
-                  <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A", marginBottom: "12px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                    B. Eligibility Verification &amp; Inspection Checks
+                  <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A", marginBottom: "14px", textTransform: "uppercase", letterSpacing: "0.5px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>B. Eligibility Verification &amp; Inspection Checks</span>
+                    <span style={{ fontSize: "11px", fontWeight: 700, color: (reviewForm.background_check_passed && reviewForm.home_inspection_passed) ? "#059669" : "#D97706" }}>
+                      {(reviewForm.background_check_passed && reviewForm.home_inspection_passed) ? "✓ Both Verifications Cleared" : "⏳ Requirements Pending"}
+                    </span>
                   </div>
 
-                  <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                    {/* Background Check */}
-                    <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                        <label style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A" }}>Background Check Verification</label>
-                        <select
-                          value={reviewForm.background_check_passed ? "true" : "false"}
-                          onChange={(e) => setReviewForm({ ...reviewForm, background_check_passed: e.target.value === "true" })}
-                          style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "12px", fontWeight: 700, background: reviewForm.background_check_passed ? "#ECFDF5" : "#FFFBEB", color: reviewForm.background_check_passed ? "#047857" : "#B45309" }}
-                        >
-                          <option value="true">✓ Clear / Verified</option>
-                          <option value="false">⏳ Pending / Failed</option>
-                        </select>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                    {/* 1. Background Check Action Card */}
+                    <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "16px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{ fontSize: "14px", fontWeight: 800, color: "#0F172A" }}>1. Background Check</span>
+                          <span
+                            style={{
+                              padding: "2px 8px",
+                              borderRadius: "6px",
+                              fontSize: "11px",
+                              fontWeight: 800,
+                              textTransform: "uppercase",
+                              background: reviewForm.background_check_passed ? "#ECFDF5" : (reviewForm.background_check_notes?.includes("REJECTED") ? "#FEF2F2" : (reviewForm.background_check_notes?.includes("FLAGGED") ? "#FFFBEB" : "#EFF6FF")),
+                              color: reviewForm.background_check_passed ? "#047857" : (reviewForm.background_check_notes?.includes("REJECTED") ? "#DC2626" : (reviewForm.background_check_notes?.includes("FLAGGED") ? "#D97706" : "#2563EB")),
+                            }}
+                          >
+                            {reviewForm.background_check_passed ? "✓ Cleared / Verified" : (reviewForm.background_check_notes?.includes("REJECTED") ? "✕ Rejected" : (reviewForm.background_check_notes?.includes("FLAGGED") ? "⚠ Flagged" : "⏳ Pending Initiation"))}
+                          </span>
+                        </div>
                       </div>
-                      <input
-                        type="text"
-                        placeholder="Background check notes / reference ID..."
-                        value={reviewForm.background_check_notes}
-                        onChange={(e) => setReviewForm({ ...reviewForm, background_check_notes: e.target.value })}
-                        style={{ ...inputStyle, fontSize: "12px", padding: "6px 10px" }}
-                      />
+
+                      {/* Step A: Initiate Check */}
+                      <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px", marginBottom: "12px" }}>
+                        <div style={{ fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "8px" }}>Initiate Background Verification Check</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr auto", gap: "8px", alignItems: "center" }}>
+                          <select
+                            value={bgCheckProvider}
+                            onChange={(e) => setBgCheckProvider(e.target.value)}
+                            style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                          >
+                            <option value="PawGuard Registry">PawGuard National Registry</option>
+                            <option value="Checkr Identity">Checkr Identity &amp; Criminal</option>
+                            <option value="ID.me Verification">ID.me Government ID</option>
+                            <option value="Local Shelter Police Check">Local Shelter Police Check</option>
+                          </select>
+                          <input
+                            type="text"
+                            placeholder="Optional reference / dispatch notes..."
+                            value={bgCheckInitiateNotes}
+                            onChange={(e) => setBgCheckInitiateNotes(e.target.value)}
+                            style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                          />
+                          <button
+                            type="button"
+                            disabled={isSubmitting || isInitiatingBgCheck}
+                            onClick={handleInitiateBackgroundCheck}
+                            style={{ padding: "7px 12px", borderRadius: "6px", border: "none", background: "#2563EB", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
+                          >
+                            {isInitiatingBgCheck ? "Initiating..." : "Initiate Check"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Step B: Record Outcome */}
+                      <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px" }}>
+                        <div style={{ fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "8px" }}>Record Outcome &amp; References</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: "10px", marginBottom: "10px" }}>
+                          <div>
+                            <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#64748B", marginBottom: "4px" }}>Outcome Decision *</label>
+                            <select
+                              value={bgCheckOutcome}
+                              onChange={(e) => setBgCheckOutcome(e.target.value as any)}
+                              style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px", fontWeight: 700, background: bgCheckOutcome === "cleared" ? "#ECFDF5" : (bgCheckOutcome === "rejected" ? "#FEF2F2" : "#FFFBEB") }}
+                            >
+                              <option value="cleared">✓ Cleared (Clean Record, Fully Eligible)</option>
+                              <option value="flagged">⚠ Flagged (Discrepancy / Audit Required)</option>
+                              <option value="rejected">✕ Rejected (Disqualified)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#64748B", marginBottom: "4px" }}>Outcome Notes &amp; Verification ID *</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Cleared by PawGuard Registry ref #PG-BG-8921..."
+                              value={bgCheckOutcomeNotes}
+                              onChange={(e) => setBgCheckOutcomeNotes(e.target.value)}
+                              style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* References check */}
+                        <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "10px", alignItems: "center", borderTop: "1px dashed #E2E8F0", paddingTop: "10px", marginBottom: "10px" }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 600, color: "#334155", cursor: "pointer" }}>
+                            <input
+                              type="checkbox"
+                              checked={reviewForm.references_checked}
+                              onChange={(e) => setReviewForm({ ...reviewForm, references_checked: e.target.checked })}
+                            />
+                            Personal &amp; Vet References Checked
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Reference verification notes / contact summary..."
+                            value={reviewForm.reference_notes}
+                            onChange={(e) => setReviewForm({ ...reviewForm, reference_notes: e.target.value })}
+                            style={{ ...inputStyle, fontSize: "12px", padding: "4px 8px" }}
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={isSubmitting}
+                          onClick={handleSaveBackgroundCheckOutcome}
+                          style={{ padding: "6px 14px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#F1F5F9", color: "#1E293B", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                        >
+                          Save Background Check Outcome
+                        </button>
+                      </div>
                     </div>
 
-                    {/* Home Inspection */}
-                    <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                        <label style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A" }}>Home &amp; Yard Inspection</label>
-                        <select
-                          value={reviewForm.home_inspection_passed ? "true" : "false"}
-                          onChange={(e) => setReviewForm({ ...reviewForm, home_inspection_passed: e.target.value === "true" })}
-                          style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "12px", fontWeight: 700, background: reviewForm.home_inspection_passed ? "#ECFDF5" : "#FFFBEB", color: reviewForm.home_inspection_passed ? "#047857" : "#B45309" }}
-                        >
-                          <option value="true">✓ Passed (Fenced Yard Verified)</option>
-                          <option value="false">⏳ Pending Inspection</option>
-                        </select>
+                    {/* 2. Home & Yard Inspection (4-Stage Workflow) */}
+                    <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "16px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{ fontSize: "14px", fontWeight: 800, color: "#0F172A" }}>2. Home &amp; Yard Inspection</span>
+                          <span
+                            style={{
+                              padding: "2px 8px",
+                              borderRadius: "6px",
+                              fontSize: "11px",
+                              fontWeight: 800,
+                              textTransform: "uppercase",
+                              background: reviewForm.home_inspection_passed ? "#ECFDF5" : (reviewForm.home_inspection_notes?.includes("REJECTED") ? "#FEF2F2" : "#FFFBEB"),
+                              color: reviewForm.home_inspection_passed ? "#047857" : (reviewForm.home_inspection_notes?.includes("REJECTED") ? "#DC2626" : "#D97706"),
+                            }}
+                          >
+                            {reviewForm.home_inspection_passed ? "✓ Approved / Passed" : (reviewForm.home_inspection_notes?.includes("REJECTED") ? "✕ Rejected" : "⏳ Pending Inspection")}
+                          </span>
+                        </div>
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-                        <input
-                          type="text"
-                          placeholder="Home inspection notes..."
-                          value={reviewForm.home_inspection_notes}
-                          onChange={(e) => setReviewForm({ ...reviewForm, home_inspection_notes: e.target.value })}
-                          style={{ ...inputStyle, fontSize: "12px", padding: "6px 10px" }}
-                        />
-                        <input
-                          type="text"
-                          placeholder="Inspection site address..."
-                          value={reviewForm.home_inspection_address}
-                          onChange={(e) => setReviewForm({ ...reviewForm, home_inspection_address: e.target.value })}
-                          style={{ ...inputStyle, fontSize: "12px", padding: "6px 10px" }}
-                        />
-                      </div>
-                    </div>
 
-                    {/* Reference Checks */}
-                    <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                        <label style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A" }}>Personal &amp; Vet References</label>
-                        <select
-                          value={reviewForm.references_checked ? "true" : "false"}
-                          onChange={(e) => setReviewForm({ ...reviewForm, references_checked: e.target.value === "true" })}
-                          style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "12px", fontWeight: 700, background: reviewForm.references_checked ? "#ECFDF5" : "#FFFBEB", color: reviewForm.references_checked ? "#047857" : "#B45309" }}
-                        >
-                          <option value="true">✓ Verified References</option>
-                          <option value="false">⏳ Pending References</option>
-                        </select>
+                      {/* 4-Stage Tab Bar */}
+                      <div style={{ display: "flex", gap: "6px", marginBottom: "12px", borderBottom: "1px solid #E2E8F0", paddingBottom: "8px" }}>
+                        {[
+                          { id: "schedule", label: "1. Schedule Visit" },
+                          { id: "audit", label: "2. Audit Checklist" },
+                          { id: "evidence", label: `3. Evidence (${inspectionEvidenceList.length})` },
+                          { id: "outcome", label: "4. Final Decision" },
+                        ].map((tab) => (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setInspectionActiveTab(tab.id as any)}
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: "6px",
+                              border: "none",
+                              fontSize: "12px",
+                              fontWeight: inspectionActiveTab === tab.id ? 800 : 600,
+                              background: inspectionActiveTab === tab.id ? "#0F172A" : "#F1F5F9",
+                              color: inspectionActiveTab === tab.id ? "#FFF" : "#475569",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
                       </div>
-                      <input
-                        type="text"
-                        placeholder="Reference check notes..."
-                        value={reviewForm.reference_notes}
-                        onChange={(e) => setReviewForm({ ...reviewForm, reference_notes: e.target.value })}
-                        style={{ ...inputStyle, fontSize: "12px", padding: "6px 10px" }}
-                      />
+
+                      {/* Tab 1: Schedule */}
+                      {inspectionActiveTab === "schedule" && (
+                        <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
+                            <div>
+                              <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#64748B", marginBottom: "4px" }}>Scheduled Date &amp; Time *</label>
+                              <input
+                                type="datetime-local"
+                                value={inspectionScheduleForm.scheduled_at}
+                                onChange={(e) => setInspectionScheduleForm({ ...inspectionScheduleForm, scheduled_at: e.target.value })}
+                                style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#64748B", marginBottom: "4px" }}>Assigned Inspector *</label>
+                              <input
+                                type="text"
+                                placeholder="Inspector full name..."
+                                value={inspectionScheduleForm.inspector_name}
+                                onChange={(e) => setInspectionScheduleForm({ ...inspectionScheduleForm, inspector_name: e.target.value })}
+                                style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                              />
+                            </div>
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
+                            <div>
+                              <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#64748B", marginBottom: "4px" }}>Inspection Type</label>
+                              <select
+                                value={inspectionScheduleForm.inspection_type}
+                                onChange={(e) => setInspectionScheduleForm({ ...inspectionScheduleForm, inspection_type: e.target.value as any })}
+                                style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                              >
+                                <option value="in_person">In-Person Onsite Inspection</option>
+                                <option value="virtual">Virtual Live Video Walkthrough</option>
+                                <option value="shelter_visit">Shelter Preliminary Verification</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#64748B", marginBottom: "4px" }}>Inspection Site Address</label>
+                              <input
+                                type="text"
+                                placeholder="Caregiver physical address..."
+                                value={inspectionScheduleForm.address}
+                                onChange={(e) => setInspectionScheduleForm({ ...inspectionScheduleForm, address: e.target.value })}
+                                style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                              />
+                            </div>
+                          </div>
+                          <div style={{ marginBottom: "10px" }}>
+                            <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#64748B", marginBottom: "4px" }}>Scheduling Notes / Access Instructions</label>
+                            <input
+                              type="text"
+                              placeholder="Gate codes, appointment instructions..."
+                              value={inspectionScheduleForm.notes}
+                              onChange={(e) => setInspectionScheduleForm({ ...inspectionScheduleForm, notes: e.target.value })}
+                              style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            disabled={isSubmitting}
+                            onClick={handleScheduleHomeInspection}
+                            style={{ padding: "7px 14px", borderRadius: "6px", border: "none", background: "#2563EB", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                          >
+                            Schedule Inspection
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Tab 2: Audit Checklist */}
+                      {inspectionActiveTab === "audit" && (
+                        <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
+                            <div>
+                              <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#64748B", marginBottom: "4px" }}>Yard Condition &amp; Containment</label>
+                              <select
+                                value={inspectionAuditForm.yard_condition}
+                                onChange={(e) => setInspectionAuditForm({ ...inspectionAuditForm, yard_condition: e.target.value })}
+                                style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                              >
+                                <option value="Secure & Escape-Proof">Secure &amp; Escape-Proof Yard</option>
+                                <option value="Adequate Yard (Minor maintenance needed)">Adequate Yard (Minor gaps)</option>
+                                <option value="Unfenced Yard (Leash required)">Unfenced Yard (Leash required)</option>
+                                <option value="Apartment / Balcony Only">Apartment / Balcony Only</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#64748B", marginBottom: "4px" }}>Fencing Quality &amp; Height</label>
+                              <select
+                                value={inspectionAuditForm.fencing_condition}
+                                onChange={(e) => setInspectionAuditForm({ ...inspectionAuditForm, fencing_condition: e.target.value })}
+                                style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                              >
+                                <option value="High Fence (6ft+ Privacy/Chainlink)">High Fence (6ft+ Secure)</option>
+                                <option value="Medium Fence (4-5ft)">Medium Fence (4-5ft)</option>
+                                <option value="Low Fence (<4ft)">Low Fence (&lt;4ft)</option>
+                                <option value="No Perimeter Fencing">No Perimeter Fencing</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
+                            <div>
+                              <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#64748B", marginBottom: "4px" }}>Household &amp; Living Space</label>
+                              <input
+                                type="text"
+                                placeholder="Cleanliness, space, crate space..."
+                                value={inspectionAuditForm.household_info}
+                                onChange={(e) => setInspectionAuditForm({ ...inspectionAuditForm, household_info: e.target.value })}
+                                style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#64748B", marginBottom: "4px" }}>Existing Pets Compatibility</label>
+                              <input
+                                type="text"
+                                placeholder="Resident dogs/cats, temperament..."
+                                value={inspectionAuditForm.existing_pets_info}
+                                onChange={(e) => setInspectionAuditForm({ ...inspectionAuditForm, existing_pets_info: e.target.value })}
+                                style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                              />
+                            </div>
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "10px", marginBottom: "10px" }}>
+                            <div>
+                              <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#64748B", marginBottom: "4px" }}>Hazards / Safety Warnings</label>
+                              <input
+                                type="text"
+                                placeholder="Poisonous plants, pool, toxic chemicals, loose wires..."
+                                value={inspectionAuditForm.hazards}
+                                onChange={(e) => setInspectionAuditForm({ ...inspectionAuditForm, hazards: e.target.value })}
+                                style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#64748B", marginBottom: "4px" }}>Suitability Rating</label>
+                              <select
+                                value={inspectionAuditForm.rating}
+                                onChange={(e) => setInspectionAuditForm({ ...inspectionAuditForm, rating: Number(e.target.value) })}
+                                style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px", fontWeight: 700 }}
+                              >
+                                <option value={5}>⭐⭐⭐⭐⭐ 5 / 5 (Exceptional)</option>
+                                <option value={4}>⭐⭐⭐⭐ 4 / 5 (Very Good)</option>
+                                <option value={3}>⭐⭐⭐ 3 / 5 (Acceptable)</option>
+                                <option value={2}>⭐⭐ 2 / 5 (Marginal)</option>
+                                <option value={1}>⭐ 1 / 5 (Unsuitable)</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div style={{ marginBottom: "10px" }}>
+                            <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#64748B", marginBottom: "4px" }}>Inspector Audit Notes</label>
+                            <input
+                              type="text"
+                              placeholder="General observations, landlord permission confirmed..."
+                              value={inspectionAuditForm.notes}
+                              onChange={(e) => setInspectionAuditForm({ ...inspectionAuditForm, notes: e.target.value })}
+                              style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            disabled={isSubmitting}
+                            onClick={handleSaveHomeInspectionAudit}
+                            style={{ padding: "7px 14px", borderRadius: "6px", border: "none", background: "#059669", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                          >
+                            Save Audit Checklist
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Tab 3: Evidence */}
+                      {inspectionActiveTab === "evidence" && (
+                        <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                            <span style={{ fontSize: "12px", fontWeight: 700, color: "#334155" }}>Upload Photos or Lease Documents (JPEG, PNG, PDF up to 10MB)</span>
+                            <label style={{ padding: "6px 12px", borderRadius: "6px", background: "#2563EB", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: isUploadingEvidence ? "not-allowed" : "pointer" }}>
+                              {isUploadingEvidence ? "Uploading..." : "+ Upload File"}
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/jpg,application/pdf"
+                                onChange={handleUploadInspectionEvidence}
+                                disabled={isUploadingEvidence}
+                                style={{ display: "none" }}
+                              />
+                            </label>
+                          </div>
+                          {inspectionEvidenceList.length === 0 ? (
+                            <div style={{ padding: "16px", textAlign: "center", color: "#94A3B8", fontSize: "12px", border: "1px dashed #CBD5E1", borderRadius: "6px" }}>
+                              No inspection evidence uploaded yet. Attach yard photographs, fencing pictures, or proof of landlord authorization.
+                            </div>
+                          ) : (
+                            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                              {inspectionEvidenceList.map((url, idx) => (
+                                <div key={idx} style={{ padding: "6px 10px", borderRadius: "6px", background: "#F1F5F9", border: "1px solid #CBD5E1", fontSize: "11px", display: "flex", alignItems: "center", gap: "6px" }}>
+                                  <span>📎 Document #{idx + 1}</span>
+                                  <a href={url} target="_blank" rel="noreferrer" style={{ color: "#2563EB", fontWeight: 700, textDecoration: "none" }}>View</a>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Tab 4: Outcome Decision */}
+                      {inspectionActiveTab === "outcome" && (
+                        <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: "10px", marginBottom: "10px" }}>
+                            <div>
+                              <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#64748B", marginBottom: "4px" }}>Inspection Decision *</label>
+                              <select
+                                value={inspectionOutcomeForm.outcome}
+                                onChange={(e) => setInspectionOutcomeForm({ ...inspectionOutcomeForm, outcome: e.target.value as any })}
+                                style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px", fontWeight: 700, background: inspectionOutcomeForm.outcome === "approved" ? "#ECFDF5" : "#FEF2F2" }}
+                              >
+                                <option value="approved">✓ Approved (Home &amp; Yard Passed)</option>
+                                <option value="rejected">✕ Rejected (Unsuitable Environment)</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#64748B", marginBottom: "4px" }}>Decision Notes / Reason *</label>
+                              <input
+                                type="text"
+                                placeholder={inspectionOutcomeForm.outcome === "rejected" ? "Mandatory rejection reason..." : "Approval notes, verified fence & space..."}
+                                value={inspectionOutcomeForm.notes}
+                                onChange={(e) => setInspectionOutcomeForm({ ...inspectionOutcomeForm, notes: e.target.value })}
+                                style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                              />
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={isSubmitting}
+                            onClick={handleSaveHomeInspectionOutcome}
+                            style={{ padding: "7px 16px", borderRadius: "6px", border: "none", background: inspectionOutcomeForm.outcome === "approved" ? "#059669" : "#DC2626", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                          >
+                            Save Inspection Decision
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2371,7 +3222,7 @@ const FosterManagement = () => {
                     type="button"
                     onClick={() => {
                       setIsPlacementDetailModalOpen(false);
-                      void handleRequestMedical(dogId);
+                      handleOpenVetCheckModal(p);
                     }}
                     style={{ padding: "8px 14px", borderRadius: "6px", border: "1px solid #6EE7B7", background: "#ECFDF5", color: "#047857", fontWeight: 700, fontSize: "12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}
                   >
@@ -2394,8 +3245,7 @@ const FosterManagement = () => {
                     type="button"
                     onClick={() => {
                       setIsPlacementDetailModalOpen(false);
-                      setSelectedPlacement(p);
-                      setIsReturnModalOpen(true);
+                      handleOpenReturnModal(p);
                     }}
                     style={{ padding: "8px 14px", borderRadius: "6px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", fontWeight: 700, fontSize: "12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}
                   >
@@ -2412,8 +3262,8 @@ const FosterManagement = () => {
       <Modal
         isOpen={isConvertModalOpen}
         onClose={() => setIsConvertModalOpen(false)}
-        title="Convert Foster Placement to Adoption"
-        maxWidth="600px"
+        title="Convert Foster Placement to Permanent Adoption"
+        maxWidth="620px"
       >
         {selectedPlacementForConvert && (() => {
           const p = selectedPlacementForConvert;
@@ -2421,6 +3271,23 @@ const FosterManagement = () => {
           const dogObj = p.dog || dogsMap.get(dogId);
           const dogName = dogObj?.name || (dogId ? `Pet #${dogId.slice(0, 8)}` : "Animal");
           const breed = dogObj?.breed || dogObj?.breed_classification || null;
+          const caregiverProfile = fosters.find(
+            (f) => f.id === (p.profile_id || p.foster_id || p.foster_profile_id)
+          );
+          const isPlacementActive = Boolean(
+            p.is_active || p.status === "active" || (!p.returned_at && p.status !== "converted_to_adopt")
+          );
+          const hasValidDog = Boolean(p.dog_id || p.dog?.id);
+          const bgCheckPassed = Boolean(
+            p.background_check_passed ?? caregiverProfile?.background_check_passed
+          );
+          const homeInspectionPassed = Boolean(
+            p.home_inspection_passed ?? caregiverProfile?.home_inspection_passed
+          );
+          const isDogAlreadyAdopted = dogObj?.status === "adopted";
+          const isReturnInProgress = Boolean(
+            p.status === "return_pending" || p.status === "returned" || p.returned_at
+          );
 
           return (
             <form onSubmit={handleConfirmConvertToAdopt} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -2431,16 +3298,122 @@ const FosterManagement = () => {
                     Confirm Permanent Adoption Transition
                   </h4>
                   <p style={{ margin: 0, fontSize: "13px", color: "#9D174D", lineHeight: "1.5" }}>
-                    You are converting the active foster stay for <strong>{dogName}</strong> {breed ? `(${breed})` : ""} into a permanent adoption with caregiver family <strong>{p.foster_family}</strong>.
+                    You are initiating permanent adoption for <strong>{dogName}</strong> {breed ? `(${breed})` : ""} with current foster caregiver <strong>{p.foster_family}</strong>.
                   </p>
                 </div>
               </div>
 
-              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: "12px" }}>
-                <div><strong>Pet Name:</strong> {dogName}</div>
-                <div><strong>Caregiver Family:</strong> {p.foster_family}</div>
-                <div><strong>Placement Ref:</strong> <span style={{ fontFamily: "monospace" }}>{String(p.id || p.placement_id).slice(0, 8)}</span></div>
-                <div><strong>Target Pet Status:</strong> <span style={{ color: "#047857", fontWeight: 700 }}>ADOPTED</span></div>
+              {/* Placement & Pet Verification Summary */}
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "16px", display: "flex", flexDirection: "column", gap: "12px", fontSize: "13px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                  <div>
+                    <span style={{ color: "#64748B", fontSize: "11px", display: "block", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.5px" }}>Pet / Animal</span>
+                    <strong style={{ color: "#0F172A", fontSize: "14px" }}>{dogName}</strong> {breed ? <span style={{ color: "#64748B", fontSize: "12px" }}>({breed})</span> : null}
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B", fontSize: "11px", display: "block", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.5px" }}>Foster Caregiver</span>
+                    <strong style={{ color: "#0F172A", fontSize: "14px" }}>{p.foster_family || "Bobby"}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B", fontSize: "11px", display: "block", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.5px" }}>Current Placement Status</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: "#ECFDF5", color: "#047857", border: "1px solid #A7F3D0", padding: "2px 8px", borderRadius: "999px", fontSize: "11px", fontWeight: 800 }}>
+                      ● ACTIVE FOSTER
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B", fontSize: "11px", display: "block", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.5px" }}>Current Adoption Status</span>
+                    {dogObj?.status === "adopted" ? (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: "#FEF2F2", color: "#DC2626", border: "1px solid #FCA5A5", padding: "2px 8px", borderRadius: "999px", fontSize: "11px", fontWeight: 800 }}>
+                        ⚠️ ADOPTED (Database Conflict)
+                      </span>
+                    ) : (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE", padding: "2px 8px", borderRadius: "999px", fontSize: "11px", fontWeight: 800 }}>
+                        NOT ADOPTED / FOSTER
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Target intended transition divider */}
+                <div style={{ borderTop: "1px dashed #CBD5E1", paddingTop: "10px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+                  <div>
+                    <span style={{ color: "#64748B", fontSize: "11px", display: "block", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.5px" }}>
+                      Target Outcome (Upon Confirmation)
+                    </span>
+                    <div style={{ fontSize: "11px", color: "#9D174D" }}>
+                      Intended permanent transition &mdash; not current state
+                    </div>
+                  </div>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "#FDF2F8", color: "#DB2777", border: "1px solid #FBCFE8", padding: "4px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 800 }}>
+                    <FaHeart size={12} /> Permanent Adoption
+                  </span>
+                </div>
+              </div>
+
+              {/* Data Inconsistency Warning Banner if pet is already adopted in registry */}
+              {isDogAlreadyAdopted && (
+                <div style={{ background: "#FFFBEB", border: "1px solid #FCD34D", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: "#92400E", lineHeight: "1.5" }}>
+                  <strong>⚠️ Backend State Conflict Warning:</strong> This dog&apos;s master registry status is currently recorded as <strong>&quot;adopted&quot;</strong> in the database (or has an existing completed adoption application), while this foster placement remains active. Attempting conversion will validate this against the backend. If an existing adoption record locks this animal, the backend will return HTTP 409 Conflict.
+                </div>
+              )}
+
+              {/* Real Backend Conflict Error Banner */}
+              {convertConflictError && (
+                <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "8px", padding: "12px 14px", fontSize: "12px", color: "#991B1B", lineHeight: "1.5" }}>
+                  <div style={{ fontWeight: 800, marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span>🚫 Backend Conversion Conflict (HTTP 409)</span>
+                  </div>
+                  <div>{convertConflictError}</div>
+                  <div style={{ marginTop: "6px", fontSize: "11px", color: "#7F1D1D" }}>
+                    Real backend records refreshed. This placement cannot be converted while a conflicting adoption record exists.
+                  </div>
+                </div>
+              )}
+
+              {/* Prerequisites Verification Checklist */}
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px", fontSize: "12px" }}>
+                <div style={{ fontWeight: 700, color: "#1E293B", marginBottom: "8px" }}>
+                  Pre-Conversion Prerequisites Validation:
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    {isPlacementActive ? (
+                      <span style={{ color: "#16A34A", fontWeight: 700 }}>✓ Placement Active</span>
+                    ) : (
+                      <span style={{ color: "#DC2626", fontWeight: 700 }}>✗ Placement Inactive</span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    {hasValidDog ? (
+                      <span style={{ color: "#16A34A", fontWeight: 700 }}>✓ Pet Profile Linked</span>
+                    ) : (
+                      <span style={{ color: "#DC2626", fontWeight: 700 }}>✗ Missing Pet Profile</span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    {bgCheckPassed ? (
+                      <span style={{ color: "#16A34A", fontWeight: 700 }}>✓ Caregiver Background Check Cleared</span>
+                    ) : (
+                      <span style={{ color: "#D97706", fontWeight: 700 }}>⚠️ Background Check Pending</span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    {homeInspectionPassed ? (
+                      <span style={{ color: "#16A34A", fontWeight: 700 }}>✓ Home Inspection Approved</span>
+                    ) : (
+                      <span style={{ color: "#D97706", fontWeight: 700 }}>⚠️ Home Inspection Pending</span>
+                    )}
+                  </div>
+                  <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: "6px" }}>
+                    {isDogAlreadyAdopted ? (
+                      <span style={{ color: "#DC2626", fontWeight: 700 }}>⚠️ Conflict: Pet is already marked as Adopted in database</span>
+                    ) : isReturnInProgress ? (
+                      <span style={{ color: "#DC2626", fontWeight: 700 }}>⚠️ Return to shelter in progress</span>
+                    ) : (
+                      <span style={{ color: "#16A34A", fontWeight: 700 }}>✓ No Conflicting Adoption or Return In Progress</span>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div>
@@ -2448,27 +3421,57 @@ const FosterManagement = () => {
                   Adoption Agreement &amp; Conversion Notes
                 </label>
                 <textarea
-                  placeholder="Enter conversion notes or adoption agreement details..."
+                  placeholder="Enter adoption agreement or transition notes..."
                   value={convertNotes}
                   onChange={(e) => setConvertNotes(e.target.value)}
-                  style={{ ...inputStyle, minHeight: "70px", fontSize: "13px" }}
+                  style={{ ...inputStyle, minHeight: "75px", fontSize: "13px" }}
                 />
+              </div>
+
+              <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "8px", padding: "10px 12px" }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "8px", fontSize: "12px", color: "#92400E", cursor: "pointer", fontWeight: 600 }}>
+                  <input
+                    type="checkbox"
+                    required
+                    checked={convertLegalConfirmed}
+                    onChange={(e) => setConvertLegalConfirmed(e.target.checked)}
+                    style={{ marginTop: "2px" }}
+                  />
+                  <span>
+                    I confirm that the caregiver family has signed all required legal adoption agreements and the shelter management record should be finalized as Adopted.
+                  </span>
+                </label>
               </div>
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
                 <button
                   type="button"
-                  onClick={() => setIsConvertModalOpen(false)}
+                  onClick={() => {
+                    setIsConvertModalOpen(false);
+                    setConvertConflictError(null);
+                  }}
                   style={{ padding: "10px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9", color: "#334155", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
-                  style={{ padding: "10px 20px", borderRadius: "8px", border: "none", background: "#DB2777", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  disabled={isSubmitting || !convertLegalConfirmed}
+                  style={{
+                    padding: "10px 20px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: !convertLegalConfirmed || isSubmitting ? "#94A3B8" : "#DB2777",
+                    color: "#FFF",
+                    fontWeight: 700,
+                    fontSize: "13px",
+                    cursor: !convertLegalConfirmed || isSubmitting ? "not-allowed" : "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
                 >
-                  <FaHeart /> {isSubmitting ? "Converting..." : "Confirm Adoption Conversion"}
+                  <FaHeart /> {isSubmitting ? "Converting..." : "Confirm Permanent Adoption"}
                 </button>
               </div>
             </form>
