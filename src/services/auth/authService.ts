@@ -38,6 +38,19 @@ const getMe = async () => {
   }
 };
 
+const updateProfile = async (data: Record<string, unknown>) => {
+  const response = await axios.put("/auth/me", data);
+  return response.data;
+};
+
+const changePassword = async (currentPassword: string, newPassword: string) => {
+  const response = await axios.post("/auth/password/change", {
+    current_password: currentPassword,
+    new_password: newPassword,
+  });
+  return response.data;
+};
+
 const refreshSession = async () => {
   const response = await axios.post("/auth/refresh", {});
   return response.data;
@@ -118,6 +131,8 @@ const disableMfa = async (code: string) => {
 const authService = {
   login,
   getMe,
+  updateProfile,
+  changePassword,
   refreshSession,
   logout,
   requestPasswordReset,

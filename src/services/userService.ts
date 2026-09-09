@@ -262,6 +262,14 @@ export const userService = {
     return response.data;
   },
 
+  restoreAndResetPassword: async (email: string, password?: string) => {
+    const response = await api.post("/admin/users/restore-and-reset", {
+      email: email.trim(),
+      password: password || "PawGuard@2026",
+    });
+    return response.data;
+  },
+
   // Super Admin - Roles
   getRoles: async (params?: Record<string, unknown>) => {
     const response = await api.get("/admin/roles", { params });

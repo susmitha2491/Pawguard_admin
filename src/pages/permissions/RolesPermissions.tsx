@@ -16,9 +16,15 @@ import {
   FaBan,
   FaCheckCircle,
   FaSearch,
+  FaShieldAlt,
+  FaEdit,
+  FaEye,
+  FaEyeSlash,
+  FaIdBadge,
 } from "react-icons/fa";
-import userService from "../../services/userService";
+import userService, { type UserPayload } from "../../services/userService";
 import { normalizeRole, ALLOWED_INTERNAL_ROLES, getRoleTitle, getCurrentUserRole, isInternalRole } from "../../utils/roleUtils";
+import { formatDateTime } from "../../utils/dateUtils";
 import {
   setRolePermissionOverrides,
   setRolePermissionOverride,
@@ -51,9 +57,33 @@ const roleTitle = (name: string): string => {
 
 const getErrorMsg = (err: unknown, fallback: string): string => {
   if (err && typeof err === "object") {
-    const r = err as { response?: { data?: { detail?: unknown; message?: unknown } } };
-    const detail = r?.response?.data?.detail ?? r?.response?.data?.message;
-    if (typeof detail === "string" && detail) return detail;
+    const r = err as {
+      response?: {
+        data?: {
+          detail?: unknown;
+          message?: unknown;
+          error?: { message?: unknown; detail?: unknown; details?: unknown };
+        };
+      };
+      message?: unknown;
+    };
+    const data = r?.response?.data;
+    if (data) {
+      if (typeof data.detail === "string" && data.detail.trim()) return data.detail;
+      if (Array.isArray(data.detail) && data.detail.length > 0) {
+        const msgs = data.detail
+          .map((d: { msg?: string; message?: string }) => d?.msg || d?.message)
+          .filter(Boolean);
+        if (msgs.length > 0) return msgs.join("; ");
+      }
+      if (typeof data.message === "string" && data.message.trim()) return data.message;
+      if (data.error) {
+        if (typeof data.error.message === "string" && data.error.message.trim()) return data.error.message;
+        if (typeof data.error.detail === "string" && data.error.detail.trim()) return data.error.detail;
+        if (typeof data.error.details === "string" && data.error.details.trim()) return data.error.details;
+      }
+    }
+    if (typeof r.message === "string" && r.message.trim()) return r.message;
   }
   return fallback;
 };
@@ -189,6 +219,27 @@ const RolesPermissions = () => {
   const [assignTarget, setAssignTarget] = useState<RoleAssignment | null>(null);
   const [assignRole, setAssignRole] = useState("");
   const [revokeTarget, setRevokeTarget] = useState<RoleAssignment | null>(null);
+
+  // Selected Account Profile Modal State
+  const [selectedAccountModalOpen, setSelectedAccountModalOpen] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState<RoleAssignment | null>(null);
+  const [accountDetail, setAccountDetail] = useState<Record<string, unknown> | null>(null);
+  const [accountDetailLoading, setAccountDetailLoading] = useState(false);
+
+  // Selected Account Edit Sub-state
+  const [isEditingAccount, setIsEditingAccount] = useState(false);
+  const [accountEditForm, setAccountEditForm] = useState({
+    full_name: "",
+    phone: "",
+    role: "",
+    is_active: true,
+  });
+
+  // Selected Account Password Change Sub-state
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   // User Permission Overrides State
   const [userPermModalOpen, setUserPermModalOpen] = useState(false);
@@ -495,7 +546,8 @@ const RolesPermissions = () => {
       await userService.deleteRole(role.id);
       addToast(`Deleted role "${role.name}".`, "success");
       setDeleteTarget(null);
-      fetchRolesAndPermissions();
+      setRoles((prev) => prev.filter((r) => r.id !== role.id));
+      await fetchRolesAndPermissions();
       notifyDataChanged();
     } catch (err: unknown) {
       addToast(getErrorMsg(err, "Failed to delete role."), "error");
@@ -599,6 +651,123 @@ const RolesPermissions = () => {
       openEditRole(role);
     } else {
       addToast(`No role record found for "${user.role}".`, "info");
+    }
+  };
+
+  const openAccountProfileModal = async (user: RoleAssignment) => {
+    setSelectedAccount(user);
+    setSelectedAccountModalOpen(true);
+    setIsEditingAccount(false);
+    setIsChangingPassword(false);
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowPassword(false);
+    setAccountEditForm({
+      full_name: user.name,
+      phone: "",
+      role: user.role || "",
+      is_active: user.is_active ?? true,
+    });
+    setAccountDetailLoading(true);
+    try {
+      const data = await userService.getUserById(user.id);
+      const detail = (data?.data || data) as Record<string, unknown>;
+      setAccountDetail(detail);
+      setAccountEditForm({
+        full_name: String(detail.full_name || detail.name || user.name || ""),
+        phone: String(detail.phone || ""),
+        role: Array.isArray(detail.roles) && detail.roles.length > 0 ? String(detail.roles[0]) : user.role || "",
+        is_active: detail.is_active !== undefined ? Boolean(detail.is_active) : user.is_active ?? true,
+      });
+    } catch {
+      setAccountDetail(null);
+    } finally {
+      setAccountDetailLoading(false);
+    }
+  };
+
+  const handleSaveAccountEdit = async () => {
+    if (!selectedAccount) return;
+    if (!isSuperAdmin) {
+      addToast("Access Denied: Only a Super Administrator can edit user profiles.", "error");
+      return;
+    }
+    if (!isSuperAdmin && String(selectedAccount.role).toLowerCase().includes("super_admin")) {
+      addToast("Access Denied: Only a Super Administrator can edit Super Admin accounts.", "error");
+      return;
+    }
+    if (!accountEditForm.full_name.trim()) {
+      addToast("Full name is required.", "error");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const payload: Partial<UserPayload> = {
+        full_name: accountEditForm.full_name.trim(),
+        phone: accountEditForm.phone.trim() || null,
+        is_active: accountEditForm.is_active,
+        role_names: accountEditForm.role ? [accountEditForm.role] : [],
+      };
+      await userService.updateUser(selectedAccount.id, payload);
+      addToast(`Account details for ${accountEditForm.full_name} updated successfully.`, "success");
+      setIsEditingAccount(false);
+
+      // Refresh account details and list
+      const updatedData = await userService.getUserById(selectedAccount.id);
+      const detail = (updatedData?.data || updatedData) as Record<string, unknown>;
+      setAccountDetail(detail);
+      setSelectedAccount((prev) =>
+        prev
+          ? {
+              ...prev,
+              name: accountEditForm.full_name.trim(),
+              role: accountEditForm.role,
+              is_active: accountEditForm.is_active,
+              status: accountEditForm.is_active ? "Active" : "Inactive",
+            }
+          : null
+      );
+      await fetchUsers();
+      await fetchRolesAndPermissions();
+      notifyDataChanged();
+    } catch (err: unknown) {
+      addToast(getErrorMsg(err, "Failed to update account information."), "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleChangeAccountPassword = async () => {
+    if (!selectedAccount) return;
+    if (!isSuperAdmin) {
+      addToast("Access Denied: Only a Super Administrator can reset account passwords.", "error");
+      return;
+    }
+    if (!newPassword) {
+      addToast("Password is required.", "error");
+      return;
+    }
+    if (newPassword.length < 10) {
+      addToast("Password must be at least 10 characters long.", "error");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      addToast("Passwords do not match.", "error");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await userService.updateUser(selectedAccount.id, { password: newPassword });
+      addToast(`Password updated successfully for ${selectedAccount.name}.`, "success");
+      setIsChangingPassword(false);
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err: unknown) {
+      addToast(getErrorMsg(err, "Failed to change user password."), "error");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1079,7 +1248,51 @@ const RolesPermissions = () => {
                   filteredUsers.map((u) => (
                     <tr key={u.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
                       <td style={tdStyle}>
-                        <div style={{ fontWeight: 700 }}>{u.name}</div>
+                        <div
+                          onClick={() => openAccountProfileModal(u)}
+                          title={`View Profile & Details for ${u.name}`}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: "50%",
+                              background: isInternalRole(u.role) ? "#EFF6FF" : "#F1F5F9",
+                              color: isInternalRole(u.role) ? "#1D4ED8" : "#475569",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontWeight: 800,
+                              fontSize: 12.5,
+                              border: "1px solid #CBD5E1",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {(u.name || "U").charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <div
+                              style={{
+                                fontWeight: 700,
+                                color: "#1D4ED8",
+                                textDecoration: "none",
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
+                              onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
+                            >
+                              {u.name}
+                            </div>
+                            <div style={{ fontSize: 11, color: "#94A3B8" }}>
+                              {u.id && u.id !== "-" ? `ID: ${u.id.slice(0, 8)}...` : ""}
+                            </div>
+                          </div>
+                        </div>
                       </td>
                       <td style={tdStyle}>{u.email}</td>
                       <td style={tdStyle}>{u.department}</td>
@@ -1111,6 +1324,13 @@ const RolesPermissions = () => {
                       <td style={tdStyle}>{statusBadge(u.status || "Active")}</td>
                       <td style={{ ...tdStyle, textAlign: "right" }}>
                         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                          <button
+                            onClick={() => openAccountProfileModal(u)}
+                            style={actionButtonStyle("#0F766E", "#F0FDFA")}
+                            title="View account profile & details"
+                          >
+                            <FaIdBadge /> Profile
+                          </button>
                           <button
                             onClick={() => openAssignModal(u)}
                             style={actionButtonStyle("#1D4ED8", "#EFF6FF")}
@@ -1598,6 +1818,448 @@ const RolesPermissions = () => {
             </button>
           </div>
         </div>
+      </Modal>
+      {/* Selected Account Profile & Details Modal */}
+      <Modal
+        isOpen={selectedAccountModalOpen}
+        onClose={() => {
+          setSelectedAccountModalOpen(false);
+          setIsEditingAccount(false);
+          setIsChangingPassword(false);
+        }}
+        title={
+          isEditingAccount
+            ? `Edit Account Profile — ${selectedAccount?.name || "User"}`
+            : isChangingPassword
+            ? `Change Password — ${selectedAccount?.name || "User"}`
+            : `Account Details & Profile — ${selectedAccount?.name || "Staff Member"}`
+        }
+        maxWidth="680px"
+      >
+        {selectedAccount && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+            {/* Account Header Banner */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "16px",
+                padding: "16px",
+                background: "linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%)",
+                borderRadius: "12px",
+                border: "1px solid #E2E8F0",
+              }}
+            >
+              <div
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: "50%",
+                  background: isInternalRole(selectedAccount.role) ? "#2563EB" : "#475569",
+                  color: "#FFFFFF",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontWeight: 800,
+                  fontSize: 22,
+                  flexShrink: 0,
+                  boxShadow: "0 2px 8px rgba(37,99,235,0.25)",
+                }}
+              >
+                {(selectedAccount.name || "U").charAt(0).toUpperCase()}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 800, color: "#0F172A" }}>
+                    {selectedAccount.name}
+                  </h3>
+                  {statusBadge(selectedAccount.status || "Active")}
+                  {accountDetail && accountDetail.is_verified === true && (
+                    <span
+                      style={{
+                        padding: "3px 8px",
+                        borderRadius: 999,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        background: "#ECFDF5",
+                        color: "#059669",
+                        border: "1px solid #A7F3D0",
+                      }}
+                    >
+                      <FaCheckCircle size={10} style={{ marginRight: 4 }} /> Verified
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "4px", fontSize: "13px", color: "#64748B", flexWrap: "wrap" }}>
+                  <span>{selectedAccount.email}</span>
+                  <span>•</span>
+                  <span style={{ fontWeight: 700, color: "#2563EB" }}>{roleTitle(selectedAccount.role)}</span>
+                </div>
+              </div>
+            </div>
+
+            {accountDetailLoading ? (
+              <div style={{ padding: "32px", textAlign: "center", color: "#2563EB", fontWeight: 600 }}>
+                Loading live account details from server...
+              </div>
+            ) : isEditingAccount ? (
+              /* Edit Account Information Form */
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSaveAccountEdit();
+                }}
+                style={{ display: "flex", flexDirection: "column", gap: "14px" }}
+              >
+                <div>
+                  <label style={labelStyle}>Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={accountEditForm.full_name}
+                    onChange={(e) => setAccountEditForm({ ...accountEditForm, full_name: e.target.value })}
+                    style={inputStyle}
+                    placeholder="e.g. Jane Doe"
+                  />
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Phone Number</label>
+                  <input
+                    type="tel"
+                    value={accountEditForm.phone}
+                    onChange={(e) => setAccountEditForm({ ...accountEditForm, phone: e.target.value })}
+                    style={inputStyle}
+                    placeholder="e.g. +1-555-0199"
+                  />
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Assigned Role</label>
+                  <select
+                    value={accountEditForm.role}
+                    onChange={(e) => setAccountEditForm({ ...accountEditForm, role: e.target.value })}
+                    style={inputStyle}
+                  >
+                    <option value="">None / General Public</option>
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.name}>
+                        {roleTitle(r.name)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "4px" }}>
+                  <input
+                    type="checkbox"
+                    id="account-active-checkbox"
+                    checked={accountEditForm.is_active}
+                    onChange={(e) => setAccountEditForm({ ...accountEditForm, is_active: e.target.checked })}
+                    style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                  />
+                  <label htmlFor="account-active-checkbox" style={{ fontSize: "13.5px", fontWeight: 600, color: "#334155", cursor: "pointer" }}>
+                    Account Active (permit system login and operations)
+                  </label>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingAccount(false)}
+                    style={cancelButtonStyle}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    style={primaryButtonStyle}
+                  >
+                    {isSubmitting ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
+              </form>
+            ) : isChangingPassword ? (
+              /* Change Password Form */
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleChangeAccountPassword();
+                }}
+                style={{ display: "flex", flexDirection: "column", gap: "14px" }}
+              >
+                <div style={{ padding: "12px 14px", background: "#EFF6FF", borderRadius: "8px", border: "1px solid #BFDBFE", fontSize: "13px", color: "#1E40AF" }}>
+                  Administrative Password Reset: Set a new secure password for <strong>{selectedAccount.name}</strong>. Password must be at least 10 characters long.
+                </div>
+
+                <div>
+                  <label style={labelStyle}>New Password * (min 10 characters)</label>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      required
+                      minLength={10}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      style={{ ...inputStyle, paddingRight: "40px" }}
+                      placeholder="Enter new password (at least 10 characters)"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={{
+                        position: "absolute",
+                        right: "12px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        border: "none",
+                        background: "none",
+                        cursor: "pointer",
+                        color: "#64748B",
+                      }}
+                    >
+                      {showPassword ? <FaEyeSlash size={16} /> : <FaEye size={16} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Confirm New Password *</label>
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    minLength={10}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    style={inputStyle}
+                    placeholder="Re-enter new password"
+                  />
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsChangingPassword(false);
+                      setNewPassword("");
+                      setConfirmPassword("");
+                    }}
+                    style={cancelButtonStyle}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !newPassword || newPassword.length < 10}
+                    style={{ ...primaryButtonStyle, background: "#10B981" }}
+                  >
+                    {isSubmitting ? "Updating..." : "Update Password"}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              /* Default Account Details Overview */
+              <div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                    gap: "12px",
+                    fontSize: "13px",
+                  }}
+                >
+                  <div style={{ padding: "12px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                    <div style={{ color: "#64748B", fontSize: "11.5px", fontWeight: 700, textTransform: "uppercase" }}>
+                      User ID (UUID)
+                    </div>
+                    <div style={{ fontWeight: 600, color: "#0F172A", marginTop: "2px", wordBreak: "break-all", fontFamily: "monospace" }}>
+                      {String(accountDetail?.id || selectedAccount.id || "-")}
+                    </div>
+                  </div>
+
+                  <div style={{ padding: "12px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                    <div style={{ color: "#64748B", fontSize: "11.5px", fontWeight: 700, textTransform: "uppercase" }}>
+                      Email Address
+                    </div>
+                    <div style={{ fontWeight: 600, color: "#0F172A", marginTop: "2px" }}>
+                      {String(accountDetail?.email || selectedAccount.email || "-")}
+                    </div>
+                  </div>
+
+                  <div style={{ padding: "12px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                    <div style={{ color: "#64748B", fontSize: "11.5px", fontWeight: 700, textTransform: "uppercase" }}>
+                      Phone
+                    </div>
+                    <div style={{ fontWeight: 600, color: "#0F172A", marginTop: "2px" }}>
+                      {String(accountDetail?.phone || "Not provided")}
+                    </div>
+                  </div>
+
+                  <div style={{ padding: "12px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                    <div style={{ color: "#64748B", fontSize: "11.5px", fontWeight: 700, textTransform: "uppercase" }}>
+                      Department / Facility
+                    </div>
+                    <div style={{ fontWeight: 600, color: "#0F172A", marginTop: "2px" }}>
+                      {selectedAccount.department || "General Operations"}
+                    </div>
+                  </div>
+
+                  <div style={{ padding: "12px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                    <div style={{ color: "#64748B", fontSize: "11.5px", fontWeight: 700, textTransform: "uppercase" }}>
+                      Internal Role Code
+                    </div>
+                    <div style={{ fontWeight: 700, color: "#2563EB", marginTop: "2px", fontFamily: "monospace" }}>
+                      {selectedAccount.role || "None"}
+                    </div>
+                  </div>
+
+                  <div style={{ padding: "12px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                    <div style={{ color: "#64748B", fontSize: "11.5px", fontWeight: 700, textTransform: "uppercase" }}>
+                      Two-Factor MFA
+                    </div>
+                    <div style={{ fontWeight: 600, color: accountDetail?.mfa_enabled ? "#16A34A" : "#64748B", marginTop: "2px" }}>
+                      {accountDetail?.mfa_enabled ? "Enabled" : "Disabled"}
+                    </div>
+                  </div>
+
+                  <div style={{ padding: "12px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                    <div style={{ color: "#64748B", fontSize: "11.5px", fontWeight: 700, textTransform: "uppercase" }}>
+                      Account Created
+                    </div>
+                    <div style={{ fontWeight: 600, color: "#0F172A", marginTop: "2px" }}>
+                      {formatDateTime(accountDetail?.created_at as string)}
+                    </div>
+                  </div>
+
+                  <div style={{ padding: "12px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                    <div style={{ color: "#64748B", fontSize: "11.5px", fontWeight: 700, textTransform: "uppercase" }}>
+                      Last Updated
+                    </div>
+                    <div style={{ fontWeight: 600, color: "#0F172A", marginTop: "2px" }}>
+                      {formatDateTime(accountDetail?.updated_at as string)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Direct Permissions Preview if any */}
+                {Array.isArray(accountDetail?.direct_permissions) && (accountDetail.direct_permissions as string[]).length > 0 && (
+                  <div style={{ marginTop: "14px", padding: "12px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                    <div style={{ color: "#64748B", fontSize: "11.5px", fontWeight: 700, textTransform: "uppercase", marginBottom: "6px" }}>
+                      Direct User Permission Overrides ({ (accountDetail.direct_permissions as string[]).length })
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                      {(accountDetail.direct_permissions as string[]).map((code) => (
+                        <span
+                          key={code}
+                          style={{
+                            padding: "2px 8px",
+                            borderRadius: 999,
+                            background: "#EFF6FF",
+                            color: "#1D4ED8",
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            fontFamily: "monospace",
+                          }}
+                        >
+                          {code}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Bar */}
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", marginTop: "20px", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                    {isSuperAdmin && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingAccount(true)}
+                          style={{
+                            ...primaryButtonStyle,
+                            background: "#2563EB",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            fontSize: "13px",
+                            padding: "8px 14px",
+                          }}
+                        >
+                          <FaEdit size={13} /> Edit Profile
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsChangingPassword(true)}
+                          style={{
+                            ...primaryButtonStyle,
+                            background: "#0F766E",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            fontSize: "13px",
+                            padding: "8px 14px",
+                          }}
+                        >
+                          <FaKey size={13} /> Change Password
+                        </button>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedAccountModalOpen(false);
+                        openRolePermissionsFromUser(selectedAccount);
+                      }}
+                      style={{
+                        ...cancelButtonStyle,
+                        background: "#F5F3FF",
+                        color: "#6D28D9",
+                        borderColor: "#DDD6FE",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        fontSize: "13px",
+                        padding: "8px 14px",
+                      }}
+                    >
+                      <FaShieldAlt size={13} /> Role Policy
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedAccountModalOpen(false);
+                        openUserPermModal(selectedAccount);
+                      }}
+                      style={{
+                        ...cancelButtonStyle,
+                        background: "#E0F2FE",
+                        color: "#0284C7",
+                        borderColor: "#BAE6FD",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        fontSize: "13px",
+                        padding: "8px 14px",
+                      }}
+                    >
+                      <FaKey size={13} /> Direct Overrides
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAccountModalOpen(false)}
+                    style={cancelButtonStyle}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   );
