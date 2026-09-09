@@ -29,6 +29,18 @@ export interface ReportOptions {
 }
 
 export const reportsService = {
+  // POST /reports/generate - backend-authoritative medical analytics payload
+  generateMedicalReport: async (): Promise<Record<string, unknown>> => {
+    const response = await api.post("/reports/generate", { report_type: "medical" });
+    return (response.data?.data ?? response.data) as Record<string, unknown>;
+  },
+
+  // POST /reports/generate - backend-authoritative inventory audit payload
+  generateInventoryReport: async (): Promise<Record<string, unknown>> => {
+    const response = await api.post("/reports/generate", { report_type: "inventory" });
+    return (response.data?.data ?? response.data) as Record<string, unknown>;
+  },
+
   // GET /reports/types - list of available report type slugs
   getReportTypes: async (): Promise<string[]> => {
     const response = await api.get("/reports/types");

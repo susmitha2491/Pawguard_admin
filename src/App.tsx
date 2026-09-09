@@ -362,15 +362,16 @@ function App() {
                 <ProtectedRoute
                   permission="view_reports"
                   allowedRoles={[
-                    "super_admin",
-                    "rescue_centre_admin",
-                    "rescue_coordinator",
-                    "veterinarian",
-                    "shelter_manager",
-                    "adoption_coordinator",
-                    "foster_coordinator",
-                    "volunteer_coordinator",
-                    "finance_user",
+"super_admin",
+                  "rescue_centre_admin",
+                  "rescue_coordinator",
+                  "veterinarian",
+                  "shelter_manager",
+                  "adoption_coordinator",
+                  "foster_coordinator",
+                  "volunteer_coordinator",
+                  "finance_user",
+                  "inventory_manager",
                   ]}
                 />
               }

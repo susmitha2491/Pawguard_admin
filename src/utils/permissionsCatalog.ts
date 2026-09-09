@@ -228,6 +228,15 @@ const ACTION_ALIASES: Record<string, string> = {
   write: "create",
   update: "edit",
   process: "manage",
+  export_pdf: "export",
+  export_csv: "export",
+  export_excel: "export",
+  export_xlsx: "export",
+  download: "export",
+  pdf: "export",
+  csv: "export",
+  excel: "export",
+  xlsx: "export",
 };
 
 const toKnownModule = (raw: string): string | null => {

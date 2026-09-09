@@ -19,6 +19,7 @@ import {
   FaEye,
   FaCheckCircle,
   FaHome,
+  FaChartBar,
 } from "react-icons/fa";
 import vetService from "../../../services/vetService";
 import medicalService from "../../../services/medicalService";
@@ -1030,6 +1031,7 @@ const VeterinarianDashboard = () => {
         <QuickActionCard icon={<FaSyringe />} title="Vaccination Suite" subtitle="Booster Reminders" color="#16A34A" onClick={() => navigate("/medical-reminders")} />
         <QuickActionCard icon={<FaFileMedical />} title="Issue Certificate" subtitle="Medical clearance" color="#1E3A8A" onClick={() => navigate("/certificates")} />
         <QuickActionCard icon={<FaUserMd />} title="Vet Directory" subtitle="Browse Partner Clinics" color="#1E3A8A" onClick={() => navigate("/vet-directory")} />
+        <QuickActionCard icon={<FaChartBar />} title="Reports & Analytics" subtitle="Clinical performance metrics" color="#7C3AED" onClick={() => navigate("/reports")} />
       </div>
 
       {/* Headline Stats */}

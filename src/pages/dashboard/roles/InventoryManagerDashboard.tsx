@@ -5,11 +5,13 @@ import DataTable, { type Column } from "../../../components/common/DataTable";
 import QuickActionCard from "../../../components/dashboard/QuickActionCard";
 import {
   FaBoxes,
+  FaChartBar,
   FaPills,
   FaExclamationTriangle,
   FaTruck,
   FaCalendarTimes,
 } from "react-icons/fa";
+
 import dashboardService from "../../../services/dashboardService";
 import inventoryService from "../../../services/inventoryService";
 import { useDataSync } from "../../../utils/dataSync";
@@ -382,7 +384,9 @@ const InventoryManagerDashboard = () => {
         <QuickActionCard icon={<FaBoxes />} title="Add Inventory Item" subtitle="Register new item" color="#1E3A8A" onClick={() => navigate("/inventory?action=add")} />
         <QuickActionCard icon={<FaTruck />} title="Issue Purchase Order" subtitle="Order from vendor" color="#16A34A" onClick={() => navigate("/inventory")} />
         <QuickActionCard icon={<FaExclamationTriangle />} title="Low Stock Audit" subtitle="Review depleted items" color="#DC2626" onClick={() => navigate("/inventory?tab=low_stock")} />
+        <QuickActionCard icon={<FaChartBar />} title="Reports & Analytics" subtitle="Inventory consumption, expiry & loss audit" color="#6366F1" onClick={() => navigate("/reports")} />
       </div>
+
 
       {/* Summary Filter Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "20px" }}>

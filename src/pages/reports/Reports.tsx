@@ -38,7 +38,6 @@ import {
   FaHeart,
   FaExclamationTriangle,
   FaSyringe,
-  FaPills,
   FaCheckCircle,
   FaMapMarkerAlt,
   FaExchangeAlt,
@@ -49,14 +48,13 @@ import volunteerService from "../../services/volunteerService";
 import fosterService from "../../services/fosterService";
 import shelterService from "../../services/shelterService";
 import dogService from "../../services/dogService";
-import reminderService from "../../services/reminderService";
 import adoptionService from "../../services/adoptionService";
 import donationsService, {
   isCompletedDonationStatus,
 } from "../../services/donationsService";
 import financeService from "../../services/financeService";
 import { rescueService } from "../../services/rescueService";
-import { inventoryService, normalizeInventoryRow } from "../../services/inventoryService";
+import reportsService from "../../services/reportsService";
 import { LocationMapPreview } from "../../components/common/LocationMapPreview";
 
 const numericValue = (val: unknown): number => {
@@ -86,6 +84,28 @@ const getAnimalDisplay = (c: any): string => {
     return String(c.species).trim();
   }
   return "Animal details unavailable";
+};
+
+const normalizeReportKey = (value: unknown): string =>
+  String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const findReportSection = (report: Record<string, unknown>, title: string): Record<string, unknown> => {
+  const wanted = normalizeReportKey(title);
+  const entry = Object.entries(report).find(([key]) => normalizeReportKey(key) === wanted);
+  return entry?.[1] && typeof entry[1] === "object" && !Array.isArray(entry[1])
+    ? entry[1] as Record<string, unknown>
+    : {};
+};
+
+const readReportMetric = (section: Record<string, unknown>, label: string): unknown => {
+  const wanted = normalizeReportKey(label);
+  const entry = Object.entries(section).find(([key]) => normalizeReportKey(key) === wanted);
+  return entry?.[1];
+};
+
+const reportMetricText = (value: unknown, formatter?: (value: unknown) => string): string => {
+  if (value === undefined || value === null || value === "") return "No value returned";
+  return formatter ? formatter(value) : String(value);
 };
 
 const Reports = () => {
@@ -129,10 +149,18 @@ const Reports = () => {
   const [rescueMeta, setRescueMeta] = useState<any>(null);
   const [dispatches, setDispatches] = useState<any[]>([]);
 
-  const [vaccineReminders, setVaccineReminders] = useState<any[]>([]);
-  const [prescriptionReminders, setPrescriptionReminders] = useState<any[]>([]);
+  const veterinaryReportDogs: any[] = [];
+  const veterinaryVaccinations: any[] = [];
+  const veterinaryProtocols: any[] = [];
+  const veterinaryAppointments: any[] = [];
+  const veterinaryExpenses: any[] = [];
+  const veterinarySourceErrors: string[] = [];
+  const [medicalReport, setMedicalReport] = useState<Record<string, unknown> | null>(null);
+  const [medicalReportError, setMedicalReportError] = useState<string | null>(null);
 
-  const [inventoryItems, setInventoryItems] = useState<any[]>([]);
+  const [inventoryReport, setInventoryReport] = useState<Record<string, unknown> | null>(null);
+  const [inventoryReportError, setInventoryReportError] = useState<string | null>(null);
+
   const [financeSummary, setFinanceSummary] = useState<{
     totalIncome: number;
     totalExpenses: number;
@@ -389,22 +417,14 @@ const Reports = () => {
       }
 
       // 4. Load Veterinarian Medical Data (if Veterinarian, Super Admin)
-      if (isVeterinarian || isSuperAdmin) {
+      if (isVeterinarian) {
         try {
-          const [vaccRes, rxRes, petRes] = await Promise.allSettled([
-            reminderService.getVaccinations({ page: 1, page_size: 100 }),
-            reminderService.getPrescriptions({ page: 1, page_size: 100 }),
-            dogService.getAllDogs(),
-          ]);
-
-          const vaccList = vaccRes.status === "fulfilled" ? (Array.isArray(vaccRes.value?.data) ? vaccRes.value.data : Array.isArray(vaccRes.value) ? vaccRes.value : []) : [];
-          const rxList = rxRes.status === "fulfilled" ? (Array.isArray(rxRes.value?.data) ? rxRes.value.data : Array.isArray(rxRes.value) ? rxRes.value : []) : [];
-          const petsList = petRes.status === "fulfilled" ? (Array.isArray(petRes.value?.data) ? petRes.value.data : Array.isArray(petRes.value) ? petRes.value : []) : [];
-
-          setVaccineReminders(vaccList);
-          setPrescriptionReminders(rxList);
-          if (!shelterDogs.length) setShelterDogs(petsList);
-        } catch (e) {
+          setMedicalReportError(null);
+          setMedicalReport(await reportsService.generateMedicalReport());
+        } catch (e: any) {
+          const message = e?.response?.data?.detail || e?.response?.data?.message || e?.message || "Failed to generate the medical report.";
+          setMedicalReport(null);
+          setMedicalReportError(String(message));
           console.error("Error loading medical reports data:", e);
         }
       }
@@ -506,13 +526,15 @@ const Reports = () => {
         }
       }
 
-      // 8. Load Inventory Data (if Inventory Manager, Super Admin)
-      if (isInventoryManager || isSuperAdmin) {
+      // 8. Load Inventory Data
+      if (isInventoryManager) {
         try {
-          const invRes = await inventoryService.getInventory({ page: 1, page_size: 50 });
-          const rawItems = Array.isArray(invRes?.data) ? invRes.data : Array.isArray(invRes) ? invRes : [];
-          setInventoryItems(rawItems.map(normalizeInventoryRow));
-        } catch (e) {
+          setInventoryReportError(null);
+          setInventoryReport(await reportsService.generateInventoryReport());
+        } catch (e: any) {
+          const message = e?.response?.data?.detail || e?.response?.data?.message || e?.message || "Failed to generate the inventory report.";
+          setInventoryReport(null);
+          setInventoryReportError(String(message));
           console.error("Error loading inventory reports data:", e);
         }
       }
@@ -1247,8 +1269,649 @@ const Reports = () => {
 
   // ----------------------- SUB-COMPONENT RENDERERS -----------------------
 
+  const renderGeneratedVeterinaryReport = () => {
+    // ── Section resolution ─────────────────────────────────────────────────
+    // medicalReport may be:
+    //   { sections: { "Medical Care & Immunization...": {...}, ... } }
+    //   or flat   { "Medical Care & Immunization...": {...}, ... }
+    const generated = medicalReport || {};
+    const sections: Record<string, unknown> =
+      generated.sections && typeof generated.sections === "object"
+        ? (generated.sections as Record<string, unknown>)
+        : generated;
+
+    const summary = findReportSection(sections, "Medical Care & Immunization Compliance Summary");
+    const expenditure = findReportSection(sections, "Veterinary Expenditure Analysis");
+    const surgerySection = findReportSection(sections, "Pending Surgery Backlog");
+
+    // Resolve surgery rows — the section may be an object with a list key, or directly an array
+    const surgeryRows: any[] = (() => {
+      const raw = (() => {
+        const s = sections;
+        const wanted = normalizeReportKey("Pending Surgery Backlog");
+        const entry = Object.entries(s).find(([k]) => normalizeReportKey(k) === wanted);
+        return entry?.[1];
+      })();
+      if (Array.isArray(raw)) return raw;
+      if (raw && typeof raw === "object") {
+        const obj = raw as Record<string, unknown>;
+        for (const key of ["records", "items", "data", "surgeries", "list"]) {
+          if (Array.isArray(obj[key])) return obj[key] as any[];
+        }
+      }
+      return [];
+    })();
+
+    // ── Stat card values (strictly from backend — no frontend calculation) ─
+    const vaccinationCoverageValue = readReportMetric(summary, "Vaccination Coverage Rate %");
+    const followUpComplianceValue  = readReportMetric(summary, "Follow-up Exam Compliance Rate %");
+    const totalExpenditureValue    =
+      readReportMetric(summary, "Total Veterinary Expenditure") ??
+      readReportMetric(expenditure, "Total Veterinary Expenditure");
+    const perDogExpenditureValue   =
+      readReportMetric(summary, "Total Veterinary Expenditure per Dog") ??
+      readReportMetric(expenditure, "Average Expenditure per Dog");
+
+    // Pending surgeries: prefer explicit backend count, fall back to array length
+    const pendingSurgeriesBackendCount =
+      readReportMetric(surgerySection, "Total Pending Surgeries") ??
+      readReportMetric(surgerySection, "Pending Surgeries") ??
+      readReportMetric(surgerySection, "Count") ??
+      readReportMetric(surgerySection, "total");
+    const pendingSurgeriesDisplay: string = (() => {
+      if (pendingSurgeriesBackendCount !== undefined && pendingSurgeriesBackendCount !== null) {
+        return String(pendingSurgeriesBackendCount);
+      }
+      if (surgeryRows.length > 0) return String(surgeryRows.length);
+      if (Object.keys(surgerySection).length > 0) return "No data available";
+      return loading ? "..." : "No data available";
+    })();
+
+    // ── Export rows (backend data only) ───────────────────────────────────
+    const exportRows: (string | number)[][] = [
+      ["Vaccination Coverage Rate %",        reportMetricText(vaccinationCoverageValue)],
+      ["Follow-up Exam Compliance Rate %",   reportMetricText(followUpComplianceValue)],
+      ["Follow-ups Overdue",                 reportMetricText(readReportMetric(summary, "Follow-ups Overdue"))],
+      ["Follow-ups On Track",                reportMetricText(readReportMetric(summary, "Follow-ups On Track"))],
+      ["Total Veterinary Expenditure",       reportMetricText(totalExpenditureValue)],
+      ["Total Veterinary Expenditure per Dog", reportMetricText(perDogExpenditureValue)],
+      ["Total Treatments Rendered",          reportMetricText(readReportMetric(expenditure, "Total Treatments Rendered"))],
+      ["Average Expenditure per Dog",        reportMetricText(readReportMetric(expenditure, "Average Expenditure per Dog"))],
+      ["Pending Surgery Count",              pendingSurgeriesDisplay],
+      ...surgeryRows.map((row: any, idx) => [
+        `Pending Surgery ${idx + 1}`,
+        `${row.dog_name || row.name || row.dog_id || "Unknown"} | ${row.treatment_type || row.surgery_type || row.procedure || "-"} | ${row.status || "Pending"}`,
+      ]),
+    ];
+    const csvRows = exportRows.map(([label, value]) =>
+      `"${String(label).replace(/"/g, '""')}","${String(value ?? "").replace(/"/g, '""')}"`
+    );
+
+    // ── 5 stat cards ──────────────────────────────────────────────────────
+    const statCards = [
+      {
+        title: "Vaccination Coverage",
+        value: loading ? "..." : reportMetricText(vaccinationCoverageValue),
+        trend: "Backend — Medical Care & Immunization Compliance Summary",
+        color: "#10B981",
+        icon: <FaSyringe />,
+      },
+      {
+        title: "Pending Surgeries",
+        value: loading ? "..." : pendingSurgeriesDisplay,
+        trend: "Backend — Pending Surgery Backlog",
+        color: "#DC2626",
+        icon: <FaStethoscope />,
+      },
+      {
+        title: "Follow-up Compliance",
+        value: loading ? "..." : reportMetricText(followUpComplianceValue),
+        trend: "Backend — Medical Care & Immunization Compliance Summary",
+        color: "#2563EB",
+        icon: <FaCheckCircle />,
+      },
+      {
+        title: "Total Vet Expenditure",
+        value: loading ? "..." : reportMetricText(totalExpenditureValue),
+        trend: "Backend — Veterinary Expenditure Analysis",
+        color: "#6366F1",
+        icon: <FaCoins />,
+      },
+      {
+        title: "Expenditure per Dog",
+        value: loading ? "..." : reportMetricText(perDogExpenditureValue),
+        trend: "Backend — Veterinary Expenditure Analysis",
+        color: "#64748B",
+        icon: <FaChartLine />,
+      },
+    ];
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+    // Render a flat key-value table from a backend section object.
+    // Skips nested objects (they are sub-sections, not scalars).
+    const sectionTable = (title: string, section: Record<string, unknown>) => {
+      const scalarRows = Object.entries(section).filter(([, v]) => v !== null && v !== undefined && typeof v !== "object");
+      return (
+        <div className="soft-card" style={{ padding: "20px" }}>
+          <h3 style={{ margin: "0 0 14px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>{title}</h3>
+          {scalarRows.length === 0 ? (
+            <div style={{ color: "#64748B", fontSize: "13px", padding: "12px 0" }}>
+              {medicalReport ? "No data available for this section" : "Loading…"}
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+              <tbody>
+                {scalarRows.map(([label, value]) => (
+                  <tr key={label} style={{ borderTop: "1px solid #E2E8F0" }}>
+                    <td style={{ padding: "9px 4px", color: "#64748B", fontSize: "13px", width: "60%" }}>{label}</td>
+                    <td style={{ padding: "9px 4px", fontWeight: 700, color: "#0F172A", fontSize: "13px" }}>{String(value)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      );
+    };
+
+    // ── Render ────────────────────────────────────────────────────────────
+    return (
+      <div style={{ width: "100%", boxSizing: "border-box" }}>
+        {/* Header */}
+        <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
+          <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Medical Care &amp; Immunization Compliance Report</h1>
+          <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
+            Backend-generated veterinary analytics — POST /reports/generate (report_type: "medical")
+          </p>
+        </div>
+
+        {/* Error state */}
+        {medicalReportError && (
+          <div className="soft-card" style={{ padding: "16px 20px", marginBottom: "16px", color: "#991B1B", background: "#FEF2F2", border: "1px solid #FCA5A5" }}>
+            <strong>Medical report request failed:</strong> {medicalReportError}
+            <p style={{ margin: "6px 0 0", fontSize: "13px" }}>The backend did not return a valid medical report. No data is displayed.</p>
+          </div>
+        )}
+
+        {/* Loading state */}
+        {!medicalReportError && loading && !medicalReport && (
+          <div className="soft-card" style={{ padding: "24px", color: "#64748B", textAlign: "center" }}>
+            Loading backend medical report…
+          </div>
+        )}
+
+        {/* No data state (not loading, no error, no report returned) */}
+        {!medicalReportError && !loading && !medicalReport && (
+          <div className="soft-card" style={{ padding: "24px", color: "#64748B", border: "1px solid #E2E8F0", textAlign: "center" }}>
+            <FaChartBar style={{ marginBottom: "8px", opacity: 0.4 }} size={32} />
+            <div style={{ fontWeight: 700, fontSize: "15px", color: "#0F172A" }}>No data available</div>
+            <div style={{ marginTop: "6px", fontSize: "13px" }}>
+              The backend did not return medical report data. Check that the report_type="medical" endpoint is operational.
+            </div>
+          </div>
+        )}
+
+        {/* Main content — only when medicalReport is present */}
+        {!medicalReportError && medicalReport && (
+          <>
+            {/* 5 Stat cards */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginBottom: "24px" }}>
+              {statCards.map((card) => (
+                <StatCard key={card.title} {...card} />
+              ))}
+            </div>
+
+            {/* Export actions */}
+            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "24px" }}>
+              <QuickActionCard
+                icon={<FaFileAlt />}
+                title="Export CSV"
+                subtitle="Backend medical report data"
+                color="#10B981"
+                onClick={() => handleExportCSV("medical_compliance_report", "Metric,Value", csvRows)}
+              />
+              <QuickActionCard
+                icon={<FaFileDownload />}
+                title="Export Excel"
+                subtitle="Backend medical report data"
+                color="#2563EB"
+                onClick={() => handleExportExcel("medical_compliance_report", "Metric,Value", csvRows)}
+              />
+              <QuickActionCard
+                icon={<FaFileAlt />}
+                title="Print PDF"
+                subtitle="Backend medical report data"
+                color="#7C3AED"
+                onClick={() => handleExportPDF("Medical Care & Immunization Compliance Report", "Backend-generated — POST /reports/generate (report_type: medical)", ["Metric", "Value"], exportRows)}
+              />
+            </div>
+
+            {/* Section: Medical Care & Immunization Compliance Summary */}
+            {sectionTable("Medical Care & Immunization Compliance Summary", summary)}
+
+            {/* Spacer */}
+            <div style={{ height: "16px" }} />
+
+            {/* Section: Veterinary Expenditure Analysis */}
+            {sectionTable("Veterinary Expenditure Analysis", expenditure)}
+
+            {/* Spacer */}
+            <div style={{ height: "16px" }} />
+
+            {/* Section: Pending Surgery Backlog */}
+            <div className="soft-card" style={{ padding: "20px" }}>
+              <h3 style={{ margin: "0 0 14px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
+                Pending Surgery Backlog
+                {pendingSurgeriesDisplay !== "No data available" && pendingSurgeriesDisplay !== "..." && (
+                  <span style={{ marginLeft: "10px", fontSize: "14px", fontWeight: 600, color: "#DC2626", background: "#FEF2F2", padding: "2px 10px", borderRadius: "999px" }}>
+                    {pendingSurgeriesDisplay}
+                  </span>
+                )}
+              </h3>
+              {surgeryRows.length === 0 ? (
+                <div style={{ color: "#64748B", fontSize: "13px", padding: "12px 0" }}>
+                  {Object.keys(surgerySection).length === 0
+                    ? "No pending surgery backlog data available from backend"
+                    : "No pending surgery records"}
+                </div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                    <thead>
+                      <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>ANIMAL</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>PROCEDURE / TYPE</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>STATUS</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>SCHEDULED DATE</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>NOTES</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {surgeryRows.map((row: any, idx) => (
+                        <tr key={String(row.id || row.dog_id || idx)} style={{ borderTop: "1px solid #E2E8F0" }}>
+                          <td style={{ padding: "10px", fontWeight: 600, color: "#0F172A", fontSize: "13px" }}>
+                            {row.dog_name || row.name || row.dog_id || "—"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px" }}>
+                            {row.treatment_type || row.surgery_type || row.procedure || row.appointment_type || "—"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px" }}>
+                            <span style={{ padding: "3px 10px", borderRadius: "999px", fontSize: "11px", fontWeight: 700, background: "#FEF2F2", color: "#991B1B" }}>
+                              {String(row.status || "Pending").toUpperCase()}
+                            </span>
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px", color: "#64748B" }}>
+                            {row.scheduled_date || row.starts_at || row.date || row.created_at || "—"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px", color: "#475569", maxWidth: "200px" }}>
+                            {row.post_op_notes !== undefined
+                              ? (row.post_op_notes ? String(row.post_op_notes).slice(0, 80) : <em style={{ color: "#94A3B8" }}>No post-op notes</em>)
+                              : (row.notes ? String(row.notes).slice(0, 80) : "—")}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  // INVENTORY MANAGER — BACKEND-GENERATED INVENTORY CONSUMPTION & EXPIRY AUDIT
+  const renderGeneratedInventoryReport = () => {
+    // ── Section resolution ─────────────────────────────────────────────────
+    // inventoryReport may be:
+    //   { sections: { "Inventory Health & Loss Audit": {...}, ... } }
+    //   or flat { "Inventory Health & Loss Audit": {...}, ... }
+    const generated = inventoryReport || {};
+    const sections: Record<string, unknown> =
+      generated.sections && typeof generated.sections === "object"
+        ? (generated.sections as Record<string, unknown>)
+        : generated;
+
+    const healthSection = findReportSection(sections, "Inventory Health & Loss Audit");
+
+    // Resolve rows from a backend section that may be an array or an object with a list key
+    const resolveRows = (raw: unknown): any[] => {
+      if (Array.isArray(raw)) return raw;
+      if (raw && typeof raw === "object") {
+        const obj = raw as Record<string, unknown>;
+        for (const key of ["items", "records", "data", "list", "rows", "products"]) {
+          if (Array.isArray(obj[key])) return obj[key] as any[];
+        }
+        // If it's a non-empty object with no array key, wrap in array
+        if (Object.keys(obj).length > 0) return [obj];
+      }
+      return [];
+    };
+
+    const purchaseRows = (() => {
+      const wanted = normalizeReportKey("Upcoming Purchase Order Requirements (Items Below Reorder Threshold)");
+      const entry = Object.entries(sections).find(([k]) => normalizeReportKey(k) === wanted);
+      return resolveRows(entry?.[1]);
+    })();
+
+    const expiredRows = (() => {
+      const wanted = normalizeReportKey("Expired Product Values Audit");
+      const entry = Object.entries(sections).find(([k]) => normalizeReportKey(k) === wanted);
+      return resolveRows(entry?.[1]);
+    })();
+
+    // ── Stat card values (strictly from backend — no frontend calculation) ─
+    const totalInventoryValue    = readReportMetric(healthSection, "Total Inventory Value");
+    const expiredProductValue    = readReportMetric(healthSection, "Expired Product Value");
+    const inventoryLossValue     =
+      readReportMetric(healthSection, "Inventory Loss / Write-off Value") ??
+      readReportMetric(healthSection, "Inventory Loss Value") ??
+      readReportMetric(healthSection, "Write-off Value");
+    const inventoryLossRate      =
+      readReportMetric(healthSection, "Inventory Loss Rate %") ??
+      readReportMetric(healthSection, "Inventory Loss Rate");
+    const stockMovementSpeed     =
+      readReportMetric(healthSection, "Stock Movement Speed (Avg Interval)") ??
+      readReportMetric(healthSection, "Stock Movement Speed");
+    const checkInOutVolume       =
+      readReportMetric(healthSection, "Total Check-In/Check-Out Volume") ??
+      readReportMetric(healthSection, "Check-In/Check-Out Volume");
+    const purchaseOrderExposure  =
+      readReportMetric(healthSection, "Upcoming Purchase Order Requirements Exposure") ??
+      readReportMetric(healthSection, "Purchase Order Requirements Exposure");
+
+    // ── Export rows (backend data only) ───────────────────────────────────
+    const exportRows: (string | number)[][] = [
+      ["Total Inventory Value",                           reportMetricText(totalInventoryValue)],
+      ["Expired Product Value",                           reportMetricText(expiredProductValue)],
+      ["Inventory Loss / Write-off Value",                reportMetricText(inventoryLossValue)],
+      ["Inventory Loss Rate %",                           reportMetricText(inventoryLossRate)],
+      ["Stock Movement Speed (Avg Interval)",             reportMetricText(stockMovementSpeed)],
+      ["Total Check-In/Check-Out Volume",                 reportMetricText(checkInOutVolume)],
+      ["Upcoming Purchase Order Requirements Exposure",   reportMetricText(purchaseOrderExposure)],
+      ...purchaseRows.map((row: any, idx) => [
+        `Purchase Order Item ${idx + 1}`,
+        `${row.name || row.item_name || row.item_id || "Unknown"} | Stock: ${row.current_stock ?? row.quantity ?? "—"} | Reorder: ${row.reorder_threshold ?? row.threshold ?? "—"} | Suggested: ${row.suggested_order_qty ?? row.suggested_quantity ?? "—"} | Est. Cost: ${row.estimated_cost ?? "—"}`,
+      ]),
+      ...expiredRows.map((row: any, idx) => [
+        `Expired Item ${idx + 1}`,
+        `${row.name || row.item_name || row.item_id || "Unknown"} | Loss: ${row.loss_value ?? row.expired_value ?? row.value ?? "—"} | Expiry: ${row.expiry_date ?? "—"}`,
+      ]),
+    ];
+    const csvRows = exportRows.map(([label, value]) =>
+      `"${String(label).replace(/"/g, '""')}","${String(value ?? "").replace(/"/g, '""')}"`
+    );
+
+    // ── 7 Stat Cards ──────────────────────────────────────────────────────
+    const statCards = [
+      { title: "Total Inventory Value",      value: loading ? "..." : reportMetricText(totalInventoryValue),   trend: "Backend — Inventory Health & Loss Audit", color: "#2563EB",  icon: <FaBoxes /> },
+      { title: "Expired Product Value",      value: loading ? "..." : reportMetricText(expiredProductValue),   trend: "Backend — Inventory Health & Loss Audit", color: "#DC2626",  icon: <FaExclamationTriangle /> },
+      { title: "Inventory Loss / Write-off", value: loading ? "..." : reportMetricText(inventoryLossValue),    trend: "Backend — Inventory Health & Loss Audit", color: "#F59E0B",  icon: <FaClipboardList /> },
+      { title: "Inventory Loss Rate",        value: loading ? "..." : reportMetricText(inventoryLossRate),     trend: "Backend — Inventory Health & Loss Audit", color: "#EF4444",  icon: <FaChartLine /> },
+      { title: "Stock Movement Speed",       value: loading ? "..." : reportMetricText(stockMovementSpeed),    trend: "Backend — Inventory Health & Loss Audit", color: "#8B5CF6",  icon: <FaClock /> },
+      { title: "Check-In/Check-Out Volume",  value: loading ? "..." : reportMetricText(checkInOutVolume),      trend: "Backend — Inventory Health & Loss Audit", color: "#10B981",  icon: <FaCheckDouble /> },
+      { title: "Purchase Order Exposure",    value: loading ? "..." : reportMetricText(purchaseOrderExposure), trend: "Backend — Inventory Health & Loss Audit", color: "#6366F1",  icon: <FaCoins /> },
+    ];
+
+    // ── Helper: flat scalar key-value table from a section object ─────────
+    const sectionTable = (title: string, section: Record<string, unknown>) => {
+      const scalarRows = Object.entries(section).filter(([, v]) => v !== null && v !== undefined && typeof v !== "object");
+      return (
+        <div className="soft-card" style={{ padding: "20px" }}>
+          <h3 style={{ margin: "0 0 14px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>{title}</h3>
+          {scalarRows.length === 0 ? (
+            <div style={{ color: "#64748B", fontSize: "13px", padding: "12px 0" }}>
+              No records available.
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+              <tbody>
+                {scalarRows.map(([label, value]) => (
+                  <tr key={label} style={{ borderTop: "1px solid #E2E8F0" }}>
+                    <td style={{ padding: "9px 4px", color: "#64748B", fontSize: "13px", width: "60%" }}>{label}</td>
+                    <td style={{ padding: "9px 4px", fontWeight: 700, color: "#0F172A", fontSize: "13px" }}>{String(value)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      );
+    };
+
+    // ── Render ────────────────────────────────────────────────────────────
+    return (
+      <div style={{ width: "100%", boxSizing: "border-box" }}>
+        {/* Header */}
+        <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
+          <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Inventory Consumption &amp; Expiry Audit</h1>
+          <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
+            Backend-generated inventory analytics report — POST /api/v1/reports/generate (report_type: "inventory")
+          </p>
+        </div>
+
+        {/* Error state */}
+        {inventoryReportError && (
+          <div className="soft-card" style={{ padding: "16px 20px", marginBottom: "16px", color: "#991B1B", background: "#FEF2F2", border: "1px solid #FCA5A5" }}>
+            <strong>Inventory Report Data Error:</strong> {inventoryReportError}
+            <p style={{ margin: "6px 0 0", fontSize: "13px" }}>The backend did not return a valid inventory report. No data is displayed.</p>
+          </div>
+        )}
+
+        {/* Loading state */}
+        {!inventoryReportError && loading && !inventoryReport && (
+          <div className="soft-card" style={{ padding: "24px", color: "#64748B", textAlign: "center" }}>
+            Loading inventory report...
+          </div>
+        )}
+
+        {/* No data state */}
+        {!inventoryReportError && !loading && !inventoryReport && (
+          <div className="soft-card" style={{ padding: "24px", color: "#64748B", border: "1px solid #E2E8F0", textAlign: "center" }}>
+            <FaBoxes style={{ marginBottom: "8px", opacity: 0.4 }} size={32} />
+            <div style={{ fontWeight: 700, fontSize: "15px", color: "#0F172A" }}>No inventory report data available.</div>
+            <div style={{ marginTop: "6px", fontSize: "13px" }}>
+              The backend did not return inventory report data. Verify that the report_type="inventory" endpoint is operational.
+            </div>
+          </div>
+        )}
+
+        {/* Main content — only when inventoryReport is present */}
+        {!inventoryReportError && inventoryReport && (
+          <>
+            {/* 7 Summary Stat Cards */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginBottom: "24px" }}>
+              {statCards.map((card) => (
+                <StatCard key={card.title} {...card} />
+              ))}
+            </div>
+
+            {/* Export actions */}
+            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "24px" }}>
+              <QuickActionCard
+                icon={<FaFileAlt />}
+                title="Export CSV"
+                subtitle="Backend inventory report data"
+                color="#10B981"
+                onClick={() => handleExportCSV("inventory_consumption_expiry_report", "Metric,Value", csvRows)}
+              />
+              <QuickActionCard
+                icon={<FaFileDownload />}
+                title="Export Excel"
+                subtitle="Backend inventory report data"
+                color="#2563EB"
+                onClick={() => handleExportExcel("inventory_consumption_expiry_report", "Metric,Value", csvRows)}
+              />
+              <QuickActionCard
+                icon={<FaFileAlt />}
+                title="Print PDF"
+                subtitle="Backend inventory report data"
+                color="#7C3AED"
+                onClick={() => handleExportPDF("Inventory Consumption & Expiry Audit", "Backend-generated — POST /reports/generate (report_type: inventory)", ["Metric", "Value"], exportRows)}
+              />
+            </div>
+
+            {/* SECTION 1: Inventory Health & Loss Audit */}
+            {sectionTable("Inventory Health & Loss Audit", healthSection)}
+
+            <div style={{ height: "16px" }} />
+
+            {/* SECTION 2: Upcoming Purchase Order Requirements (Items Below Reorder Threshold) */}
+            <div className="soft-card" style={{ padding: "20px" }}>
+              <h3 style={{ margin: "0 0 14px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
+                Upcoming Purchase Order Requirements (Items Below Reorder Threshold)
+                {purchaseRows.length > 0 && (
+                  <span style={{ marginLeft: "10px", fontSize: "13px", fontWeight: 600, color: "#2563EB", background: "#EFF6FF", padding: "2px 10px", borderRadius: "999px" }}>
+                    {purchaseRows.length} Items Below Reorder Threshold
+                  </span>
+                )}
+              </h3>
+              {purchaseRows.length === 0 ? (
+                <div style={{ color: "#64748B", fontSize: "13px", padding: "12px 0" }}>
+                  No records available.
+                </div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                    <thead>
+                      <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>ITEM ID</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>NAME</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>CURRENT STOCK</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>REORDER THRESHOLD</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>SUGGESTED ORDER QTY</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>UNIT COST</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>ESTIMATED COST</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {purchaseRows.map((row: any, idx) => (
+                        <tr key={String(row.item_id || row.id || idx)} style={{ borderTop: "1px solid #E2E8F0" }}>
+                          <td style={{ padding: "10px", fontSize: "12px", fontFamily: "monospace", color: "#64748B" }}>
+                            {String(row.item_id || row.id || `ITEM-${idx + 1}`)}
+                          </td>
+                          <td style={{ padding: "10px", fontWeight: 600, color: "#0F172A", fontSize: "13px" }}>
+                            {row.name || row.item_name || "—"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px", fontWeight: 700, color: "#DC2626" }}>
+                            {row.current_stock ?? row.quantity ?? "—"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px" }}>
+                            {row.reorder_threshold ?? row.threshold ?? "—"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px", fontWeight: 700, color: "#2563EB" }}>
+                            {row.suggested_order_qty ?? row.suggested_quantity ?? "—"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px" }}>
+                            {row.unit_cost ?? "—"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px", fontWeight: 700, color: "#059669" }}>
+                            {row.estimated_cost ?? "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div style={{ height: "16px" }} />
+
+            {/* SECTION 3: Expired Product Values Audit */}
+            <div className="soft-card" style={{ padding: "20px" }}>
+              <h3 style={{ margin: "0 0 14px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
+                Expired Product Values Audit
+                {expiredRows.length > 0 && (
+                  <span style={{ marginLeft: "10px", fontSize: "13px", fontWeight: 600, color: "#991B1B", background: "#FEF2F2", padding: "2px 10px", borderRadius: "999px" }}>
+                    {expiredRows.length} Expired Items
+                  </span>
+                )}
+              </h3>
+              {expiredRows.length === 0 ? (
+                <div style={{ color: "#64748B", fontSize: "13px", padding: "12px 0" }}>
+                  No records available.
+                </div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                    <thead>
+                      <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>ITEM ID</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>NAME</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>CATEGORY</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>EXPIRED QTY</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>EXPIRY DATE</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>LOSS VALUE</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>STATUS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {expiredRows.map((row: any, idx) => (
+                        <tr key={String(row.item_id || row.id || idx)} style={{ borderTop: "1px solid #E2E8F0" }}>
+                          <td style={{ padding: "10px", fontSize: "12px", fontFamily: "monospace", color: "#64748B" }}>
+                            {String(row.item_id || row.id || `ITEM-${idx + 1}`)}
+                          </td>
+                          <td style={{ padding: "10px", fontWeight: 600, color: "#0F172A", fontSize: "13px" }}>
+                            {row.name || row.item_name || "—"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px" }}>
+                            {row.category || "—"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px", fontWeight: 700 }}>
+                            {row.expired_quantity ?? row.quantity ?? "—"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px", color: "#DC2626" }}>
+                            {row.expiry_date ?? row.expired_at ?? "—"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px", fontWeight: 700, color: "#991B1B" }}>
+                            {row.loss_value ?? row.expired_value ?? row.value ?? "—"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px" }}>
+                            <span style={{ padding: "3px 10px", borderRadius: "999px", fontSize: "11px", fontWeight: 700, background: "#FEF2F2", color: "#991B1B" }}>
+                              {String(row.status || "EXPIRED").toUpperCase()}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* SECTION 4 & beyond: Render any other backend sections not covered above */}
+            {(() => {
+              const knownKeys = new Set([
+                normalizeReportKey("Inventory Health & Loss Audit"),
+                normalizeReportKey("Upcoming Purchase Order Requirements (Items Below Reorder Threshold)"),
+                normalizeReportKey("Expired Product Values Audit"),
+              ]);
+              const extraSections = Object.entries(sections).filter(([k, v]) =>
+                !knownKeys.has(normalizeReportKey(k)) && v !== null && typeof v === "object" && !Array.isArray(v)
+              );
+              if (extraSections.length === 0) return null;
+              return (
+                <>
+                  {extraSections.map(([title, section]) => (
+                    <div key={title} style={{ marginTop: "16px" }}>
+                      {sectionTable(title, section as Record<string, unknown>)}
+                    </div>
+                  ))}
+                </>
+              );
+            })()}
+          </>
+        )}
+      </div>
+    );
+  };
+
   // RESCUE OPERATIONS REPORT VIEW (REP-001 COMPLIANT)
+
   const renderRescueReports = () => {
+
     const rescueStatCards = [
       {
         title: "Total Rescue Cases",
@@ -2258,45 +2921,145 @@ const Reports = () => {
 
   // VETERINARY & MEDICAL REPORT VIEW
   const renderMedicalReports = () => {
+    const eligibleDogs = veterinaryReportDogs.filter((dog) => dog.status === "shelter");
+    const eligibleDogIds = new Set(eligibleDogs.map((dog) => String(dog.id || dog.dog_id)));
+    const requiredProtocolNames = new Set(
+      veterinaryProtocols
+        .filter((protocol) => protocol.is_required === true)
+        .map((protocol) => String(protocol.name).trim().toLowerCase())
+    );
+    const currentVaccinesByDog = new Map<string, Set<string>>();
+    veterinaryVaccinations.forEach((record) => {
+      const dogId = String(record.dog_id || "");
+      const administeredAt = new Date(String(record.administered_at || "")).getTime();
+      const nextDueAt = record.next_due_at ? new Date(String(record.next_due_at)).getTime() : null;
+      const vaccineName = String(record.vaccine_name || "").trim().toLowerCase();
+      const isCurrent = Number.isFinite(administeredAt) && administeredAt <= Date.now() &&
+        (nextDueAt === null || (Number.isFinite(nextDueAt) && nextDueAt >= Date.now()));
+      if (eligibleDogIds.has(dogId) && requiredProtocolNames.has(vaccineName) && isCurrent) {
+        const protocols = currentVaccinesByDog.get(dogId) || new Set<string>();
+        protocols.add(vaccineName);
+        currentVaccinesByDog.set(dogId, protocols);
+      }
+    });
+    const vaccinatedDogIds = new Set(
+      Array.from(currentVaccinesByDog.entries())
+        .filter(([, protocols]) => Array.from(requiredProtocolNames).every((name) => protocols.has(name)))
+        .map(([dogId]) => dogId)
+    );
+    const overdueVaccinations = veterinaryVaccinations.filter((record) => {
+      const dueAt = record.next_due_at ? new Date(String(record.next_due_at)).getTime() : NaN;
+      const vaccineName = String(record.vaccine_name || "").trim().toLowerCase();
+      return eligibleDogIds.has(String(record.dog_id)) && requiredProtocolNames.has(vaccineName) && Number.isFinite(dueAt) && dueAt < Date.now();
+    });
+    const vaccinationCoverage = requiredProtocolNames.size > 0 && eligibleDogs.length > 0 ? (vaccinatedDogIds.size / eligibleDogs.length) * 100 : null;
+
+    // Treatments are completed medical records and have no status in the backend
+    // schema. Scheduled surgery work is represented by veterinary appointments.
+    const surgeryAppointments = veterinaryAppointments.filter((appointment) => {
+      const appointmentType = String(appointment.appointment_type || "").toLowerCase();
+      const reason = String(appointment.reason || "").toLowerCase();
+      return appointmentType.includes("surg") || reason.includes("surg");
+    });
+    const pendingSurgeryRows = surgeryAppointments.filter((appointment) =>
+      ["requested", "confirmed"].includes(String(appointment.status || "").toLowerCase())
+    );
+    const surgeryStatusBreakdown = pendingSurgeryRows.reduce<Record<string, number>>((counts, record) => {
+      const status = String(record.status || "unknown").toLowerCase();
+      counts[status] = (counts[status] || 0) + 1;
+      return counts;
+    }, {});
+    const completedSurgeryRows = surgeryAppointments.filter((appointment) => String(appointment.status || "").toLowerCase() === "completed");
+
+    const followUpRows = veterinaryAppointments.filter((appointment) => {
+      const appointmentType = String(appointment.appointment_type || "").toLowerCase();
+      const reason = String(appointment.reason || "").toLowerCase();
+      return appointmentType.includes("follow") || reason.startsWith("follow-up:");
+    });
+    const dueFollowUps = followUpRows.filter((appointment) => {
+      const date = new Date(String(appointment.starts_at || "")).getTime();
+      return Number.isFinite(date) && date <= Date.now();
+    });
+    const completedFollowUps = dueFollowUps.filter((appointment) => String(appointment.status || "").toLowerCase() === "completed");
+    const overdueFollowUps = dueFollowUps.filter((appointment) => {
+      const status = String(appointment.status || "").toLowerCase();
+      const date = new Date(String(appointment.starts_at || "")).getTime();
+      return status !== "completed" && date < Date.now();
+    });
+    const pendingFollowUps = dueFollowUps.filter((appointment) => ["requested", "pending", "confirmed"].includes(String(appointment.status || "").toLowerCase()));
+    const followUpCompliance = dueFollowUps.length > 0 ? (completedFollowUps.length / dueFollowUps.length) * 100 : null;
+
+    const expenseSourceFailed = veterinarySourceErrors.some((error) =>
+      error.startsWith("medical expenses:") || error.startsWith("veterinary expenses:")
+    );
+    const paidVeterinaryExpenses = veterinaryExpenses.filter((expense) => String(expense.status || "").toLowerCase() === "paid");
+    const veterinaryExpenseIds = new Set<string>();
+    const totalVeterinaryExpenditure = expenseSourceFailed ? null : paidVeterinaryExpenses.reduce((total, expense) => {
+      const expenseId = String(expense.id || expense.expense_number || "");
+      if (expenseId && veterinaryExpenseIds.has(expenseId)) return total;
+      if (expenseId) veterinaryExpenseIds.add(expenseId);
+      return total + numericValue(expense.amount);
+    }, 0);
+    const expenseDogIds = new Set(
+      paidVeterinaryExpenses
+        .map((expense) => expense.dog_id || expense.pet_id || expense.animal_id)
+        .filter(Boolean)
+        .map(String)
+    );
+    const averageVeterinaryExpenditure = totalVeterinaryExpenditure !== null && expenseDogIds.size > 0
+      ? totalVeterinaryExpenditure / expenseDogIds.size
+      : null;
+
+    const medicalReportRows = [
+      ["Vaccination coverage rate", vaccinationCoverage === null ? "Not computable: no required vaccine protocols returned" : `${vaccinationCoverage.toFixed(1)}%`],
+      ["Vaccinated eligible dogs", vaccinatedDogIds.size],
+      ["Eligible shelter dogs", eligibleDogs.length],
+      ["Required vaccine protocols", requiredProtocolNames.size],
+      ["Overdue vaccination records", overdueVaccinations.length],
+      ["Pending surgery appointments", pendingSurgeryRows.length],
+      ["Follow-up compliance", followUpCompliance === null ? "No due follow-ups" : `${followUpCompliance.toFixed(1)}%`],
+      ["Completed due follow-ups", completedFollowUps.length],
+      ["Due follow-ups", dueFollowUps.length],
+      ["Overdue follow-ups", overdueFollowUps.length],
+      ["Pending follow-ups", pendingFollowUps.length],
+      ["Total paid veterinary expenditure", totalVeterinaryExpenditure === null ? "Data source error" : formatCurrency(totalVeterinaryExpenditure)],
+      ["Dogs with recorded veterinary costs", expenseDogIds.size > 0 ? expenseDogIds.size : "Not derivable: expense schema has no dog association"],
+      ["Average expenditure per dog", averageVeterinaryExpenditure === null ? "Not derivable: expense schema has no dog association" : formatCurrency(averageVeterinaryExpenditure)],
+    ];
+    const csvValue = (value: unknown): string => `"${String(value).replace(/"/g, '""')}"`;
+    const exportRows = medicalReportRows.map(([label, value]) => `${csvValue(label)},${csvValue(value)}`);
     const medicalStatCards = [
-      { title: "Active Clinical Patients", value: loading ? "..." : String(shelterDogs.length), trend: "Under Care", color: "#2563EB", icon: <FaStethoscope /> },
-      { title: "Vaccinations Administered", value: loading ? "..." : String(vaccineReminders.length), trend: "Vaccine Logs", color: "#10B981", icon: <FaSyringe /> },
-      { title: "Prescriptions Issued", value: loading ? "..." : String(prescriptionReminders.length), trend: "Active Medications", color: "#F59E0B", icon: <FaPills /> },
-      { title: "Medical Clearances", value: loading ? "..." : String(vaccineReminders.filter((v) => v.status === "completed").length), trend: "Clearance Granted", color: "#6366F1", icon: <FaCheckCircle /> },
+      { title: "Vaccination Coverage", value: loading ? "..." : vaccinationCoverage === null ? "Not computable" : `${vaccinationCoverage.toFixed(1)}%`, trend: `${vaccinatedDogIds.size} / ${eligibleDogs.length} eligible dogs`, color: "#10B981", icon: <FaSyringe /> },
+      { title: "Pending Surgeries", value: loading ? "..." : String(pendingSurgeryRows.length), trend: Object.entries(surgeryStatusBreakdown).map(([status, count]) => `${status}: ${count}`).join(" | ") || "No pending surgery appointments", color: "#DC2626", icon: <FaStethoscope /> },
+      { title: "Follow-up Compliance", value: loading ? "..." : followUpCompliance === null ? "No due follow-ups" : `${followUpCompliance.toFixed(1)}%`, trend: `${completedFollowUps.length} completed / ${dueFollowUps.length} due`, color: "#2563EB", icon: <FaCheckCircle /> },
+      { title: "Veterinary Expenditure / Dog", value: loading ? "..." : totalVeterinaryExpenditure === null ? "Data source error" : averageVeterinaryExpenditure === null ? "No dog-linked costs" : formatCurrency(averageVeterinaryExpenditure), trend: expenseSourceFailed ? "Expense source failed" : `${expenseDogIds.size} dogs with recorded costs`, color: "#64748B", icon: <FaCoins /> },
     ];
 
     return (
       <div style={{ width: "100%", boxSizing: "border-box" }}>
         <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
-          <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Clinical Medical Care &amp; Health Analytics</h1>
+          <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Veterinary Reports &amp; Analytics</h1>
           <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-            Veterinary summary of clinical examinations, surgical procedures, vaccination drives, prescription management, and health clearances.
+            Medical Care &amp; Immunization Compliance Report
           </p>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", marginBottom: "24px" }}>
           <QuickActionCard
             icon={<FaFileAlt />}
-            title="Export Vaccinations Report (CSV)"
-            subtitle="Vaccine administration log dataset"
+            title="Export Veterinary Report (CSV)"
+            subtitle="Metrics and supported clinical counts"
             color="#10B981"
-            onClick={() => {
-              const headers = "Reminder_ID,Dog_ID,Vaccine_Name,Due_Date,Status";
-              const rows = vaccineReminders.map((v) => `"${v.id || "-"}","${v.dog_id || "-"}","${v.vaccine_name || "Vaccine"}","${v.due_date || "-"}","${v.status || "scheduled"}"`);
-              handleExportCSV("vaccinations_report", headers, rows);
-            }}
+            onClick={() => handleExportCSV("veterinary_metrics_report", "Metric,Value", exportRows)}
           />
           <QuickActionCard
             icon={<FaFileDownload />}
-            title="Export Prescriptions Report (CSV)"
-            subtitle="Medication prescriptions dataset"
+            title="Export Veterinary Report (Excel)"
+            subtitle="Spreadsheet-compatible metrics"
             color="#2563EB"
-            onClick={() => {
-              const headers = "Rx_ID,Dog_ID,Medication,Dosage,Frequency,Status";
-              const rows = prescriptionReminders.map((r) => `"${r.id || "-"}","${r.dog_id || "-"}","${r.medication_name || "-"}","${r.dosage || "-"}","${r.frequency || "-"}","${r.status || "active"}"`);
-              handleExportCSV("prescriptions_report", headers, rows);
-            }}
+            onClick={() => handleExportExcel("veterinary_metrics_report", "Metric,Value", exportRows)}
           />
+          <QuickActionCard icon={<FaFileAlt />} title="Print Veterinary PDF" subtitle="Current clinical metrics" color="#7C3AED" onClick={() => handleExportPDF("Veterinary Reports & Analytics", "Authorized clinical metrics", ["Metric", "Value"], medicalReportRows)} />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "24px" }}>
@@ -2305,40 +3068,71 @@ const Reports = () => {
           ))}
         </div>
 
-        <div className="soft-card" style={{ padding: "20px" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
-            Patient Veterinary Health Directory ({shelterDogs.length})
-          </h3>
-          {shelterDogs.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "30px 20px", color: "#64748B", fontSize: "14px" }}>No clinical patient records currently logged.</div>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-                <thead>
-                  <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
-                    <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>PATIENT NAME</th>
-                    <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>BREED / TYPE</th>
-                    <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>AGE &amp; GENDER</th>
-                    <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>HEALTH STATUS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {shelterDogs.slice(0, 10).map((d, idx) => (
-                    <tr key={d.id || idx} style={{ borderBottom: "1px solid #F1F5F9" }}>
-                      <td style={{ padding: "10px", fontWeight: 700, color: "#0F172A" }}>{d.name || "Patient Dog"}</td>
-                      <td style={{ padding: "10px", fontSize: "13px" }}>{d.breed || "Indie"}</td>
-                      <td style={{ padding: "10px", fontSize: "13px", color: "#475569" }}>{d.age || "-"} • {d.gender || "-"}</td>
-                      <td style={{ padding: "10px" }}>
-                        <span style={{ padding: "3px 10px", borderRadius: "999px", fontSize: "11px", fontWeight: 800, background: "#EFF6FF", color: "#1D4ED8" }}>
-                          {String(d.status || "healthy").toUpperCase()}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {veterinarySourceErrors.length > 0 && (
+          <div className="soft-card" style={{ padding: "16px 20px", marginBottom: "16px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#991B1B" }}>
+            <strong>Veterinary report source errors</strong>
+            <ul style={{ margin: "8px 0 0", paddingLeft: "20px" }}>
+              {veterinarySourceErrors.map((message) => <li key={message}>{message}</li>)}
+            </ul>
+          </div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "16px", marginBottom: "16px" }}>
+          <div className="soft-card" style={{ padding: "20px" }}>
+            <h3 style={{ margin: "0 0 12px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>Vaccination Coverage</h3>
+            <p style={{ margin: "0 0 12px", color: "#475569", fontSize: "13px" }}>
+              Required protocols: {requiredProtocolNames.size}. Current records are matched by `vaccine_name`, `administered_at`, and `next_due_at`.
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", fontSize: "13px" }}>
+              <strong>{veterinaryVaccinations.length === 0 ? "No records available" : vaccinatedDogIds.size}<br /><span style={{ color: "#64748B", fontWeight: 500 }}>vaccinated</span></strong>
+              <strong>{eligibleDogs.length}<br /><span style={{ color: "#64748B", fontWeight: 500 }}>eligible shelter dogs</span></strong>
+              <strong>{veterinaryVaccinations.length === 0 ? "No records available" : overdueVaccinations.length}<br /><span style={{ color: "#64748B", fontWeight: 500 }}>overdue records</span></strong>
             </div>
-          )}
+          </div>
+
+          <div className="soft-card" style={{ padding: "20px" }}>
+            <h3 style={{ margin: "0 0 12px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>Pending Surgeries</h3>
+            <p style={{ margin: "0 0 12px", color: "#475569", fontSize: "13px" }}>
+              {surgeryAppointments.length} surgery appointment records returned ({completedSurgeryRows.length} completed). Pending work uses the authoritative appointment `status`; treatment records are completed clinical records and are not counted as pending.
+            </p>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              {Object.entries(surgeryStatusBreakdown).map(([status, count]) => <span key={status} style={{ padding: "5px 8px", background: "#FEF2F2", color: "#991B1B", borderRadius: "6px", fontSize: "12px" }}>{status}: {count}</span>)}
+              {pendingSurgeryRows.length === 0 && <span style={{ color: "#64748B", fontSize: "13px" }}>{surgeryAppointments.length === 0 ? "No surgery records available" : "No pending surgeries"}</span>}
+            </div>
+          </div>
+
+          <div className="soft-card" style={{ padding: "20px" }}>
+            <h3 style={{ margin: "0 0 12px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>Follow-up Compliance</h3>
+            <p style={{ margin: "0 0 12px", color: "#475569", fontSize: "13px" }}>{followUpRows.length} appointments identified from `appointment_type` or the follow-up reason. Due records use `starts_at` only.</p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", fontSize: "13px" }}>
+              <strong>{followUpRows.length === 0 ? "No records available" : completedFollowUps.length}<br /><span style={{ color: "#64748B", fontWeight: 500 }}>completed</span></strong>
+              <strong>{followUpRows.length === 0 ? "No records available" : dueFollowUps.length}<br /><span style={{ color: "#64748B", fontWeight: 500 }}>due</span></strong>
+              <strong>{followUpRows.length === 0 ? "No records available" : overdueFollowUps.length}<br /><span style={{ color: "#64748B", fontWeight: 500 }}>overdue</span></strong>
+            </div>
+          </div>
+
+          <div className="soft-card" style={{ padding: "20px" }}>
+            <h3 style={{ margin: "0 0 12px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>Veterinary Expenditure</h3>
+            <p style={{ margin: "0 0 12px", color: "#475569", fontSize: "13px" }}>Paid records from `/finance/expenses` filtered to categories `medical` and `veterinary`.</p>
+            <strong style={{ fontSize: "22px", color: "#0F172A" }}>{totalVeterinaryExpenditure === null ? "Data source error" : totalVeterinaryExpenditure === 0 && paidVeterinaryExpenses.length === 0 ? "No expense records available" : formatCurrency(totalVeterinaryExpenditure)}</strong>
+            <p style={{ margin: "8px 0 0", color: "#991B1B", fontSize: "12px" }}>
+              {expenseSourceFailed ? "The authoritative expense request failed; no replacement value is displayed." : "Dogs with costs require an authoritative dog association in the expense response."}
+            </p>
+          </div>
+        </div>
+
+        <div className="soft-card" style={{ padding: "20px" }}>
+          <h3 style={{ margin: "0 0 16px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>Auditable Veterinary Records</h3>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+              <thead><tr style={{ background: "#F8FAFC" }}><th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>SOURCE</th><th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>RECORD</th><th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>STATUS / VALUE</th><th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>CLINICAL DATE</th></tr></thead>
+              <tbody>
+                {[...pendingSurgeryRows.map((record) => ({ source: "Surgery appointment", record: record.id, status: record.status, date: record.starts_at })), ...dueFollowUps.map((record) => ({ source: "Follow-up", record: record.reason, status: record.status, date: record.starts_at })), ...paidVeterinaryExpenses.map((record) => ({ source: `Expense (${record.category})`, record: record.expense_number || record.id, status: formatCurrency(record.amount), date: record.expense_date }))].slice(0, 100).map((row, index) => (
+                  <tr key={`${row.source}-${row.record}-${index}`} style={{ borderTop: "1px solid #E2E8F0" }}><td style={{ padding: "10px", fontSize: "13px" }}>{row.source}</td><td style={{ padding: "10px", fontSize: "13px", fontWeight: 600 }}>{String(row.record || "-")}</td><td style={{ padding: "10px", fontSize: "13px" }}>{String(row.status || "-")}</td><td style={{ padding: "10px", fontSize: "13px", color: "#64748B" }}>{String(row.date || "-")}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     );
@@ -2425,85 +3219,8 @@ const Reports = () => {
     );
   };
 
-  // INVENTORY OPERATIONS REPORT VIEW
-  const renderInventoryReports = () => {
-    const lowStockItems = inventoryItems.filter((i) => i.status === "Low Stock" || Number(i.quantity) <= Number(i.reorder_threshold));
-    const totalInventoryValue = inventoryItems.reduce((acc, i) => acc + Number(i.quantity || 0) * Number(i.unit_cost || 0), 0);
+  // ----------------------- MAIN ROLE-BASED CONDITIONAL RENDER -----------------------
 
-    const inventoryStatCards = [
-      { title: "Total Inventory Items", value: loading ? "..." : String(inventoryItems.length), trend: "Catalog SKUs", color: "#2563EB", icon: <FaBoxes /> },
-      { title: "Low Stock Alerts", value: loading ? "..." : String(lowStockItems.length), trend: "Reorder Required", color: "#DC2626", icon: <FaExclamationTriangle /> },
-      { title: "In Stock Items", value: loading ? "..." : String(inventoryItems.length - lowStockItems.length), trend: "Adequate Stock", color: "#10B981", icon: <FaCheckCircle /> },
-      { title: "Total Inventory Valuation", value: loading ? "..." : formatCurrency(totalInventoryValue), trend: "Asset Reserve Value", color: "#6366F1", icon: <FaCoins /> },
-    ];
-
-    return (
-      <div style={{ width: "100%", boxSizing: "border-box" }}>
-        <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
-          <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Inventory &amp; Stock Operations Analytics</h1>
-          <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-            Operational reports on pharmaceuticals, food supplies, gear stock levels, low-stock thresholds, and inventory asset valuation.
-          </p>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", marginBottom: "24px" }}>
-          <QuickActionCard
-            icon={<FaFileAlt />}
-            title="Export Stock Catalog (CSV)"
-            subtitle="Full inventory stock items raw dataset"
-            color="#2563EB"
-            onClick={() => {
-              const headers = "SKU_ID,Item_Name,Category,Quantity,Unit,Status,Unit_Cost";
-              const rows = inventoryItems.map((i) => `"${i.id || "-"}","${i.itemName || "Item"}","${i.category || "-"}","${i.quantity || 0}","${i.unit || "units"}","${i.status || "In Stock"}","${i.unit_cost || 0}"`);
-              handleExportCSV("inventory_catalog_report", headers, rows);
-            }}
-          />
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-          {inventoryStatCards.map((card) => (
-            <StatCard key={card.title} {...card} />
-          ))}
-        </div>
-
-        <div className="soft-card" style={{ padding: "20px" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
-            Inventory Catalog &amp; Stock Status Roster ({inventoryItems.length})
-          </h3>
-          {inventoryItems.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "30px 20px", color: "#64748B", fontSize: "14px" }}>No inventory items currently logged.</div>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-                <thead>
-                  <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
-                    <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>ITEM NAME</th>
-                    <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>CATEGORY</th>
-                    <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>QUANTITY / UNIT</th>
-                    <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>STATUS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {inventoryItems.slice(0, 10).map((i, idx) => (
-                    <tr key={i.id || idx} style={{ borderBottom: "1px solid #F1F5F9" }}>
-                      <td style={{ padding: "10px", fontWeight: 700, color: "#0F172A" }}>{i.itemName || "Item"}</td>
-                      <td style={{ padding: "10px", fontSize: "13px" }}>{i.category || "Consumable"}</td>
-                      <td style={{ padding: "10px", fontSize: "13px", fontWeight: 600 }}>{i.quantity} {i.unit}</td>
-                      <td style={{ padding: "10px" }}>
-                        <span style={{ padding: "3px 10px", borderRadius: "999px", fontSize: "11px", fontWeight: 800, background: i.status === "Low Stock" ? "#FEE2E2" : "#D1FAE5", color: i.status === "Low Stock" ? "#991B1B" : "#065F46" }}>
-                          {String(i.status || "IN STOCK").toUpperCase()}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
 
   // ----------------------- MAIN ROLE-BASED CONDITIONAL RENDER -----------------------
 
@@ -2615,7 +3332,7 @@ const Reports = () => {
 
   // VETERINARIAN
   if (isVeterinarian) {
-    return renderMedicalReports();
+    return renderGeneratedVeterinaryReport();
   }
 
   // ADOPTION COORDINATOR
@@ -2625,7 +3342,7 @@ const Reports = () => {
 
   // INVENTORY MANAGER
   if (isInventoryManager) {
-    return renderInventoryReports();
+    return renderGeneratedInventoryReport();
   }
 
   // SHELTER MANAGER

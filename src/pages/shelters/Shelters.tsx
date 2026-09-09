@@ -291,73 +291,17 @@ export const Shelters = () => {
     }
   };
 
-  // Fetch All Facilities for dropdowns & aggregate KPI calculations
-  const fetchAllShelters = async () => {
-    try {
-      if (currentRole === "shelter_manager" && !userShelterId) {
-        setAllShelters([]);
-        return;
-      }
-
-      const queryParams: Record<string, any> = { page: 1, page_size: 100, facility_type: "shelter" };
-      if (currentRole === "shelter_manager" && userShelterId) {
-        queryParams.shelter_id = userShelterId;
-        queryParams.facility_id = userShelterId;
-      }
-
-      const response = await shelterService.getShelters(queryParams);
-      let facs = unwrapList(response);
-
-      // Enforce shelter-only filtering
-      facs = facs.filter((f: any) => {
-        const ft = String(f.facility_type || "shelter").toLowerCase();
-        return ft === "shelter";
-      });
-
-      if (currentRole === "shelter_manager" && userShelterId) {
-        facs = facs.filter((f: any) => {
-          const fShelterId = String(f.id || f.shelter_id || f.facility_id || "").toLowerCase();
-          return fShelterId === String(userShelterId).toLowerCase();
-        });
-      }
-      setAllShelters(facs);
-    } catch {
-      setAllShelters([]);
-    }
-  };
-
-  // Fetch all Kennels across facilities for Kennels Tab with robust parallel handling
-  const fetchAllKennelsWorkspace = async () => {
+  // Fetch kennels and sections for a list of facilities
+  const fetchKennelsForFacilities = async (facList: any[]) => {
     setKennelsLoading(true);
     try {
-      if (currentRole === "shelter_manager" && !userShelterId) {
+      if (!facList || facList.length === 0) {
         setAllSections([]);
         setAllKennels([]);
-        setKennelsLoading(false);
         return;
       }
 
-      const queryParams: Record<string, any> = { page: 1, page_size: 100, facility_type: "shelter" };
-      if (currentRole === "shelter_manager" && userShelterId) {
-        queryParams.shelter_id = userShelterId;
-        queryParams.facility_id = userShelterId;
-      }
-      const facsRes = await shelterService.getShelters(queryParams);
-      let facList = unwrapList(facsRes);
-
-      facList = facList.filter((f: any) => {
-        const ft = String(f.facility_type || "shelter").toLowerCase();
-        return ft === "shelter";
-      });
-
-      if (currentRole === "shelter_manager" && userShelterId) {
-        facList = facList.filter((f: any) => {
-          const fShelterId = String(f.id || f.shelter_id || f.facility_id || "").toLowerCase();
-          return fShelterId === String(userShelterId).toLowerCase();
-        });
-      }
-
-      // Fetch sections for all facilities in parallel using Promise.allSettled
+      // 1. Fetch sections for all facilities in parallel
       const sectionResults = await Promise.allSettled(
         facList.map(async (fac: any) => {
           const secRes = await shelterService.getFacilitySections(fac.id);
@@ -377,7 +321,7 @@ export const Shelters = () => {
         }
       });
 
-      // Fetch kennels for all sections in parallel using Promise.allSettled
+      // 2. Fetch kennels for all sections in parallel
       const kennelResults = await Promise.allSettled(
         fetchedSections.map(async (sec: any) => {
           const kRes = await shelterService.getSectionKennels(sec.id);
@@ -401,11 +345,98 @@ export const Shelters = () => {
 
       setAllSections(fetchedSections);
       setAllKennels(fetchedKennels);
-    } catch {
-      setAllSections([]);
-      setAllKennels([]);
+    } catch (err) {
+      console.error("[Shelters] Error loading kennels/sections:", err);
     } finally {
       setKennelsLoading(false);
+    }
+  };
+
+  // Fetch All Facilities for dropdowns & aggregate KPI calculations (with pagination aggregation)
+  const fetchAllShelters = async () => {
+    try {
+      if (currentRole === "shelter_manager" && !userShelterId) {
+        setAllShelters([]);
+        setAllSections([]);
+        setAllKennels([]);
+        return;
+      }
+
+      const queryParams: Record<string, any> = { page: 1, page_size: 50, facility_type: "shelter" };
+      if (currentRole === "shelter_manager" && userShelterId) {
+        queryParams.shelter_id = userShelterId;
+        queryParams.facility_id = userShelterId;
+      }
+
+      const page1Res = await shelterService.getShelters(queryParams);
+      let facs = unwrapList(page1Res);
+
+      const total = page1Res?.meta?.total ?? page1Res?.data?.meta?.total;
+      const totalPages = page1Res?.meta?.total_pages ?? page1Res?.data?.meta?.total_pages ?? (total ? Math.ceil(total / 50) : 1);
+
+      if (totalPages > 1) {
+        const remainingPagePromises = [];
+        for (let p = 2; p <= Math.min(totalPages, 10); p++) {
+          remainingPagePromises.push(
+            shelterService.getShelters({ ...queryParams, page: p }).catch(() => null)
+          );
+        }
+        const remainingResults = await Promise.all(remainingPagePromises);
+        for (const res of remainingResults) {
+          if (res) {
+            const pageItems = unwrapList(res);
+            facs.push(...pageItems);
+          }
+        }
+      }
+
+      // Enforce shelter-only filtering & deduplication
+      const seenIds = new Set<string>();
+      facs = facs.filter((f: any) => {
+        const id = f.id || f.facility_id || f.shelter_id;
+        if (id) {
+          if (seenIds.has(String(id))) return false;
+          seenIds.add(String(id));
+        }
+        const ft = String(f.facility_type || "shelter").toLowerCase();
+        return ft === "shelter";
+      });
+
+      if (currentRole === "shelter_manager" && userShelterId) {
+        facs = facs.filter((f: any) => {
+          const fShelterId = String(f.id || f.shelter_id || f.facility_id || "").toLowerCase();
+          return fShelterId === String(userShelterId).toLowerCase();
+        });
+      }
+
+      setAllShelters(facs);
+      await fetchKennelsForFacilities(facs);
+    } catch (err: any) {
+      console.error("[Shelters] Failed to fetch all shelter facilities:", err);
+      const status = err?.response?.status;
+      const dataDetail = err?.response?.data?.detail || err?.response?.data?.message;
+      let detailStr = "";
+      if (typeof dataDetail === "string") {
+        detailStr = dataDetail;
+      } else if (Array.isArray(dataDetail)) {
+        detailStr = dataDetail.map((d: any) => d?.msg || d?.message || JSON.stringify(d)).join(", ");
+      } else if (dataDetail && typeof dataDetail === "object") {
+        detailStr = JSON.stringify(dataDetail);
+      } else if (err?.message) {
+        detailStr = err.message;
+      } else {
+        detailStr = "Failed to load shelter facilities from backend API.";
+      }
+      setError((prev) => prev || (status ? `[HTTP ${status}] ${detailStr}` : detailStr));
+    }
+  };
+
+  // Fetch all Kennels across facilities for Kennels Tab
+  const fetchAllKennelsWorkspace = async () => {
+    if (allShelters.length > 0) {
+      await fetchKennelsForFacilities(allShelters);
+    } else {
+      await fetchAllShelters();
     }
   };
 
@@ -418,7 +449,7 @@ export const Shelters = () => {
   }, []);
 
   useEffect(() => {
-    if (activeTab === "kennels") {
+    if (activeTab === "kennels" && allKennels.length === 0) {
       fetchAllKennelsWorkspace();
     }
   }, [activeTab]);
@@ -578,7 +609,7 @@ export const Shelters = () => {
   // Aggregate Calculation for Summary KPIs from REAL Scoped Backend Data
   const computedStats = useMemo(() => {
     // 1. Total Facilities (scoped to shelters available in this view)
-    const totalShelters = allShelters.length;
+    const totalShelters = allShelters.length > 0 ? allShelters.length : totalCount;
 
     // 2. Active Facilities
     const activeShelters = allShelters.filter((s) => (s.status || "active").toLowerCase() === "active").length;
@@ -590,11 +621,17 @@ export const Shelters = () => {
 
     // 4. Capacity Calculations
     const declaredCapacity = allShelters.reduce((acc, s) => acc + (Number(s.total_capacity || s.capacity) || 0), 0);
+    const sectionCapacitySum = allSections.reduce((acc, s) => acc + (Number(s.capacity) || 0), 0);
     const kennelCapacitySum = allKennels.reduce((acc, k) => acc + (Number(k.capacity) || 1), 0);
 
-    const totalCapacity = declaredCapacity > 0 ? declaredCapacity : (kennelCapacitySum > 0 ? kennelCapacitySum : totalKennelsCount);
+    const totalCapacity = declaredCapacity > 0
+      ? declaredCapacity
+      : (sectionCapacitySum > 0 ? sectionCapacitySum : (kennelCapacitySum > 0 ? kennelCapacitySum : totalKennelsCount));
+
     const occupiedCount = occupiedKennelsCount;
-    const availableCount = totalCapacity > 0 ? Math.max(0, totalCapacity - occupiedCount) : availableKennelsCount;
+    const availableCount = totalCapacity > 0
+      ? Math.max(0, totalCapacity - occupiedCount)
+      : availableKennelsCount;
 
     // 5. Occupancy Rate (%) - Calculated strictly from matching scope dataset
     const effectiveCapacity = totalCapacity || totalKennelsCount;
@@ -610,7 +647,7 @@ export const Shelters = () => {
       availableCount,
       occupancyPct,
     };
-  }, [allShelters, allKennels]);
+  }, [allShelters, allKennels, allSections, totalCount]);
 
   // Filtered Kennels list for Kennels tab
   const filteredKennels = useMemo(() => {
