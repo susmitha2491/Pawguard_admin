@@ -28,17 +28,59 @@ export interface ReportOptions {
   filters?: Record<string, unknown>;
 }
 
+export interface ReportFileResponse {
+  report_type: string;
+  format: string;
+  filename: string;
+  content_type: string;
+  size_bytes?: number;
+  download_url: string;
+}
+
 export const reportsService = {
-  // POST /reports/generate - backend-authoritative medical analytics payload
+  // POST /reports/generate - backend-authoritative medical analytics payload (JSON report only)
   generateMedicalReport: async (): Promise<Record<string, unknown>> => {
     const response = await api.post("/reports/generate", { report_type: "medical" });
+    const payload = (response.data?.data ?? response.data) as Record<string, unknown>;
+    if (
+      payload &&
+      (payload.download_url || payload.format === "pdf" || payload.content_type === "application/pdf") &&
+      !payload.report &&
+      !payload.sections
+    ) {
+      throw new Error("Backend returned a PDF export metadata response instead of the medical analytics report.");
+    }
+    return payload;
+  },
+
+  // GET /reports/inventory/analytics - backend-authoritative inventory analytics JSON payload
+  getInventoryAnalytics: async (): Promise<Record<string, unknown>> => {
+    const response = await api.get("/reports/inventory/analytics");
     return (response.data?.data ?? response.data) as Record<string, unknown>;
   },
 
-  // POST /reports/generate - backend-authoritative inventory audit payload
+  // Alias for backward compatibility if needed
   generateInventoryReport: async (): Promise<Record<string, unknown>> => {
-    const response = await api.post("/reports/generate", { report_type: "inventory" });
-    return (response.data?.data ?? response.data) as Record<string, unknown>;
+    return reportsService.getInventoryAnalytics();
+  },
+
+  // Dedicated PDF/Export generator functions (never overwrite analytics report state)
+  generateInventoryPdf: async (filters?: Record<string, unknown>): Promise<ReportFileResponse> => {
+    const response = await api.post("/reports/generate", {
+      report_type: "inventory",
+      format: "pdf",
+      filters,
+    });
+    return (response.data?.data ?? response.data) as ReportFileResponse;
+  },
+
+  generateMedicalPdf: async (filters?: Record<string, unknown>): Promise<ReportFileResponse> => {
+    const response = await api.post("/reports/generate", {
+      report_type: "medical",
+      format: "pdf",
+      filters,
+    });
+    return (response.data?.data ?? response.data) as ReportFileResponse;
   },
 
   // GET /reports/types - list of available report type slugs

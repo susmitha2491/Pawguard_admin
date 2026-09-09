@@ -89,18 +89,218 @@ const getAnimalDisplay = (c: any): string => {
 const normalizeReportKey = (value: unknown): string =>
   String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
-const findReportSection = (report: Record<string, unknown>, title: string): Record<string, unknown> => {
-  const wanted = normalizeReportKey(title);
-  const entry = Object.entries(report).find(([key]) => normalizeReportKey(key) === wanted);
-  return entry?.[1] && typeof entry[1] === "object" && !Array.isArray(entry[1])
-    ? entry[1] as Record<string, unknown>
+const resolveReportSections = (raw: unknown): Record<string, unknown> => {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  let current: any = raw;
+
+  // Traverse down wrapper envelopes (e.g. { data: ... }, { report: ... }, { report_data: ... })
+  for (let i = 0; i < 6; i++) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) break;
+    if (
+      current.data &&
+      typeof current.data === "object" &&
+      !Array.isArray(current.data) &&
+      (current.data.sections || current.data.report || Object.keys(current.data).length > 0)
+    ) {
+      // If current.data itself contains report sections or wrappers, delve into it
+      if (current.data.sections || current.data.report || current.data["Inventory Health & Loss Audit"] || current.data["Medical Care & Immunization Compliance Summary"]) {
+        current = current.data;
+        continue;
+      }
+    }
+    if (current.report && typeof current.report === "object" && !Array.isArray(current.report)) {
+      current = current.report;
+      continue;
+    }
+    if (current.report_data && typeof current.report_data === "object" && !Array.isArray(current.report_data)) {
+      current = current.report_data;
+      continue;
+    }
+    if (current.sections && typeof current.sections === "object" && !Array.isArray(current.sections)) {
+      current = current.sections;
+      continue;
+    }
+    break;
+  }
+
+  if (current.sections && typeof current.sections === "object" && !Array.isArray(current.sections)) {
+    return current.sections as Record<string, unknown>;
+  }
+
+  return current && typeof current === "object" && !Array.isArray(current)
+    ? (current as Record<string, unknown>)
     : {};
 };
 
-const readReportMetric = (section: Record<string, unknown>, label: string): unknown => {
-  const wanted = normalizeReportKey(label);
-  const entry = Object.entries(section).find(([key]) => normalizeReportKey(key) === wanted);
-  return entry?.[1];
+const findReportSection = (report: Record<string, unknown>, ...titles: string[]): Record<string, unknown> => {
+  if (!report || typeof report !== "object") return {};
+
+  const candidates: Record<string, unknown>[] = [report];
+  if (report.sections && typeof report.sections === "object" && !Array.isArray(report.sections)) {
+    candidates.push(report.sections as Record<string, unknown>);
+  }
+  if (report.report && typeof report.report === "object" && !Array.isArray(report.report)) {
+    candidates.push(report.report as Record<string, unknown>);
+    const r = report.report as Record<string, unknown>;
+    if (r.sections && typeof r.sections === "object" && !Array.isArray(r.sections)) {
+      candidates.push(r.sections as Record<string, unknown>);
+    }
+  }
+  if (report.data && typeof report.data === "object" && !Array.isArray(report.data)) {
+    candidates.push(report.data as Record<string, unknown>);
+    const d = report.data as Record<string, unknown>;
+    if (d.sections && typeof d.sections === "object" && !Array.isArray(d.sections)) {
+      candidates.push(d.sections as Record<string, unknown>);
+    }
+    if (d.report && typeof d.report === "object" && !Array.isArray(d.report)) {
+      candidates.push(d.report as Record<string, unknown>);
+    }
+  }
+
+  for (const title of titles) {
+    const wanted = normalizeReportKey(title);
+    for (const cand of candidates) {
+      for (const [key, value] of Object.entries(cand)) {
+        if (normalizeReportKey(key) === wanted) {
+          if (value && typeof value === "object" && !Array.isArray(value)) {
+            return value as Record<string, unknown>;
+          }
+        }
+      }
+    }
+  }
+
+  // Substring / fuzzy match
+  for (const title of titles) {
+    const wanted = normalizeReportKey(title);
+    if (wanted.length >= 6) {
+      for (const cand of candidates) {
+        for (const [key, value] of Object.entries(cand)) {
+          const normKey = normalizeReportKey(key);
+          if ((normKey.includes(wanted) || wanted.includes(normKey)) && normKey.length >= 6) {
+            if (value && typeof value === "object" && !Array.isArray(value)) {
+              return value as Record<string, unknown>;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return {};
+};
+
+const resolveReportRows = (raw: unknown): any[] => {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    for (const key of [
+      "items",
+      "records",
+      "data",
+      "list",
+      "rows",
+      "products",
+      "orders",
+      "requisitions",
+      "movements",
+      "expired_items",
+      "purchase_orders",
+      "surgeries",
+      "appointments",
+    ]) {
+      if (Array.isArray(obj[key])) return obj[key] as any[];
+    }
+    const values = Object.values(obj);
+    if (values.length > 0 && values.every((v) => v && typeof v === "object" && !Array.isArray(v))) {
+      return values as any[];
+    }
+    if (obj.item_id || obj.id || obj.name || obj.item_name) {
+      return [obj];
+    }
+  }
+  return [];
+};
+
+const findReportTableSection = (report: Record<string, unknown>, ...titles: string[]): any[] => {
+  if (!report || typeof report !== "object") return [];
+
+  const candidates: Record<string, unknown>[] = [report];
+  if (report.sections && typeof report.sections === "object" && !Array.isArray(report.sections)) {
+    candidates.push(report.sections as Record<string, unknown>);
+  }
+  if (report.report && typeof report.report === "object" && !Array.isArray(report.report)) {
+    candidates.push(report.report as Record<string, unknown>);
+    const r = report.report as Record<string, unknown>;
+    if (r.sections && typeof r.sections === "object" && !Array.isArray(r.sections)) {
+      candidates.push(r.sections as Record<string, unknown>);
+    }
+  }
+  if (report.data && typeof report.data === "object" && !Array.isArray(report.data)) {
+    candidates.push(report.data as Record<string, unknown>);
+    const d = report.data as Record<string, unknown>;
+    if (d.sections && typeof d.sections === "object" && !Array.isArray(d.sections)) {
+      candidates.push(d.sections as Record<string, unknown>);
+    }
+    if (d.report && typeof d.report === "object" && !Array.isArray(d.report)) {
+      candidates.push(d.report as Record<string, unknown>);
+    }
+  }
+
+  for (const title of titles) {
+    const wanted = normalizeReportKey(title);
+    for (const cand of candidates) {
+      for (const [key, value] of Object.entries(cand)) {
+        if (normalizeReportKey(key) === wanted) {
+          const rows = resolveReportRows(value);
+          if (rows.length > 0 || Array.isArray(value)) return rows;
+        }
+      }
+    }
+  }
+
+  // Substring match
+  for (const title of titles) {
+    const wanted = normalizeReportKey(title);
+    if (wanted.length >= 6) {
+      for (const cand of candidates) {
+        for (const [key, value] of Object.entries(cand)) {
+          const normKey = normalizeReportKey(key);
+          if ((normKey.includes(wanted) || wanted.includes(normKey)) && normKey.length >= 6) {
+            const rows = resolveReportRows(value);
+            if (rows.length > 0 || Array.isArray(value)) return rows;
+          }
+        }
+      }
+    }
+  }
+
+  return [];
+};
+
+const readReportMetric = (section: Record<string, unknown>, ...labels: string[]): unknown => {
+  if (!section || typeof section !== "object") return undefined;
+  for (const label of labels) {
+    const wanted = normalizeReportKey(label);
+    for (const [key, val] of Object.entries(section)) {
+      if (normalizeReportKey(key) === wanted && val !== undefined && val !== null && val !== "") {
+        return val;
+      }
+    }
+  }
+  // Substring match
+  for (const label of labels) {
+    const wanted = normalizeReportKey(label);
+    if (wanted.length >= 4) {
+      for (const [key, val] of Object.entries(section)) {
+        const normKey = normalizeReportKey(key);
+        if ((normKey.includes(wanted) || wanted.includes(normKey)) && val !== undefined && val !== null && val !== "") {
+          return val;
+        }
+      }
+    }
+  }
+  return undefined;
 };
 
 const reportMetricText = (value: unknown, formatter?: (value: unknown) => string): string => {
@@ -530,9 +730,9 @@ const Reports = () => {
       if (isInventoryManager) {
         try {
           setInventoryReportError(null);
-          setInventoryReport(await reportsService.generateInventoryReport());
+          setInventoryReport(await reportsService.getInventoryAnalytics());
         } catch (e: any) {
-          const message = e?.response?.data?.detail || e?.response?.data?.message || e?.message || "Failed to generate the inventory report.";
+          const message = e?.response?.data?.detail || e?.response?.data?.message || e?.message || "Failed to load inventory analytics.";
           setInventoryReport(null);
           setInventoryReportError(String(message));
           console.error("Error loading inventory reports data:", e);
@@ -1271,36 +1471,14 @@ const Reports = () => {
 
   const renderGeneratedVeterinaryReport = () => {
     // ── Section resolution ─────────────────────────────────────────────────
-    // medicalReport may be:
-    //   { sections: { "Medical Care & Immunization...": {...}, ... } }
-    //   or flat   { "Medical Care & Immunization...": {...}, ... }
-    const generated = medicalReport || {};
-    const sections: Record<string, unknown> =
-      generated.sections && typeof generated.sections === "object"
-        ? (generated.sections as Record<string, unknown>)
-        : generated;
+    const rawReport = medicalReport || {};
 
-    const summary = findReportSection(sections, "Medical Care & Immunization Compliance Summary");
-    const expenditure = findReportSection(sections, "Veterinary Expenditure Analysis");
-    const surgerySection = findReportSection(sections, "Pending Surgery Backlog");
+    const summary = findReportSection(rawReport, "Medical Care & Immunization Compliance Summary", "Medical Care & Immunization Summary", "Immunization Compliance Summary");
+    const expenditure = findReportSection(rawReport, "Veterinary Expenditure Analysis", "Veterinary Expenditure", "Expenditure Analysis");
+    const surgerySection = findReportSection(rawReport, "Pending Surgery Backlog", "Surgery Backlog", "Pending Surgeries");
 
-    // Resolve surgery rows — the section may be an object with a list key, or directly an array
-    const surgeryRows: any[] = (() => {
-      const raw = (() => {
-        const s = sections;
-        const wanted = normalizeReportKey("Pending Surgery Backlog");
-        const entry = Object.entries(s).find(([k]) => normalizeReportKey(k) === wanted);
-        return entry?.[1];
-      })();
-      if (Array.isArray(raw)) return raw;
-      if (raw && typeof raw === "object") {
-        const obj = raw as Record<string, unknown>;
-        for (const key of ["records", "items", "data", "surgeries", "list"]) {
-          if (Array.isArray(obj[key])) return obj[key] as any[];
-        }
-      }
-      return [];
-    })();
+    // Resolve surgery rows — using findReportTableSection
+    const surgeryRows: any[] = findReportTableSection(rawReport, "Pending Surgery Backlog", "Surgery Backlog", "Pending Surgeries", "Surgeries");
 
     // ── Stat card values (strictly from backend — no frontend calculation) ─
     const vaccinationCoverageValue = readReportMetric(summary, "Vaccination Coverage Rate %");
@@ -1563,80 +1741,107 @@ const Reports = () => {
 
   // INVENTORY MANAGER — BACKEND-GENERATED INVENTORY CONSUMPTION & EXPIRY AUDIT
   const renderGeneratedInventoryReport = () => {
-    // ── Section resolution ─────────────────────────────────────────────────
-    // inventoryReport may be:
-    //   { sections: { "Inventory Health & Loss Audit": {...}, ... } }
-    //   or flat { "Inventory Health & Loss Audit": {...}, ... }
-    const generated = inventoryReport || {};
-    const sections: Record<string, unknown> =
-      generated.sections && typeof generated.sections === "object"
-        ? (generated.sections as Record<string, unknown>)
-        : generated;
+    // ── Section resolution directly against backend contract ────────────────
+    const rawReport = inventoryReport || {};
+    const reportData = (rawReport.report ?? (rawReport as any).data?.report ?? (rawReport as any).data ?? rawReport) as Record<string, any>;
+    const sections = (reportData.sections ?? (rawReport as any).sections ?? resolveReportSections(rawReport)) as Record<string, any>;
 
-    const healthSection = findReportSection(sections, "Inventory Health & Loss Audit");
+    const healthSection: Record<string, any> =
+      sections.inventory_health_and_loss_audit ??
+      findReportSection(rawReport, "inventory_health_and_loss_audit", "Inventory Health & Loss Audit", "Inventory Health", "Loss Audit");
 
-    // Resolve rows from a backend section that may be an array or an object with a list key
-    const resolveRows = (raw: unknown): any[] => {
-      if (Array.isArray(raw)) return raw;
-      if (raw && typeof raw === "object") {
-        const obj = raw as Record<string, unknown>;
-        for (const key of ["items", "records", "data", "list", "rows", "products"]) {
-          if (Array.isArray(obj[key])) return obj[key] as any[];
-        }
-        // If it's a non-empty object with no array key, wrap in array
-        if (Object.keys(obj).length > 0) return [obj];
-      }
-      return [];
-    };
+    const upcomingPOSection: Record<string, any> =
+      sections.upcoming_purchase_order_requirements ??
+      findReportSection(rawReport, "upcoming_purchase_order_requirements", "Upcoming Purchase Order Requirements (Items Below Reorder Threshold)", "Upcoming Purchase Order Requirements");
 
-    const purchaseRows = (() => {
-      const wanted = normalizeReportKey("Upcoming Purchase Order Requirements (Items Below Reorder Threshold)");
-      const entry = Object.entries(sections).find(([k]) => normalizeReportKey(k) === wanted);
-      return resolveRows(entry?.[1]);
-    })();
+    const expiredAuditSection: Record<string, any> =
+      sections.expired_product_values_audit ??
+      findReportSection(rawReport, "expired_product_values_audit", "Expired Product Values Audit", "Expired Products Audit");
 
-    const expiredRows = (() => {
-      const wanted = normalizeReportKey("Expired Product Values Audit");
-      const entry = Object.entries(sections).find(([k]) => normalizeReportKey(k) === wanted);
-      return resolveRows(entry?.[1]);
-    })();
+    const stockMovementSection: Record<string, any> =
+      sections.stock_movement_and_usage_summary ??
+      findReportSection(rawReport, "stock_movement_and_usage_summary", "Stock Movement & Usage Summary", "Stock Movement Summary");
+
+    const requisitionsSection: Record<string, any> =
+      sections.pending_purchase_requisition_orders ??
+      findReportSection(rawReport, "pending_purchase_requisition_orders", "Pending Purchase Requisition Orders", "Pending Purchase Requisitions");
+
+    const purchaseRows: any[] =
+      Array.isArray(upcomingPOSection?.items)
+        ? upcomingPOSection.items
+        : resolveReportRows(upcomingPOSection);
+
+    const expiredRows: any[] =
+      Array.isArray(expiredAuditSection?.items)
+        ? expiredAuditSection.items
+        : resolveReportRows(expiredAuditSection);
+
+    const stockMovementRows: any[] =
+      Array.isArray(stockMovementSection?.records)
+        ? stockMovementSection.records
+        : resolveReportRows(stockMovementSection);
+
+    const pendingRequisitionRows: any[] =
+      Array.isArray(requisitionsSection?.requisitions)
+        ? requisitionsSection.requisitions
+        : resolveReportRows(requisitionsSection);
 
     // ── Stat card values (strictly from backend — no frontend calculation) ─
-    const totalInventoryValue    = readReportMetric(healthSection, "Total Inventory Value");
-    const expiredProductValue    = readReportMetric(healthSection, "Expired Product Value");
-    const inventoryLossValue     =
-      readReportMetric(healthSection, "Inventory Loss / Write-off Value") ??
-      readReportMetric(healthSection, "Inventory Loss Value") ??
-      readReportMetric(healthSection, "Write-off Value");
-    const inventoryLossRate      =
-      readReportMetric(healthSection, "Inventory Loss Rate %") ??
-      readReportMetric(healthSection, "Inventory Loss Rate");
-    const stockMovementSpeed     =
-      readReportMetric(healthSection, "Stock Movement Speed (Avg Interval)") ??
-      readReportMetric(healthSection, "Stock Movement Speed");
-    const checkInOutVolume       =
-      readReportMetric(healthSection, "Total Check-In/Check-Out Volume") ??
-      readReportMetric(healthSection, "Check-In/Check-Out Volume");
-    const purchaseOrderExposure  =
-      readReportMetric(healthSection, "Upcoming Purchase Order Requirements Exposure") ??
-      readReportMetric(healthSection, "Purchase Order Requirements Exposure");
+    const readStat = (...keys: string[]) => {
+      for (const k of keys) {
+        if (healthSection && healthSection[k] !== undefined && healthSection[k] !== null && healthSection[k] !== "") {
+          return healthSection[k];
+        }
+      }
+      return readReportMetric(healthSection, ...keys) ?? readReportMetric(sections, ...keys);
+    };
+
+    const formatMetric = (val: unknown, isCurrency = false, isPct = false): string => {
+      if (val === undefined || val === null || val === "") return "No value returned";
+      if (typeof val === "number") {
+        if (isCurrency) return formatCurrency(val);
+        if (isPct) return `${val}%`;
+        return String(val);
+      }
+      const str = String(val).trim();
+      if (str === "") return "No value returned";
+      if (isCurrency && !str.startsWith("₹") && !str.startsWith("$") && !isNaN(Number(str))) {
+        return formatCurrency(Number(str));
+      }
+      if (isPct && !str.includes("%") && !isNaN(Number(str))) {
+        return `${str}%`;
+      }
+      return str;
+    };
+
+    const totalInventoryValue    = readStat("total_inventory_value", "total_value");
+    const expiredProductValue    = readStat("expired_product_value", "expired_value");
+    const inventoryLossValue     = readStat("inventory_loss_write_off_value", "inventory_loss_value", "write_off_value", "total_loss_value");
+    const inventoryLossRate      = readStat("inventory_loss_rate_pct", "inventory_loss_rate", "loss_rate_pct", "loss_rate");
+    const stockMovementSpeed     = readStat("stock_movement_speed", "average_movement_interval", "avg_movement_interval", "movement_speed");
+    const checkInOutVolume       = readStat("check_in_out_volume", "total_check_in_check_out_volume", "total_check_in_out_volume", "volume");
+    const purchaseOrderExposure  = readStat("upcoming_purchase_order_requirements_exposure", "purchase_order_requirements_exposure", "purchase_order_exposure", "po_exposure");
 
     // ── Export rows (backend data only) ───────────────────────────────────
     const exportRows: (string | number)[][] = [
-      ["Total Inventory Value",                           reportMetricText(totalInventoryValue)],
-      ["Expired Product Value",                           reportMetricText(expiredProductValue)],
-      ["Inventory Loss / Write-off Value",                reportMetricText(inventoryLossValue)],
-      ["Inventory Loss Rate %",                           reportMetricText(inventoryLossRate)],
-      ["Stock Movement Speed (Avg Interval)",             reportMetricText(stockMovementSpeed)],
-      ["Total Check-In/Check-Out Volume",                 reportMetricText(checkInOutVolume)],
-      ["Upcoming Purchase Order Requirements Exposure",   reportMetricText(purchaseOrderExposure)],
+      ["Total Inventory Value",                           formatMetric(totalInventoryValue, true)],
+      ["Expired Product Value",                           formatMetric(expiredProductValue, true)],
+      ["Inventory Loss / Write-off Value",                formatMetric(inventoryLossValue, true)],
+      ["Inventory Loss Rate %",                           formatMetric(inventoryLossRate, false, true)],
+      ["Stock Movement Speed",                            formatMetric(stockMovementSpeed)],
+      ["Check-In / Check-Out Volume",                     formatMetric(checkInOutVolume)],
+      ["Upcoming Purchase Order Requirements Exposure",   formatMetric(purchaseOrderExposure, true)],
       ...purchaseRows.map((row: any, idx) => [
         `Purchase Order Item ${idx + 1}`,
-        `${row.name || row.item_name || row.item_id || "Unknown"} | Stock: ${row.current_stock ?? row.quantity ?? "—"} | Reorder: ${row.reorder_threshold ?? row.threshold ?? "—"} | Suggested: ${row.suggested_order_qty ?? row.suggested_quantity ?? "—"} | Est. Cost: ${row.estimated_cost ?? "—"}`,
+        `${row.name || row.item_name || row.product_name || row.item_id || "Unknown"} | Category: ${row.category || "—"} | Stock: ${row.current_stock ?? row.quantity ?? "—"} | Reorder: ${row.reorder_threshold ?? row.threshold ?? "—"} | Suggested: ${row.suggested_order_qty ?? row.suggested_quantity ?? "—"} | Est. Cost: ${typeof row.estimated_cost === "number" ? formatCurrency(row.estimated_cost) : (row.estimated_cost ?? "—")}`,
       ]),
       ...expiredRows.map((row: any, idx) => [
         `Expired Item ${idx + 1}`,
-        `${row.name || row.item_name || row.item_id || "Unknown"} | Loss: ${row.loss_value ?? row.expired_value ?? row.value ?? "—"} | Expiry: ${row.expiry_date ?? "—"}`,
+        `${row.name || row.item_name || row.product_name || row.item_id || "Unknown"} | Category: ${row.category || "—"} | Expired Qty: ${row.expired_qty ?? row.expired_quantity ?? row.quantity ?? "—"} | Loss Value: ${typeof row.loss_value === "number" ? formatCurrency(row.loss_value) : (row.loss_value ?? "—")} | Expiry: ${row.expiry_date ?? "—"}`,
+      ]),
+      ...pendingRequisitionRows.map((row: any, idx) => [
+        `Purchase Requisition ${idx + 1}`,
+        `${row.requisition_id || row.id || `REQ-${idx + 1}`} | Item ID: ${row.item_id || "—"} | Qty: ${row.quantity ?? "—"} | Status: ${row.status || "Pending"}`,
       ]),
     ];
     const csvRows = exportRows.map(([label, value]) =>
@@ -1645,14 +1850,33 @@ const Reports = () => {
 
     // ── 7 Stat Cards ──────────────────────────────────────────────────────
     const statCards = [
-      { title: "Total Inventory Value",      value: loading ? "..." : reportMetricText(totalInventoryValue),   trend: "Backend — Inventory Health & Loss Audit", color: "#2563EB",  icon: <FaBoxes /> },
-      { title: "Expired Product Value",      value: loading ? "..." : reportMetricText(expiredProductValue),   trend: "Backend — Inventory Health & Loss Audit", color: "#DC2626",  icon: <FaExclamationTriangle /> },
-      { title: "Inventory Loss / Write-off", value: loading ? "..." : reportMetricText(inventoryLossValue),    trend: "Backend — Inventory Health & Loss Audit", color: "#F59E0B",  icon: <FaClipboardList /> },
-      { title: "Inventory Loss Rate",        value: loading ? "..." : reportMetricText(inventoryLossRate),     trend: "Backend — Inventory Health & Loss Audit", color: "#EF4444",  icon: <FaChartLine /> },
-      { title: "Stock Movement Speed",       value: loading ? "..." : reportMetricText(stockMovementSpeed),    trend: "Backend — Inventory Health & Loss Audit", color: "#8B5CF6",  icon: <FaClock /> },
-      { title: "Check-In/Check-Out Volume",  value: loading ? "..." : reportMetricText(checkInOutVolume),      trend: "Backend — Inventory Health & Loss Audit", color: "#10B981",  icon: <FaCheckDouble /> },
-      { title: "Purchase Order Exposure",    value: loading ? "..." : reportMetricText(purchaseOrderExposure), trend: "Backend — Inventory Health & Loss Audit", color: "#6366F1",  icon: <FaCoins /> },
+      { title: "Total Inventory Value",      value: loading ? "..." : formatMetric(totalInventoryValue, true),         trend: "Backend — Inventory Health & Loss Audit", color: "#2563EB",  icon: <FaBoxes /> },
+      { title: "Expired Product Value",      value: loading ? "..." : formatMetric(expiredProductValue, true),         trend: "Backend — Inventory Health & Loss Audit", color: "#DC2626",  icon: <FaExclamationTriangle /> },
+      { title: "Inventory Loss / Write-off", value: loading ? "..." : formatMetric(inventoryLossValue, true),          trend: "Backend — Inventory Health & Loss Audit", color: "#F59E0B",  icon: <FaClipboardList /> },
+      { title: "Inventory Loss Rate",        value: loading ? "..." : formatMetric(inventoryLossRate, false, true),    trend: "Backend — Inventory Health & Loss Audit", color: "#EF4444",  icon: <FaChartLine /> },
+      { title: "Stock Movement Speed",       value: loading ? "..." : formatMetric(stockMovementSpeed),               trend: "Backend — Inventory Health & Loss Audit", color: "#8B5CF6",  icon: <FaClock /> },
+      { title: "Check-In / Check-Out Volume", value: loading ? "..." : formatMetric(checkInOutVolume),                 trend: "Backend — Inventory Health & Loss Audit", color: "#10B981",  icon: <FaCheckDouble /> },
+      { title: "Purchase Order Exposure",    value: loading ? "..." : formatMetric(purchaseOrderExposure, true),       trend: "Backend — Inventory Health & Loss Audit", color: "#6366F1",  icon: <FaCoins /> },
     ];
+
+    // ── Key label formatter for Section 1 ─────────────────────────────────
+    const formatHealthKey = (key: string): string => {
+      const map: Record<string, string> = {
+        total_catalog_items: "Total Catalog Items",
+        total_inventory_value: "Total Inventory Value",
+        expired_product_value: "Expired Product Value",
+        inventory_loss_write_off_value: "Inventory Loss / Write-off Value",
+        inventory_loss_rate_pct: "Inventory Loss Rate %",
+        stock_movement_speed: "Stock Movement Speed",
+        check_in_out_volume: "Total Check-In / Check-Out Volume",
+        upcoming_purchase_order_requirements_exposure: "Upcoming Purchase Order Requirements Exposure",
+      };
+      if (map[key]) return map[key];
+      return key
+        .split("_")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ");
+    };
 
     // ── Helper: flat scalar key-value table from a section object ─────────
     const sectionTable = (title: string, section: Record<string, unknown>) => {
@@ -1669,7 +1893,7 @@ const Reports = () => {
               <tbody>
                 {scalarRows.map(([label, value]) => (
                   <tr key={label} style={{ borderTop: "1px solid #E2E8F0" }}>
-                    <td style={{ padding: "9px 4px", color: "#64748B", fontSize: "13px", width: "60%" }}>{label}</td>
+                    <td style={{ padding: "9px 4px", color: "#64748B", fontSize: "13px", width: "50%" }}>{formatHealthKey(label)}</td>
                     <td style={{ padding: "9px 4px", fontWeight: 700, color: "#0F172A", fontSize: "13px" }}>{String(value)}</td>
                   </tr>
                 ))}
@@ -1687,22 +1911,22 @@ const Reports = () => {
         <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
           <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Inventory Consumption &amp; Expiry Audit</h1>
           <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-            Backend-generated inventory analytics report — POST /api/v1/reports/generate (report_type: "inventory")
+            Backend-generated inventory analytics report — GET /api/v1/reports/inventory/analytics
           </p>
         </div>
 
         {/* Error state */}
         {inventoryReportError && (
           <div className="soft-card" style={{ padding: "16px 20px", marginBottom: "16px", color: "#991B1B", background: "#FEF2F2", border: "1px solid #FCA5A5" }}>
-            <strong>Inventory Report Data Error:</strong> {inventoryReportError}
-            <p style={{ margin: "6px 0 0", fontSize: "13px" }}>The backend did not return a valid inventory report. No data is displayed.</p>
+            <strong>Inventory Analytics Error:</strong> {inventoryReportError}
+            <p style={{ margin: "6px 0 0", fontSize: "13px" }}>Failed to load inventory analytics from the backend API. No data is displayed.</p>
           </div>
         )}
 
         {/* Loading state */}
         {!inventoryReportError && loading && !inventoryReport && (
           <div className="soft-card" style={{ padding: "24px", color: "#64748B", textAlign: "center" }}>
-            Loading inventory report...
+            Loading inventory analytics...
           </div>
         )}
 
@@ -1710,9 +1934,9 @@ const Reports = () => {
         {!inventoryReportError && !loading && !inventoryReport && (
           <div className="soft-card" style={{ padding: "24px", color: "#64748B", border: "1px solid #E2E8F0", textAlign: "center" }}>
             <FaBoxes style={{ marginBottom: "8px", opacity: 0.4 }} size={32} />
-            <div style={{ fontWeight: 700, fontSize: "15px", color: "#0F172A" }}>No inventory report data available.</div>
+            <div style={{ fontWeight: 700, fontSize: "15px", color: "#0F172A" }}>No inventory analytics data available.</div>
             <div style={{ marginTop: "6px", fontSize: "13px" }}>
-              The backend did not return inventory report data. Verify that the report_type="inventory" endpoint is operational.
+              The backend did not return inventory analytics data. Verify that GET /api/v1/reports/inventory/analytics is reachable.
             </div>
           </div>
         )}
@@ -1732,23 +1956,23 @@ const Reports = () => {
               <QuickActionCard
                 icon={<FaFileAlt />}
                 title="Export CSV"
-                subtitle="Backend inventory report data"
+                subtitle="Backend inventory analytics dataset"
                 color="#10B981"
                 onClick={() => handleExportCSV("inventory_consumption_expiry_report", "Metric,Value", csvRows)}
               />
               <QuickActionCard
                 icon={<FaFileDownload />}
                 title="Export Excel"
-                subtitle="Backend inventory report data"
+                subtitle="Backend inventory analytics spreadsheet"
                 color="#2563EB"
                 onClick={() => handleExportExcel("inventory_consumption_expiry_report", "Metric,Value", csvRows)}
               />
               <QuickActionCard
                 icon={<FaFileAlt />}
                 title="Print PDF"
-                subtitle="Backend inventory report data"
+                subtitle="Backend inventory analytics document"
                 color="#7C3AED"
-                onClick={() => handleExportPDF("Inventory Consumption & Expiry Audit", "Backend-generated — POST /reports/generate (report_type: inventory)", ["Metric", "Value"], exportRows)}
+                onClick={() => handleExportPDF("Inventory Consumption & Expiry Audit", "Backend analytics — GET /api/v1/reports/inventory/analytics", ["Metric", "Value"], exportRows)}
               />
             </div>
 
@@ -1757,10 +1981,10 @@ const Reports = () => {
 
             <div style={{ height: "16px" }} />
 
-            {/* SECTION 2: Upcoming Purchase Order Requirements (Items Below Reorder Threshold) */}
+            {/* SECTION 2: Upcoming Purchase Order Requirements */}
             <div className="soft-card" style={{ padding: "20px" }}>
               <h3 style={{ margin: "0 0 14px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
-                Upcoming Purchase Order Requirements (Items Below Reorder Threshold)
+                Upcoming Purchase Order Requirements
                 {purchaseRows.length > 0 && (
                   <span style={{ marginLeft: "10px", fontSize: "13px", fontWeight: 600, color: "#2563EB", background: "#EFF6FF", padding: "2px 10px", borderRadius: "999px" }}>
                     {purchaseRows.length} Items Below Reorder Threshold
@@ -1778,9 +2002,11 @@ const Reports = () => {
                       <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
                         <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>ITEM ID</th>
                         <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>NAME</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>CATEGORY</th>
                         <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>CURRENT STOCK</th>
                         <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>REORDER THRESHOLD</th>
                         <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>SUGGESTED ORDER QTY</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>UNIT</th>
                         <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>UNIT COST</th>
                         <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>ESTIMATED COST</th>
                       </tr>
@@ -1794,6 +2020,9 @@ const Reports = () => {
                           <td style={{ padding: "10px", fontWeight: 600, color: "#0F172A", fontSize: "13px" }}>
                             {row.name || row.item_name || "—"}
                           </td>
+                          <td style={{ padding: "10px", fontSize: "13px", color: "#475569" }}>
+                            {row.category || "—"}
+                          </td>
                           <td style={{ padding: "10px", fontSize: "13px", fontWeight: 700, color: "#DC2626" }}>
                             {row.current_stock ?? row.quantity ?? "—"}
                           </td>
@@ -1803,11 +2032,14 @@ const Reports = () => {
                           <td style={{ padding: "10px", fontSize: "13px", fontWeight: 700, color: "#2563EB" }}>
                             {row.suggested_order_qty ?? row.suggested_quantity ?? "—"}
                           </td>
+                          <td style={{ padding: "10px", fontSize: "13px", color: "#475569" }}>
+                            {row.unit || "—"}
+                          </td>
                           <td style={{ padding: "10px", fontSize: "13px" }}>
-                            {row.unit_cost ?? "—"}
+                            {typeof row.unit_cost === "number" ? formatCurrency(row.unit_cost) : (row.unit_cost ?? "—")}
                           </td>
                           <td style={{ padding: "10px", fontSize: "13px", fontWeight: 700, color: "#059669" }}>
-                            {row.estimated_cost ?? "—"}
+                            {typeof row.estimated_cost === "number" ? formatCurrency(row.estimated_cost) : (row.estimated_cost ?? "—")}
                           </td>
                         </tr>
                       ))}
@@ -1843,6 +2075,7 @@ const Reports = () => {
                         <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>CATEGORY</th>
                         <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>EXPIRED QTY</th>
                         <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>EXPIRY DATE</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>UNIT COST</th>
                         <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>LOSS VALUE</th>
                         <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>STATUS</th>
                       </tr>
@@ -1859,14 +2092,17 @@ const Reports = () => {
                           <td style={{ padding: "10px", fontSize: "13px" }}>
                             {row.category || "—"}
                           </td>
-                          <td style={{ padding: "10px", fontSize: "13px", fontWeight: 700 }}>
-                            {row.expired_quantity ?? row.quantity ?? "—"}
+                          <td style={{ padding: "10px", fontSize: "13px", fontWeight: 700, color: "#DC2626" }}>
+                            {row.expired_qty ?? row.expired_quantity ?? row.quantity ?? "—"}
                           </td>
                           <td style={{ padding: "10px", fontSize: "13px", color: "#DC2626" }}>
                             {row.expiry_date ?? row.expired_at ?? "—"}
                           </td>
+                          <td style={{ padding: "10px", fontSize: "13px" }}>
+                            {typeof row.unit_cost === "number" ? formatCurrency(row.unit_cost) : (row.unit_cost ?? "—")}
+                          </td>
                           <td style={{ padding: "10px", fontSize: "13px", fontWeight: 700, color: "#991B1B" }}>
-                            {row.loss_value ?? row.expired_value ?? row.value ?? "—"}
+                            {typeof row.loss_value === "number" ? formatCurrency(row.loss_value) : (row.loss_value ?? "—")}
                           </td>
                           <td style={{ padding: "10px", fontSize: "13px" }}>
                             <span style={{ padding: "3px 10px", borderRadius: "999px", fontSize: "11px", fontWeight: 700, background: "#FEF2F2", color: "#991B1B" }}>
@@ -1881,12 +2117,125 @@ const Reports = () => {
               )}
             </div>
 
-            {/* SECTION 4 & beyond: Render any other backend sections not covered above */}
+            <div style={{ height: "16px" }} />
+
+            {/* SECTION 4: Stock Movement & Usage Summary */}
+            <div className="soft-card" style={{ padding: "20px", marginBottom: "16px" }}>
+              <h3 style={{ margin: "0 0 14px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
+                Stock Movement &amp; Usage Summary
+                {stockMovementRows.length > 0 && (
+                  <span style={{ marginLeft: "10px", fontSize: "13px", fontWeight: 600, color: "#8B5CF6", background: "#F5F3FF", padding: "2px 10px", borderRadius: "999px" }}>
+                    {stockMovementRows.length} Movements Recorded
+                  </span>
+                )}
+              </h3>
+              {stockMovementRows.length === 0 ? (
+                <div style={{ color: "#64748B", fontSize: "13px", padding: "12px 0" }}>
+                  No records available.
+                </div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                    <thead>
+                      <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>REFERENCE TYPE</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>CHECK-IN QTY</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>CHECK-OUT QTY</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>ADJUSTMENT QTY</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>MOVEMENT COUNT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stockMovementRows.map((row: any, idx) => (
+                        <tr key={String(row.reference_type || row.id || idx)} style={{ borderTop: "1px solid #E2E8F0" }}>
+                          <td style={{ padding: "10px", fontWeight: 600, color: "#0F172A", fontSize: "13px" }}>
+                            <span style={{ textTransform: "capitalize" }}>{row.reference_type || row.type || "—"}</span>
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px", fontWeight: 700, color: "#059669" }}>
+                            {row.check_in_qty ?? row.in_qty ?? "0"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px", fontWeight: 700, color: "#DC2626" }}>
+                            {row.check_out_qty ?? row.out_qty ?? "0"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px", fontWeight: 600, color: "#D97706" }}>
+                            {row.adjustment_qty ?? row.adj_qty ?? "0"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px", fontWeight: 700, color: "#2563EB" }}>
+                            {row.movement_count ?? row.count ?? "0"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div style={{ height: "16px" }} />
+
+            {/* SECTION 5: Pending Purchase Requisition Orders */}
+            <div className="soft-card" style={{ padding: "20px", marginBottom: "16px" }}>
+              <h3 style={{ margin: "0 0 14px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
+                Pending Purchase Requisition Orders
+                {pendingRequisitionRows.length > 0 && (
+                  <span style={{ marginLeft: "10px", fontSize: "13px", fontWeight: 600, color: "#F59E0B", background: "#FEF3C7", padding: "2px 10px", borderRadius: "999px" }}>
+                    {pendingRequisitionRows.length} Pending Requisitions
+                  </span>
+                )}
+              </h3>
+              {pendingRequisitionRows.length === 0 ? (
+                <div style={{ color: "#64748B", fontSize: "13px", padding: "12px 0" }}>
+                  No records available.
+                </div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                    <thead>
+                      <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>REQUISITION ID</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>ITEM ID</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>QUANTITY</th>
+                        <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>STATUS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingRequisitionRows.map((row: any, idx) => (
+                        <tr key={String(row.requisition_id || row.id || idx)} style={{ borderTop: "1px solid #E2E8F0" }}>
+                          <td style={{ padding: "10px", fontSize: "12px", fontFamily: "monospace", color: "#64748B" }}>
+                            {String(row.requisition_id || row.id || `REQ-${idx + 1}`)}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "12px", fontFamily: "monospace", color: "#0F172A" }}>
+                            {String(row.item_id || "—")}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px", fontWeight: 700, color: "#2563EB" }}>
+                            {row.quantity ?? row.qty ?? "—"}
+                          </td>
+                          <td style={{ padding: "10px", fontSize: "13px" }}>
+                            <span style={{ padding: "3px 8px", borderRadius: "999px", fontSize: "11px", fontWeight: 700, background: "#FEF3C7", color: "#B45309" }}>
+                              {String(row.status || "PENDING").toUpperCase()}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Extra custom sections fallback */}
             {(() => {
               const knownKeys = new Set([
+                normalizeReportKey("inventory_health_and_loss_audit"),
+                normalizeReportKey("upcoming_purchase_order_requirements"),
+                normalizeReportKey("expired_product_values_audit"),
+                normalizeReportKey("stock_movement_and_usage_summary"),
+                normalizeReportKey("pending_purchase_requisition_orders"),
                 normalizeReportKey("Inventory Health & Loss Audit"),
                 normalizeReportKey("Upcoming Purchase Order Requirements (Items Below Reorder Threshold)"),
                 normalizeReportKey("Expired Product Values Audit"),
+                normalizeReportKey("Stock Movement & Usage Summary"),
+                normalizeReportKey("Pending Purchase Requisition Orders"),
               ]);
               const extraSections = Object.entries(sections).filter(([k, v]) =>
                 !knownKeys.has(normalizeReportKey(k)) && v !== null && typeof v === "object" && !Array.isArray(v)
