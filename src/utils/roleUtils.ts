@@ -471,6 +471,7 @@ export const MODULE_VIEW_PERMISSIONS: Record<string, string> = {
   "/reports": "view_reports",
   "/roles-permissions": "view_roles",
   "/cms": "view_cms",
+  "/cms/home": "view_cms",
   "/cms/pages": "view_cms",
   "/cms/about": "view_cms",
   "/cms/success-stories": "view_cms",

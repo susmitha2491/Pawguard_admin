@@ -55,7 +55,14 @@ const CmsLegalView = () => {
       if (search.trim()) params.search = search.trim();
 
       const res = await cmsService.getLegalDocuments(params);
-      setDocs(Array.isArray(res.items) ? res.items : []);
+      const items = Array.isArray(res)
+        ? res
+        : Array.isArray(res?.items)
+        ? res.items
+        : Array.isArray((res as unknown as { data?: LegalDocRecord[] })?.data)
+        ? (res as unknown as { data: LegalDocRecord[] }).data
+        : [];
+      setDocs(items);
     } catch (err: unknown) {
       setError(getErrorMsg(err, "Failed to load legal documents from backend API."));
     } finally {

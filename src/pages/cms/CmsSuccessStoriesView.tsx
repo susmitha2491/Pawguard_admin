@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type React from "react";
 import cmsService from "../../services/cmsService";
 import type { SuccessStoryRecord, ContentStatus } from "../../types/cms";
@@ -18,11 +18,79 @@ import {
 
 const getErrorMsg = (err: unknown, fallback: string): string => {
   if (err && typeof err === "object") {
-    const r = err as { response?: { data?: { detail?: unknown; message?: unknown } } };
-    const detail = r?.response?.data?.detail ?? r?.response?.data?.message;
-    if (typeof detail === "string" && detail) return detail;
+    const r = err as {
+      response?: {
+        data?: {
+          error?: {
+            message?: string;
+            details?: Array<{ loc?: (string | number)[]; msg?: string; message?: string }> | string;
+          };
+          detail?: string | Array<{ loc?: (string | number)[]; msg?: string }>;
+          message?: string;
+        };
+      };
+      message?: string;
+    };
+
+    const data = r?.response?.data;
+    if (data) {
+      if (typeof data.error?.message === "string" && data.error.message.trim()) {
+        const baseMsg = data.error.message.trim();
+        if (Array.isArray(data.error.details) && data.error.details.length > 0) {
+          const detailMsgs = data.error.details
+            .map((d) => {
+              const field = Array.isArray(d.loc) ? d.loc.filter((l) => l !== "body").join(".") : "";
+              const msg = d.msg || d.message || "";
+              return field && msg ? `${field}: ${msg}` : msg;
+            })
+            .filter(Boolean);
+          if (detailMsgs.length > 0 && !baseMsg.includes(detailMsgs[0])) {
+            return `${baseMsg} (${detailMsgs.join(", ")})`;
+          }
+        }
+        return baseMsg;
+      }
+
+      if (Array.isArray(data.detail) && data.detail.length > 0) {
+        const detailMsgs = data.detail
+          .map((d) => {
+            const field = Array.isArray(d.loc) ? d.loc.filter((l) => l !== "body").join(".") : "";
+            const msg = d.msg || "";
+            return field && msg ? `${field}: ${msg}` : msg;
+          })
+          .filter(Boolean);
+        if (detailMsgs.length > 0) {
+          return `Validation error: ${detailMsgs.join(", ")}`;
+        }
+      }
+
+      if (typeof data.detail === "string" && data.detail.trim()) {
+        return data.detail.trim();
+      }
+      if (typeof data.message === "string" && data.message.trim()) {
+        return data.message.trim();
+      }
+    }
+
+    if (typeof r.message === "string" && r.message.trim()) {
+      if (!r.message.toLowerCase().includes("request failed with status code")) {
+        return r.message.trim();
+      }
+    }
   }
   return fallback;
+};
+
+const getDisplayFileName = (urlOrKey?: string | null): string => {
+  if (!urlOrKey) return "";
+  try {
+    const clean = urlOrKey.split("?")[0];
+    const segments = clean.split("/");
+    const last = segments[segments.length - 1];
+    return decodeURIComponent(last) || "image.jpg";
+  } catch {
+    return "image.jpg";
+  }
 };
 
 const CmsSuccessStoriesView = () => {
@@ -32,7 +100,12 @@ const CmsSuccessStoriesView = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [featuredFilter, setFeaturedFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState<number>(1);
+  const [pageSize] = useState<number>(20);
+  const [total, setTotal] = useState<number>(0);
+  const [totalPages, setTotalPages] = useState<number>(1);
 
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -52,24 +125,50 @@ const CmsSuccessStoriesView = () => {
   });
 
   const [submitting, setSubmitting] = useState(false);
+
+  // Hero Image Media State
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageFileName, setImageFileName] = useState<string>("");
+  const [mediaFileId, setMediaFileId] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [removingImage, setRemovingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const fetchStories = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const params: Record<string, unknown> = {};
+      const params: Record<string, unknown> = {
+        page,
+        page_size: pageSize,
+      };
       if (statusFilter !== "all") params.status = statusFilter;
+      if (featuredFilter === "featured") params.is_featured = true;
+      if (featuredFilter === "standard") params.is_featured = false;
       if (search.trim()) params.search = search.trim();
 
       const res = await cmsService.getSuccessStories(params);
-      setStories(Array.isArray(res.items) ? res.items : []);
+      const items = Array.isArray(res)
+        ? res
+        : Array.isArray(res?.items)
+        ? res.items
+        : Array.isArray((res as unknown as { data?: SuccessStoryRecord[] })?.data)
+        ? (res as unknown as { data: SuccessStoryRecord[] }).data
+        : [];
+      setStories(items);
+      if (res && typeof res === "object" && typeof (res as unknown as { total?: number }).total === "number") {
+        setTotal((res as unknown as { total: number }).total);
+        setTotalPages((res as unknown as { pages: number }).pages || 1);
+      } else {
+        setTotal(items.length);
+        setTotalPages(1);
+      }
     } catch (err: unknown) {
       setError(getErrorMsg(err, "Failed to load success stories from backend API."));
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, search]);
+  }, [statusFilter, featuredFilter, search, page, pageSize]);
 
   useEffect(() => {
     fetchStories();
@@ -89,6 +188,10 @@ const CmsSuccessStoriesView = () => {
       sort_order: 0,
       status: "draft",
     });
+    setImagePreview(null);
+    setImageFileName("");
+    setMediaFileId(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
     setModalOpen(true);
   };
 
@@ -106,6 +209,10 @@ const CmsSuccessStoriesView = () => {
       sort_order: story.sort_order ?? 0,
       status: story.status || "draft",
     });
+    setImagePreview(story.hero_image_url || null);
+    setImageFileName(getDisplayFileName(story.hero_image_url));
+    setMediaFileId(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
     setModalOpen(true);
   };
 
@@ -113,33 +220,106 @@ const CmsSuccessStoriesView = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Reset input so re-uploading the same file still triggers onChange
+    e.target.value = "";
+
+    // Client-side file validation matching backend requirements
+    const allowedImageMimes = ["image/jpeg", "image/png", "image/webp"];
+    const mimeType = (file.type || "image/jpeg").toLowerCase();
+    if (file.type && !allowedImageMimes.includes(mimeType)) {
+      addToast("Only JPEG, PNG, and WebP images are allowed.", "error");
+      return;
+    }
+
+    const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB limit for images per backend
+    if (file.size > MAX_IMAGE_SIZE) {
+      addToast(
+        `Image size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds maximum allowed limit of 10 MB.`,
+        "error"
+      );
+      return;
+    }
+
+    if (file.size <= 0) {
+      addToast("Selected file is empty.", "error");
+      return;
+    }
+
+    // Set immediate preview
+    const localBlobUrl = URL.createObjectURL(file);
+    setImagePreview(localBlobUrl);
+    setImageFileName(file.name);
+
     try {
       setUploadingImage(true);
       const res = await cmsService.requestCmsMediaUploadUrl({
-        filename: file.name,
-        content_type: file.type || "image/jpeg",
-        size_bytes: file.size,
+        original_filename: file.name,
+        mime_type: mimeType,
+        file_size: file.size,
+        folder: "cms",
+        entity_type: "success_story",
       });
 
-      // Directly put bytes to upload_url or use object_key
+      let finalKey = res.object_key;
+
+      // Directly PUT bytes to upload_url, then confirm
       if (res.upload_url) {
-        await fetch(res.upload_url, {
+        const uploadRes = await fetch(res.upload_url, {
           method: "PUT",
-          headers: { "Content-Type": file.type || "image/jpeg" },
+          headers: { "Content-Type": mimeType },
           body: file,
         });
-        await cmsService.confirmCmsMediaUpload(res.file_id);
+
+        if (!uploadRes.ok) {
+          throw new Error(
+            `Failed to upload media file to storage provider (${uploadRes.status} ${uploadRes.statusText})`
+          );
+        }
+
+        if (res.file_id) {
+          const confirmRes = await cmsService.confirmCmsMediaUpload(res.file_id);
+          if (confirmRes && typeof confirmRes === "object" && "object_key" in confirmRes) {
+            finalKey = (confirmRes as { object_key: string }).object_key || finalKey;
+          }
+        }
       }
 
+      setMediaFileId(res.file_id || null);
       setForm((prev) => ({
         ...prev,
-        hero_image_url: res.object_key || res.upload_url,
+        hero_image_url: finalKey,
       }));
       addToast("Image uploaded successfully!", "success");
     } catch (err: unknown) {
+      setImagePreview(form.hero_image_url || null);
+      setImageFileName(getDisplayFileName(form.hero_image_url));
       addToast(getErrorMsg(err, "Failed to upload media file."), "error");
     } finally {
       setUploadingImage(false);
+    }
+  };
+
+  const handleRemoveImage = async () => {
+    if (uploadingImage || removingImage) return;
+
+    try {
+      setRemovingImage(true);
+      if (mediaFileId) {
+        await cmsService.deleteCmsMedia(mediaFileId).catch((err) => {
+          console.warn("Could not delete uploaded media file from storage:", err);
+        });
+      }
+
+      setForm((prev) => ({ ...prev, hero_image_url: "" }));
+      setImagePreview(null);
+      setImageFileName("");
+      setMediaFileId(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      addToast("Image removed.", "info");
+    } finally {
+      setRemovingImage(false);
     }
   };
 
@@ -273,7 +453,10 @@ const CmsSuccessStoriesView = () => {
             type="text"
             placeholder="Search stories by title or text..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             style={{
               width: "100%",
               padding: "7px 10px 7px 30px",
@@ -287,7 +470,10 @@ const CmsSuccessStoriesView = () => {
 
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => {
+            setStatusFilter(e.target.value);
+            setPage(1);
+          }}
           style={{
             padding: "7px 12px",
             borderRadius: 6,
@@ -301,6 +487,26 @@ const CmsSuccessStoriesView = () => {
           <option value="draft">Drafts</option>
           <option value="published">Published</option>
           <option value="archived">Archived</option>
+        </select>
+
+        <select
+          value={featuredFilter}
+          onChange={(e) => {
+            setFeaturedFilter(e.target.value);
+            setPage(1);
+          }}
+          style={{
+            padding: "7px 12px",
+            borderRadius: 6,
+            border: "1px solid #CBD5E1",
+            fontSize: 13,
+            color: "#334155",
+            fontWeight: 600,
+          }}
+        >
+          <option value="all">All Stories</option>
+          <option value="featured">Featured Only</option>
+          <option value="standard">Standard Only</option>
         </select>
       </div>
 
@@ -477,6 +683,63 @@ const CmsSuccessStoriesView = () => {
         </table>
       </div>
 
+      {/* Pagination Controls */}
+      {total > 0 && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginTop: "16px",
+            fontSize: "12.5px",
+            color: "#64748B",
+            flexWrap: "wrap",
+            gap: "10px",
+          }}
+        >
+          <div>
+            Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, total)} of {total} stories
+          </div>
+          {totalPages > 1 && (
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                style={{
+                  padding: "5px 12px",
+                  borderRadius: 6,
+                  border: "1px solid #CBD5E1",
+                  background: page <= 1 ? "#F1F5F9" : "#FFFFFF",
+                  color: page <= 1 ? "#94A3B8" : "#334155",
+                  fontWeight: 600,
+                  cursor: page <= 1 ? "not-allowed" : "pointer",
+                }}
+              >
+                Previous
+              </button>
+              <span style={{ fontWeight: 600, color: "#1E293B" }}>
+                Page {page} of {totalPages}
+              </span>
+              <button
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                style={{
+                  padding: "5px 12px",
+                  borderRadius: 6,
+                  border: "1px solid #CBD5E1",
+                  background: page >= totalPages ? "#F1F5F9" : "#FFFFFF",
+                  color: page >= totalPages ? "#94A3B8" : "#334155",
+                  fontWeight: 600,
+                  cursor: page >= totalPages ? "not-allowed" : "pointer",
+                }}
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Create / Edit Modal */}
       <Modal
         isOpen={modalOpen}
@@ -524,35 +787,138 @@ const CmsSuccessStoriesView = () => {
           </div>
 
           <div>
-            <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 4 }}>
-              Hero Image URL
+            <label style={{ display: "block", fontSize: "12.5px", fontWeight: 700, color: "#334155", marginBottom: 6 }}>
+              Hero Image
             </label>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                type="text"
-                value={form.hero_image_url}
-                onChange={(e) => setForm({ ...form, hero_image_url: e.target.value })}
-                placeholder="https://example.com/image.jpg"
-                style={{ flex: 1, padding: "8px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 13, boxSizing: "border-box" }}
-              />
-              <label
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handleImageUpload}
+              style={{ display: "none" }}
+            />
+
+            {!imagePreview && !form.hero_image_url ? (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingImage}
                 style={{
-                  padding: "8px 12px",
-                  borderRadius: 6,
-                  background: "#F1F5F9",
-                  border: "1px solid #CBD5E1",
-                  fontSize: 12,
-                  fontWeight: 700,
+                  padding: "9px 16px",
+                  borderRadius: "6px",
+                  border: "1px dashed #CBD5E1",
+                  background: "#F8FAFC",
+                  color: "#2563EB",
+                  fontSize: "12.5px",
+                  fontWeight: 600,
                   cursor: "pointer",
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: 6,
+                  gap: "7px",
+                  transition: "all 0.15s ease",
                 }}
               >
-                {uploadingImage ? <FaSpinner className="spin" /> : <FaUpload />} Upload
-                <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: "none" }} />
-              </label>
-            </div>
+                {uploadingImage ? <FaSpinner className="spin" /> : <FaUpload />} Upload Image
+              </button>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #E2E8F0",
+                  background: "#F8FAFC",
+                }}
+              >
+                <div
+                  style={{
+                    width: "56px",
+                    height: "56px",
+                    borderRadius: "6px",
+                    overflow: "hidden",
+                    background: "#E2E8F0",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    border: "1px solid #CBD5E1",
+                  }}
+                >
+                  {imagePreview ? (
+                    <img
+                      src={imagePreview}
+                      alt="Hero preview"
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      onError={() => {
+                        // If signed URL fails or expires, preserve state but clear broken image
+                      }}
+                    />
+                  ) : (
+                    <FaImage style={{ color: "#94A3B8", fontSize: "20px" }} />
+                  )}
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: "12.5px",
+                      fontWeight: 600,
+                      color: "#1E293B",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={imageFileName || "Uploaded image"}
+                  >
+                    {imageFileName || "Uploaded image"}
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingImage || removingImage}
+                      style={{
+                        padding: "4px 9px",
+                        borderRadius: "5px",
+                        border: "1px solid #CBD5E1",
+                        background: "#FFFFFF",
+                        color: "#334155",
+                        fontSize: "11.5px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                    >
+                      {uploadingImage ? <FaSpinner className="spin" /> : <FaUpload />} Replace
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRemoveImage}
+                      disabled={uploadingImage || removingImage}
+                      style={{
+                        padding: "4px 9px",
+                        borderRadius: "5px",
+                        border: "1px solid #FCA5A5",
+                        background: "#FEF2F2",
+                        color: "#991B1B",
+                        fontSize: "11.5px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                    >
+                      {removingImage ? <FaSpinner className="spin" /> : <FaTrash />} Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>

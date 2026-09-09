@@ -55,7 +55,14 @@ const CmsFaqView = () => {
       if (search.trim()) params.search = search.trim();
 
       const res = await cmsService.getFaqs(params);
-      setFaqs(Array.isArray(res.items) ? res.items : []);
+      const items = Array.isArray(res)
+        ? res
+        : Array.isArray(res?.items)
+        ? res.items
+        : Array.isArray((res as unknown as { data?: FaqRecord[] })?.data)
+        ? (res as unknown as { data: FaqRecord[] }).data
+        : [];
+      setFaqs(items);
     } catch (err: unknown) {
       setError(getErrorMsg(err, "Failed to load FAQ entries from backend API."));
     } finally {

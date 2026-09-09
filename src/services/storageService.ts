@@ -40,6 +40,13 @@ export const storageService = {
   },
 
   /**
+   * Delete a stored file by file ID from storage and database.
+   */
+  deleteFile: async (fileId: string): Promise<void> => {
+    await api.delete(`/storage/${fileId}`);
+  },
+
+  /**
    * Retrieve a presigned download URL for a stored file.
    */
   getDownloadUrl: async (fileId: string): Promise<StorageDownloadResponse> => {

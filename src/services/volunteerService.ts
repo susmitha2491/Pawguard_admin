@@ -37,6 +37,7 @@ export interface VolunteerApplicationPayload {
   email?: string;
   phone?: string;
   preferred_role?: "Foster Care" | "Transport" | "Events & Outreach" | "Shelter Support" | string;
+  applied_role?: string;
   availability?: string;
   message?: string;
   skills?: string;
@@ -137,7 +138,13 @@ export const volunteerService = {
 
   // POST /volunteers/apply - Submit application
   applyVolunteer: async (data: VolunteerApplicationPayload) => {
-    const response = await api.post("/volunteers/apply", data);
+    const payload = {
+      ...data,
+      applied_role: data.applied_role || data.preferred_role,
+      emergency_contact_name: data.emergency_contact_name || data.full_name || "Emergency Contact",
+      emergency_contact_phone: data.emergency_contact_phone || data.phone || "0000000000",
+    };
+    const response = await api.post("/volunteers/apply", payload);
     return response.data;
   },
 

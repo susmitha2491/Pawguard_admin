@@ -42,46 +42,63 @@ import { unwrapList } from "../../utils/chartUtils";
 const toSafeStr = (val: unknown): string => (val !== undefined && val !== null ? String(val) : "");
 const toSafeLower = (val: unknown): string => toSafeStr(val).toLowerCase();
 
+const extractErrorMessage = (err: any, fallback: string): string => {
+  const detail =
+    err?.response?.data?.error?.message ||
+    err?.response?.data?.error ||
+    err?.response?.data?.detail ||
+    err?.response?.data?.message ||
+    err?.message;
+  if (!detail) return fallback;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((item) => (typeof item === "string" ? item : item?.msg || JSON.stringify(item))).join("; ");
+  }
+  if (typeof detail === "object") {
+    return (detail as any).msg || (detail as any).message || JSON.stringify(detail);
+  }
+  return String(detail);
+};
+
 const getNextValidStatuses = (currentStatus?: string): { value: string; label: string }[] => {
   const st = toSafeLower(currentStatus);
 
-  if (["dispatched", "accepted", "assigned"].includes(st)) {
+  if (["reported", "pending", "submitted"].includes(st)) {
     return [
-      { value: "en_route", label: "En Route to Field Scene" },
-      { value: "in_progress", label: "Rescue In Progress" },
-      { value: "located", label: "Dog Located at Scene" },
-    ];
-  }
-  if (["en_route", "in_progress"].includes(st)) {
-    return [
-      { value: "located", label: "Dog Located at Scene" },
-      { value: "secured", label: "Dog Secured & Rescued" },
-    ];
-  }
-  if (st === "located") {
-    return [
-      { value: "secured", label: "Dog Secured & Rescued" },
-      { value: "admitted", label: "Admitted to Shelter / Vet" },
-    ];
-  }
-  if (st === "secured" || st === "rescued") {
-    return [
-      { value: "admitted", label: "Admitted to Shelter / Vet" },
-      { value: "completed", label: "Rescue Completed" },
-    ];
-  }
-  if (st === "admitted") {
-    return [
-      { value: "completed", label: "Rescue Completed" },
-    ];
-  }
-  if (["verified", "pending", "reported"].includes(st)) {
-    return [
-      { value: "dispatched", label: "Dispatched" },
-      { value: "en_route", label: "En Route to Field Scene" },
+      { value: "verified", label: "Verify Case — Ready for Dispatch" },
+      { value: "rejected", label: "Reject / Invalid Report" },
     ];
   }
 
+  if (st === "verified") {
+    return [
+      { value: "dispatched", label: "Dispatch Rescue Team" },
+      { value: "rejected", label: "Reject / Cancel Case" },
+    ];
+  }
+
+  if (["dispatched", "accepted", "assigned", "en_route", "in_progress"].includes(st)) {
+    return [
+      { value: "located", label: "Dog Located at Scene" },
+      { value: "rescued", label: "Dog Secured & Rescued" },
+      { value: "rejected", label: "Mission Failed / Animal Not Found" },
+    ];
+  }
+
+  if (st === "located") {
+    return [
+      { value: "rescued", label: "Dog Secured & Rescued" },
+      { value: "rejected", label: "Mission Failed / Cancelled" },
+    ];
+  }
+
+  if (["rescued", "secured"].includes(st)) {
+    return [
+      { value: "admitted", label: "Admitted to Shelter / Vet" },
+    ];
+  }
+
+  // "admitted" and "rejected" are terminal states in the backend lifecycle
   return [];
 };
 
@@ -914,9 +931,18 @@ const RescueManagement = () => {
     e.preventDefault();
     if (!selectedCase || !statusForm.status) return;
 
+    // If user selected "dispatched", route to the existing dispatch team assignment workflow
+    if (statusForm.status === "dispatched") {
+      setIsStatusUpdateOpen(false);
+      handleOpenAssignModal(selectedCase);
+      return;
+    }
+
     try {
       setIsSubmitting(true);
-      await rescueService.updateRescueStatus(selectedCase.id, statusForm.status);
+      await rescueService.updateRescueStatus(selectedCase.id, statusForm.status, {
+        notes: statusForm.notes,
+      });
       const newStatus = statusForm.status.toLowerCase();
       addToast(`Status updated to ${statusForm.status}!`, "success");
       setIsStatusUpdateOpen(false);
@@ -929,7 +955,7 @@ const RescueManagement = () => {
       }
 
       // If rescue is completed/rescued/admitted, trigger workflow bridge to Register Rescued Dog
-      if (["completed", "rescued", "admitted"].includes(newStatus)) {
+      if (["completed", "rescued", "secured", "admitted"].includes(newStatus)) {
         const caseId = selectedCase.id;
         setTimeout(() => {
           if (window.confirm(`Rescue mission completed! Would you like to register the rescued dog in the Dog Repository now?`)) {
@@ -938,8 +964,8 @@ const RescueManagement = () => {
         }, 300);
       }
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string; message?: string } } };
-      addToast(e?.response?.data?.detail || e?.response?.data?.message || "Failed to update status", "error");
+      const errorMsg = extractErrorMessage(err, "Failed to update status");
+      addToast(errorMsg, "error");
     } finally {
       setIsSubmitting(false);
     }
@@ -2659,6 +2685,17 @@ const RescueManagement = () => {
                   </select>
                 );
               })()}
+            </div>
+
+            <div>
+              <label style={{ fontSize: "12px", fontWeight: 700, color: "#334155" }}>Operational Notes / Remarks (Optional)</label>
+              <textarea
+                rows={3}
+                value={statusForm.notes}
+                onChange={(e) => setStatusForm({ ...statusForm, notes: e.target.value })}
+                placeholder="Add any field observations or handover remarks..."
+                style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", marginTop: "4px", resize: "vertical" }}
+              />
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>

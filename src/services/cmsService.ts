@@ -24,8 +24,17 @@ import type {
   UrgentAlertCreatePayload,
   UrgentAlertUpdatePayload,
   UploadUrlResponse,
+  CmsMediaUploadPayload,
   ContentStatus,
 } from "../types/cms";
+
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
 
 const unwrap = <T,>(body: unknown): T => {
   if (body && typeof body === "object") {
@@ -33,6 +42,68 @@ const unwrap = <T,>(body: unknown): T => {
     if (obj.data !== undefined) return obj.data as T;
   }
   return body as T;
+};
+
+const unwrapPaginated = <T,>(body: unknown): PaginatedResult<T> => {
+  if (Array.isArray(body)) {
+    return {
+      items: body,
+      total: body.length,
+      page: 1,
+      page_size: body.length,
+      pages: 1,
+    };
+  }
+  if (body && typeof body === "object") {
+    const obj = body as Record<string, unknown>;
+    const meta = (obj.meta || {}) as Record<string, unknown>;
+    const rawItems = Array.isArray(obj.data)
+      ? (obj.data as T[])
+      : Array.isArray(obj.items)
+      ? (obj.items as T[])
+      : [];
+    const total =
+      typeof meta.total === "number"
+        ? meta.total
+        : typeof meta.total_items === "number"
+        ? meta.total_items
+        : typeof obj.total === "number"
+        ? obj.total
+        : rawItems.length;
+    const page =
+      typeof meta.page === "number"
+        ? meta.page
+        : typeof obj.page === "number"
+        ? obj.page
+        : 1;
+    const pageSize =
+      typeof meta.page_size === "number"
+        ? meta.page_size
+        : typeof obj.page_size === "number"
+        ? obj.page_size
+        : 20;
+    const pages =
+      typeof meta.total_pages === "number"
+        ? meta.total_pages
+        : typeof obj.pages === "number"
+        ? obj.pages
+        : Math.ceil(total / pageSize) || 1;
+
+    return {
+      items: rawItems,
+      total,
+      page,
+      page_size: pageSize,
+      pages,
+    };
+  }
+  return {
+    items: [],
+    total: 0,
+    page: 1,
+    page_size: 20,
+    pages: 1,
+  };
 };
 
 // ----------------------------------------------------
@@ -88,6 +159,24 @@ export const discardCmsPageDraft = async (slug: string): Promise<CmsPageResponse
   return unwrap<CmsPageResponse>(response.data);
 };
 
+export const getCmsHomePage = async (): Promise<CmsPageResponse> => {
+  return getCmsPageBySlug("home");
+};
+
+export const updateCmsHomePage = async (
+  payload: CmsPageUpdate
+): Promise<CmsPageResponse> => {
+  return updateCmsPage("home", payload);
+};
+
+export const publishCmsHomePage = async (): Promise<CmsPageResponse> => {
+  return publishCmsPage("home");
+};
+
+export const discardCmsHomePageDraft = async (): Promise<CmsPageResponse> => {
+  return discardCmsPageDraft("home");
+};
+
 // ----------------------------------------------------
 // Public Content Settings (About & Mission)
 // ----------------------------------------------------
@@ -115,14 +204,6 @@ export const updatePublicContent = async (
 // Success Stories
 // ----------------------------------------------------
 
-export interface PaginatedResult<T> {
-  items: T[];
-  total: number;
-  page: number;
-  page_size: number;
-  pages: number;
-}
-
 export const getSuccessStories = async (params?: {
   status?: string;
   search?: string;
@@ -131,7 +212,7 @@ export const getSuccessStories = async (params?: {
   page_size?: number;
 }): Promise<PaginatedResult<SuccessStoryRecord>> => {
   const response = await api.get("/portal/admin/success-stories", { params });
-  return unwrap<PaginatedResult<SuccessStoryRecord>>(response.data);
+  return unwrapPaginated<SuccessStoryRecord>(response.data);
 };
 
 export const getSuccessStoryById = async (storyId: string): Promise<SuccessStoryRecord> => {
@@ -222,7 +303,7 @@ export const getBlogPosts = async (params?: {
   page_size?: number;
 }): Promise<PaginatedResult<BlogPostRecord>> => {
   const response = await api.get("/portal/admin/blog", { params });
-  return unwrap<PaginatedResult<BlogPostRecord>>(response.data);
+  return unwrapPaginated<BlogPostRecord>(response.data);
 };
 
 export const getBlogPostById = async (postId: string): Promise<BlogPostRecord> => {
@@ -306,7 +387,7 @@ export const getFaqs = async (params?: {
   page_size?: number;
 }): Promise<PaginatedResult<FaqRecord>> => {
   const response = await api.get("/portal/admin/faq", { params });
-  return unwrap<PaginatedResult<FaqRecord>>(response.data);
+  return unwrapPaginated<FaqRecord>(response.data);
 };
 
 export const getFaqById = async (entryId: string): Promise<FaqRecord> => {
@@ -405,7 +486,7 @@ export const getLegalDocuments = async (params?: {
   page_size?: number;
 }): Promise<PaginatedResult<LegalDocRecord>> => {
   const response = await api.get("/portal/admin/legal", { params });
-  return unwrap<PaginatedResult<LegalDocRecord>>(response.data);
+  return unwrapPaginated<LegalDocRecord>(response.data);
 };
 
 export const getLegalDocumentById = async (docId: string): Promise<LegalDocRecord> => {
@@ -488,12 +569,27 @@ export const deleteUrgentAlert = async (alertId: string): Promise<void> => {
 // CMS Media Upload Endpoint
 // ----------------------------------------------------
 
-export const requestCmsMediaUploadUrl = async (payload: {
-  filename: string;
-  content_type: string;
-  size_bytes: number;
-}): Promise<UploadUrlResponse> => {
-  const response = await api.post("/portal/admin/cms/media/upload-url", payload);
+export type { CmsMediaUploadPayload };
+
+export interface CmsMediaUploadRequest extends Partial<CmsMediaUploadPayload> {
+  // Legacy aliases
+  filename?: string;
+  content_type?: string;
+  size_bytes?: number;
+}
+
+export const requestCmsMediaUploadUrl = async (
+  payload: CmsMediaUploadRequest
+): Promise<UploadUrlResponse> => {
+  const backendPayload = {
+    original_filename: payload.original_filename || payload.filename || "upload.jpg",
+    mime_type: payload.mime_type || payload.content_type || "image/jpeg",
+    file_size: payload.file_size ?? payload.size_bytes ?? 0,
+    folder: payload.folder || "cms",
+    entity_type: payload.entity_type || "cms",
+    entity_id: payload.entity_id || null,
+  };
+  const response = await api.post("/portal/admin/cms/media/upload-url", backendPayload);
   return unwrap<UploadUrlResponse>(response.data);
 };
 
@@ -502,12 +598,20 @@ export const confirmCmsMediaUpload = async (fileId: string): Promise<unknown> =>
   return unwrap<unknown>(response.data);
 };
 
+export const deleteCmsMedia = async (fileId: string): Promise<void> => {
+  await api.delete(`/storage/${fileId}`);
+};
+
 const cmsService = {
   getCmsPages,
   getCmsPageBySlug,
   updateCmsPage,
   publishCmsPage,
   discardCmsPageDraft,
+  getCmsHomePage,
+  updateCmsHomePage,
+  publishCmsHomePage,
+  discardCmsHomePageDraft,
   getPublicContent,
   updatePublicContent,
   getSuccessStories,
@@ -553,6 +657,7 @@ const cmsService = {
   deleteUrgentAlert,
   requestCmsMediaUploadUrl,
   confirmCmsMediaUpload,
+  deleteCmsMedia,
 };
 
 export default cmsService;

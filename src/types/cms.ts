@@ -274,9 +274,18 @@ export interface UrgentAlertUpdatePayload {
   sort_order?: number | null;
 }
 
+export interface CmsMediaUploadPayload {
+  original_filename: string;
+  mime_type: string;
+  file_size: number;
+  folder?: string;
+  entity_type?: string;
+  entity_id?: string | null;
+}
+
 export interface UploadUrlResponse {
   upload_url: string;
   file_id: string;
   object_key: string;
-  expires_in: number;
+  expires_in?: number;
 }

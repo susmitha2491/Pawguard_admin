@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   FaGlobe,
+  FaHome,
   FaFileAlt,
   FaInfoCircle,
   FaStar,
@@ -12,6 +13,7 @@ import {
 } from "react-icons/fa";
 
 const navTabs = [
+  { path: "/cms/home", label: "Home", icon: <FaHome /> },
   { path: "/cms/pages", label: "Pages & Sections", icon: <FaFileAlt /> },
   { path: "/cms/about", label: "About & Mission", icon: <FaInfoCircle /> },
   { path: "/cms/success-stories", label: "Success Stories", icon: <FaStar /> },
@@ -73,7 +75,7 @@ const CmsLayout = () => {
         {navTabs.map((tab) => {
           const isActive =
             location.pathname === tab.path ||
-            (tab.path === "/cms/pages" && location.pathname === "/cms");
+            (tab.path === "/cms/home" && location.pathname === "/cms");
 
           return (
             <NavLink

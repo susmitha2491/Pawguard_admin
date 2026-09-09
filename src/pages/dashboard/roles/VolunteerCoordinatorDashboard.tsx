@@ -44,6 +44,26 @@ const DEFAULT_APPROVAL_MSG =
 const DEFAULT_REJECTION_MSG =
   "Thank you for your interest in volunteering with PawGuard. After reviewing your application, we are unable to proceed with your application at this time. We appreciate your interest in supporting animal welfare.";
 
+const extractErrorMessage = (err: any, fallback: string): string => {
+  const detail =
+    err?.response?.data?.error?.message ||
+    err?.response?.data?.error ||
+    err?.response?.data?.detail ||
+    err?.response?.data?.message ||
+    (err?.response?.status === 409
+      ? "An application or volunteer already exists for this email or phone number."
+      : err?.message);
+  if (!detail) return fallback;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((item) => (typeof item === "string" ? item : item?.msg || JSON.stringify(item))).join("; ");
+  }
+  if (typeof detail === "object") {
+    return (detail as any).msg || (detail as any).message || JSON.stringify(detail);
+  }
+  return String(detail);
+};
+
 const VOLUNTEER_PAGE_SIZE = 50;
 
 type VolunteerPage = {
@@ -728,6 +748,7 @@ const VolunteerCoordinatorDashboard = () => {
         email: applyForm.email,
         phone: applyForm.phone,
         preferred_role: applyForm.preferred_role,
+        applied_role: applyForm.preferred_role,
         availability: applyForm.availability,
         emergency_contact_name: applyForm.emergency_contact_name || applyForm.full_name,
         emergency_contact_phone: applyForm.emergency_contact_phone || applyForm.phone,
@@ -736,15 +757,21 @@ const VolunteerCoordinatorDashboard = () => {
       });
       addToast("Volunteer application submitted successfully!", "success");
       setIsApplyModalOpen(false);
+      setApplyForm({
+        full_name: "",
+        email: "",
+        phone: "",
+        preferred_role: "Shelter Support",
+        availability: "Weekends & Mornings",
+        emergency_contact_name: "",
+        emergency_contact_phone: "",
+        skills: "Dog Walking, Grooming",
+        notes: "",
+      });
       fetchDashboardData();
       notifyDataChanged();
     } catch (err: any) {
-      const errorMsg =
-        typeof err?.response?.data?.detail === "string"
-          ? err.response.data.detail
-          : Array.isArray(err?.response?.data?.detail)
-          ? err.response.data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ")
-          : err?.response?.data?.message || err?.message || "Failed to submit application.";
+      const errorMsg = extractErrorMessage(err, "Failed to submit application.");
       addToast(errorMsg, "error");
     } finally {
       setIsSubmitting(false);

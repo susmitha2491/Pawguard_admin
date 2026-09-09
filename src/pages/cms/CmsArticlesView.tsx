@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type React from "react";
 import cmsService from "../../services/cmsService";
 import type { BlogPostRecord, ContentStatus } from "../../types/cms";
@@ -13,15 +13,84 @@ import {
   FaSpinner,
   FaUpload,
   FaNewspaper,
+  FaImage,
 } from "react-icons/fa";
 
 const getErrorMsg = (err: unknown, fallback: string): string => {
   if (err && typeof err === "object") {
-    const r = err as { response?: { data?: { detail?: unknown; message?: unknown } } };
-    const detail = r?.response?.data?.detail ?? r?.response?.data?.message;
-    if (typeof detail === "string" && detail) return detail;
+    const r = err as {
+      response?: {
+        data?: {
+          error?: {
+            message?: string;
+            details?: Array<{ loc?: (string | number)[]; msg?: string; message?: string }> | string;
+          };
+          detail?: string | Array<{ loc?: (string | number)[]; msg?: string }>;
+          message?: string;
+        };
+      };
+      message?: string;
+    };
+
+    const data = r?.response?.data;
+    if (data) {
+      if (typeof data.error?.message === "string" && data.error.message.trim()) {
+        const baseMsg = data.error.message.trim();
+        if (Array.isArray(data.error.details) && data.error.details.length > 0) {
+          const detailMsgs = data.error.details
+            .map((d) => {
+              const field = Array.isArray(d.loc) ? d.loc.filter((l) => l !== "body").join(".") : "";
+              const msg = d.msg || d.message || "";
+              return field && msg ? `${field}: ${msg}` : msg;
+            })
+            .filter(Boolean);
+          if (detailMsgs.length > 0 && !baseMsg.includes(detailMsgs[0])) {
+            return `${baseMsg} (${detailMsgs.join(", ")})`;
+          }
+        }
+        return baseMsg;
+      }
+
+      if (Array.isArray(data.detail) && data.detail.length > 0) {
+        const detailMsgs = data.detail
+          .map((d) => {
+            const field = Array.isArray(d.loc) ? d.loc.filter((l) => l !== "body").join(".") : "";
+            const msg = d.msg || "";
+            return field && msg ? `${field}: ${msg}` : msg;
+          })
+          .filter(Boolean);
+        if (detailMsgs.length > 0) {
+          return `Validation error: ${detailMsgs.join(", ")}`;
+        }
+      }
+
+      if (typeof data.detail === "string" && data.detail.trim()) {
+        return data.detail.trim();
+      }
+      if (typeof data.message === "string" && data.message.trim()) {
+        return data.message.trim();
+      }
+    }
+
+    if (typeof r.message === "string" && r.message.trim()) {
+      if (!r.message.toLowerCase().includes("request failed with status code")) {
+        return r.message.trim();
+      }
+    }
   }
   return fallback;
+};
+
+const getDisplayFileName = (urlOrKey?: string | null): string => {
+  if (!urlOrKey) return "";
+  try {
+    const clean = urlOrKey.split("?")[0];
+    const segments = clean.split("/");
+    const last = segments[segments.length - 1];
+    return decodeURIComponent(last) || "image.jpg";
+  } catch {
+    return "image.jpg";
+  }
 };
 
 const CmsArticlesView = () => {
@@ -50,7 +119,14 @@ const CmsArticlesView = () => {
   });
 
   const [submitting, setSubmitting] = useState(false);
+
+  // Cover Image Media State
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageFileName, setImageFileName] = useState<string>("");
+  const [mediaFileId, setMediaFileId] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [removingImage, setRemovingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const fetchPosts = useCallback(async () => {
     try {
@@ -61,7 +137,14 @@ const CmsArticlesView = () => {
       if (search.trim()) params.search = search.trim();
 
       const res = await cmsService.getBlogPosts(params);
-      setPosts(Array.isArray(res.items) ? res.items : []);
+      const items = Array.isArray(res)
+        ? res
+        : Array.isArray(res?.items)
+        ? res.items
+        : Array.isArray((res as unknown as { data?: BlogPostRecord[] })?.data)
+        ? (res as unknown as { data: BlogPostRecord[] }).data
+        : [];
+      setPosts(items);
     } catch (err: unknown) {
       setError(getErrorMsg(err, "Failed to load awareness articles from backend API."));
     } finally {
@@ -87,6 +170,10 @@ const CmsArticlesView = () => {
       author: "PawGuard Editorial",
       status: "draft",
     });
+    setImagePreview(null);
+    setImageFileName("");
+    setMediaFileId(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
     setModalOpen(true);
   };
 
@@ -104,6 +191,10 @@ const CmsArticlesView = () => {
       author: post.author || "PawGuard Editorial",
       status: post.status || "draft",
     });
+    setImagePreview(post.cover_image_url || null);
+    setImageFileName(getDisplayFileName(post.cover_image_url));
+    setMediaFileId(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
     setModalOpen(true);
   };
 
@@ -111,32 +202,105 @@ const CmsArticlesView = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Reset input so re-uploading the same file still triggers onChange
+    e.target.value = "";
+
+    // Client-side file validation matching backend requirements
+    const allowedImageMimes = ["image/jpeg", "image/png", "image/webp"];
+    const mimeType = (file.type || "image/jpeg").toLowerCase();
+    if (file.type && !allowedImageMimes.includes(mimeType)) {
+      addToast("Only JPEG, PNG, and WebP images are allowed.", "error");
+      return;
+    }
+
+    const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB limit for images per backend
+    if (file.size > MAX_IMAGE_SIZE) {
+      addToast(
+        `Image size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds maximum allowed limit of 10 MB.`,
+        "error"
+      );
+      return;
+    }
+
+    if (file.size <= 0) {
+      addToast("Selected file is empty.", "error");
+      return;
+    }
+
+    // Set immediate preview
+    const localBlobUrl = URL.createObjectURL(file);
+    setImagePreview(localBlobUrl);
+    setImageFileName(file.name);
+
     try {
       setUploadingImage(true);
       const res = await cmsService.requestCmsMediaUploadUrl({
-        filename: file.name,
-        content_type: file.type || "image/jpeg",
-        size_bytes: file.size,
+        original_filename: file.name,
+        mime_type: mimeType,
+        file_size: file.size,
+        folder: "cms",
+        entity_type: "blog",
       });
 
+      let finalKey = res.object_key;
+
       if (res.upload_url) {
-        await fetch(res.upload_url, {
+        const uploadRes = await fetch(res.upload_url, {
           method: "PUT",
-          headers: { "Content-Type": file.type || "image/jpeg" },
+          headers: { "Content-Type": mimeType },
           body: file,
         });
-        await cmsService.confirmCmsMediaUpload(res.file_id);
+
+        if (!uploadRes.ok) {
+          throw new Error(
+            `Failed to upload cover media to storage provider (${uploadRes.status} ${uploadRes.statusText})`
+          );
+        }
+
+        if (res.file_id) {
+          const confirmRes = await cmsService.confirmCmsMediaUpload(res.file_id);
+          if (confirmRes && typeof confirmRes === "object" && "object_key" in confirmRes) {
+            finalKey = (confirmRes as { object_key: string }).object_key || finalKey;
+          }
+        }
       }
 
+      setMediaFileId(res.file_id || null);
       setForm((prev) => ({
         ...prev,
-        cover_image_url: res.object_key || res.upload_url,
+        cover_image_url: finalKey,
       }));
       addToast("Cover image uploaded successfully!", "success");
     } catch (err: unknown) {
+      setImagePreview(form.cover_image_url || null);
+      setImageFileName(getDisplayFileName(form.cover_image_url));
       addToast(getErrorMsg(err, "Failed to upload cover media."), "error");
     } finally {
       setUploadingImage(false);
+    }
+  };
+
+  const handleRemoveImage = async () => {
+    if (uploadingImage || removingImage) return;
+
+    try {
+      setRemovingImage(true);
+      if (mediaFileId) {
+        await cmsService.deleteCmsMedia(mediaFileId).catch((err) => {
+          console.warn("Could not delete uploaded cover media from storage:", err);
+        });
+      }
+
+      setForm((prev) => ({ ...prev, cover_image_url: "" }));
+      setImagePreview(null);
+      setImageFileName("");
+      setMediaFileId(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      addToast("Cover image removed.", "info");
+    } finally {
+      setRemovingImage(false);
     }
   };
 
@@ -540,35 +704,138 @@ const CmsArticlesView = () => {
           </div>
 
           <div>
-            <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 4 }}>
-              Cover Image URL
+            <label style={{ display: "block", fontSize: "12.5px", fontWeight: 700, color: "#334155", marginBottom: 6 }}>
+              Cover Image
             </label>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                type="text"
-                value={form.cover_image_url}
-                onChange={(e) => setForm({ ...form, cover_image_url: e.target.value })}
-                placeholder="https://example.com/cover.jpg"
-                style={{ flex: 1, padding: "8px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 13, boxSizing: "border-box" }}
-              />
-              <label
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handleImageUpload}
+              style={{ display: "none" }}
+            />
+
+            {!imagePreview && !form.cover_image_url ? (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingImage}
                 style={{
-                  padding: "8px 12px",
-                  borderRadius: 6,
-                  background: "#F1F5F9",
-                  border: "1px solid #CBD5E1",
-                  fontSize: 12,
-                  fontWeight: 700,
+                  padding: "9px 16px",
+                  borderRadius: "6px",
+                  border: "1px dashed #CBD5E1",
+                  background: "#F8FAFC",
+                  color: "#2563EB",
+                  fontSize: "12.5px",
+                  fontWeight: 600,
                   cursor: "pointer",
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: 6,
+                  gap: "7px",
+                  transition: "all 0.15s ease",
                 }}
               >
-                {uploadingImage ? <FaSpinner className="spin" /> : <FaUpload />} Upload
-                <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: "none" }} />
-              </label>
-            </div>
+                {uploadingImage ? <FaSpinner className="spin" /> : <FaUpload />} Upload Cover Image
+              </button>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #E2E8F0",
+                  background: "#F8FAFC",
+                }}
+              >
+                <div
+                  style={{
+                    width: "56px",
+                    height: "56px",
+                    borderRadius: "6px",
+                    overflow: "hidden",
+                    background: "#E2E8F0",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    border: "1px solid #CBD5E1",
+                  }}
+                >
+                  {imagePreview ? (
+                    <img
+                      src={imagePreview}
+                      alt="Cover preview"
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      onError={() => {
+                        // If image fails to load
+                      }}
+                    />
+                  ) : (
+                    <FaImage style={{ color: "#94A3B8", fontSize: "20px" }} />
+                  )}
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: "12.5px",
+                      fontWeight: 600,
+                      color: "#1E293B",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={imageFileName || "Uploaded cover image"}
+                  >
+                    {imageFileName || "Uploaded cover image"}
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingImage || removingImage}
+                      style={{
+                        padding: "4px 9px",
+                        borderRadius: "5px",
+                        border: "1px solid #CBD5E1",
+                        background: "#FFFFFF",
+                        color: "#334155",
+                        fontSize: "11.5px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                    >
+                      {uploadingImage ? <FaSpinner className="spin" /> : <FaUpload />} Replace
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRemoveImage}
+                      disabled={uploadingImage || removingImage}
+                      style={{
+                        padding: "4px 9px",
+                        borderRadius: "5px",
+                        border: "1px solid #FCA5A5",
+                        background: "#FEF2F2",
+                        color: "#991B1B",
+                        fontSize: "11.5px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                    >
+                      {removingImage ? <FaSpinner className="spin" /> : <FaTrash />} Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import axios from "axios";
 import cmsService from "../../services/cmsService";
 import type { CmsPageResponse, CmsSectionUpdate, CmsFieldUpdate } from "../../types/cms";
 import { useToast } from "../../context/ToastContext";
@@ -10,13 +11,32 @@ import {
   FaSearch,
   FaFileAlt,
   FaExclamationTriangle,
+  FaUpload,
+  FaTrash,
+  FaExternalLinkAlt,
+  FaImage,
 } from "react-icons/fa";
 
 const getErrorMsg = (err: unknown, fallback: string): string => {
   if (err && typeof err === "object") {
-    const r = err as { response?: { data?: { detail?: unknown; message?: unknown } } };
+    const r = err as {
+      response?: {
+        data?: {
+          detail?: unknown;
+          message?: unknown;
+          error?: { message?: string; details?: unknown };
+        };
+      };
+      message?: string;
+    };
+    const errorObj = r?.response?.data?.error;
+    if (typeof errorObj?.message === "string" && errorObj.message) return errorObj.message;
     const detail = r?.response?.data?.detail ?? r?.response?.data?.message;
     if (typeof detail === "string" && detail) return detail;
+    if (Array.isArray(detail)) {
+      return detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join(", ");
+    }
+    if (typeof r.message === "string" && r.message) return r.message;
   }
   return fallback;
 };
@@ -29,6 +49,7 @@ const CmsPagesView = () => {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadingFieldKey, setUploadingFieldKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
@@ -113,6 +134,63 @@ const CmsPagesView = () => {
         [fieldKey]: val,
       },
     }));
+  };
+
+  const handleImageUpload = async (
+    sectionKey: string,
+    fieldKey: string,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      addToast("Please select a valid image file (JPEG, PNG, WebP).", "error");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      addToast("Image size exceeds 5MB limit.", "error");
+      return;
+    }
+
+    try {
+      setUploadingFieldKey(`${sectionKey}.${fieldKey}`);
+
+      const uploadInit = await cmsService.requestCmsMediaUploadUrl({
+        original_filename: file.name,
+        file_size: file.size,
+        mime_type: file.type,
+        folder: "cms",
+      });
+
+      if (!uploadInit?.upload_url) {
+        throw new Error("Backend did not provide a presigned upload URL.");
+      }
+
+      await axios.put(uploadInit.upload_url, file, {
+        headers: {
+          "Content-Type": file.type,
+        },
+      });
+
+      let finalUrl = uploadInit.object_key;
+      if (uploadInit.file_id) {
+        const confirmed = await cmsService.confirmCmsMediaUpload(uploadInit.file_id);
+        if (confirmed && typeof confirmed === "object") {
+          const conf = confirmed as { public_url?: string; object_key?: string };
+          finalUrl = conf.public_url || conf.object_key || finalUrl;
+        }
+      }
+
+      handleFieldChange(sectionKey, fieldKey, finalUrl);
+      addToast("Image uploaded and linked successfully.", "success");
+    } catch (err: unknown) {
+      addToast(getErrorMsg(err, "Failed to upload image file."), "error");
+    } finally {
+      setUploadingFieldKey(null);
+      e.target.value = "";
+    }
   };
 
   const handleSaveDraft = async () => {
@@ -505,10 +583,18 @@ const CmsPagesView = () => {
                           field.draft_value &&
                           field.published_value !== field.draft_value;
 
+                        const isImageField =
+                          field.field_type === "image" ||
+                          field.field_key.includes("image") ||
+                          field.field_key.includes("photo");
+
+                        const isUploading = uploadingFieldKey === `${section.section_key}.${field.field_key}`;
+
                         return (
                           <div key={field.id || field.field_key}>
                             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                              <label style={{ fontSize: "12px", fontWeight: 700, color: "#334155" }}>
+                              <label style={{ fontSize: "12px", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: 6 }}>
+                                {isImageField && <FaImage style={{ color: "#3B82F6" }} />}
                                 {field.field_key.replace(/_/g, " ").toUpperCase()}
                               </label>
                               {isDraftDifferent && (
@@ -518,7 +604,136 @@ const CmsPagesView = () => {
                               )}
                             </div>
 
-                            {field.field_type === "textarea" || field.field_type === "html" ? (
+                            {isImageField ? (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                {currentVal && (
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 12,
+                                      background: "#F8FAFC",
+                                      padding: "8px",
+                                      borderRadius: "6px",
+                                      border: "1px solid #E2E8F0",
+                                    }}
+                                  >
+                                    <img
+                                      src={currentVal}
+                                      alt={field.field_key}
+                                      style={{
+                                        width: "100px",
+                                        height: "60px",
+                                        objectFit: "cover",
+                                        borderRadius: "4px",
+                                        border: "1px solid #CBD5E1",
+                                      }}
+                                      onError={(e) => {
+                                        (e.target as HTMLElement).style.display = "none";
+                                      }}
+                                    />
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ fontSize: "11.5px", color: "#334155", wordBreak: "break-all", marginBottom: 4 }}>
+                                        <code>{currentVal}</code>
+                                      </div>
+                                      <div style={{ display: "flex", gap: 8 }}>
+                                        <a
+                                          href={currentVal}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          style={{
+                                            fontSize: "11px",
+                                            color: "#2563EB",
+                                            textDecoration: "none",
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            gap: 4,
+                                            fontWeight: 600,
+                                          }}
+                                        >
+                                          <FaExternalLinkAlt size={9} /> View
+                                        </a>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleFieldChange(section.section_key, field.field_key, "")
+                                          }
+                                          style={{
+                                            padding: "2px 6px",
+                                            borderRadius: 4,
+                                            border: "1px solid #FCA5A5",
+                                            background: "#FEF2F2",
+                                            color: "#991B1B",
+                                            fontSize: "10.5px",
+                                            fontWeight: 600,
+                                            cursor: "pointer",
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            gap: 4,
+                                          }}
+                                        >
+                                          <FaTrash size={9} /> Remove
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div style={{ display: "flex", gap: 8 }}>
+                                  <input
+                                    type="text"
+                                    value={currentVal}
+                                    onChange={(e) =>
+                                      handleFieldChange(section.section_key, field.field_key, e.target.value)
+                                    }
+                                    placeholder="Image URL (https://...)"
+                                    style={{
+                                      flex: 1,
+                                      padding: "8px 10px",
+                                      borderRadius: 6,
+                                      border: "1px solid #CBD5E1",
+                                      fontSize: 13,
+                                      boxSizing: "border-box",
+                                    }}
+                                  />
+                                  <label
+                                    style={{
+                                      padding: "8px 12px",
+                                      borderRadius: 6,
+                                      background: "#EFF6FF",
+                                      border: "1px solid #BFDBFE",
+                                      color: "#1D4ED8",
+                                      fontSize: "12px",
+                                      fontWeight: 700,
+                                      cursor: isUploading ? "not-allowed" : "pointer",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: 6,
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    {isUploading ? (
+                                      <>
+                                        <FaSpinner className="spin" /> Uploading...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <FaUpload /> Upload Image
+                                      </>
+                                    )}
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      disabled={isUploading}
+                                      onChange={(e) =>
+                                        handleImageUpload(section.section_key, field.field_key, e)
+                                      }
+                                      style={{ display: "none" }}
+                                    />
+                                  </label>
+                                </div>
+                              </div>
+                            ) : field.field_type === "textarea" || field.field_type === "html" ? (
                               <textarea
                                 rows={3}
                                 value={currentVal}

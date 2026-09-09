@@ -33,6 +33,7 @@ import VehicleManagement from "./pages/vehicles/VehicleManagement";
 import Notifications from "./pages/notifications/Notifications";
 
 import CmsLayout from "./pages/cms/CmsLayout";
+import CmsHomeView from "./pages/cms/CmsHomeView";
 import CmsPagesView from "./pages/cms/CmsPagesView";
 import CmsAboutView from "./pages/cms/CmsAboutView";
 import CmsSuccessStoriesView from "./pages/cms/CmsSuccessStoriesView";
@@ -399,7 +400,8 @@ function App() {
               }
             >
               <Route path="/cms" element={<CmsLayout />}>
-                <Route index element={<CmsPagesView />} />
+                <Route index element={<CmsHomeView />} />
+                <Route path="home" element={<CmsHomeView />} />
                 <Route path="pages" element={<CmsPagesView />} />
                 <Route path="about" element={<CmsAboutView />} />
                 <Route path="success-stories" element={<CmsSuccessStoriesView />} />

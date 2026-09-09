@@ -2,13 +2,22 @@ import api from "../api/axios";
 import { publishActionEvent } from "../utils/eventSystem";
 import { unwrapList } from "../utils/chartUtils";
 
+export type CanonicalRescueStatus =
+  | "reported"
+  | "verified"
+  | "dispatched"
+  | "located"
+  | "rescued"
+  | "admitted"
+  | "rejected";
+
 export interface RescueCasePayload {
   id?: string;
   case_number?: string;
   dog_name?: string;
   location?: string;
   urgency_level?: string;
-  status?: string;
+  status?: CanonicalRescueStatus | string;
   assigned_agent?: string;
   reporter_name?: string;
   reporter_phone?: string;
@@ -131,16 +140,64 @@ export const rescueService = {
     return response.data;
   },
 
-  updateRescueStatus: async (requestId: string, status: string) => {
-    const response = await api.post(`/rescue/${requestId}/verify`, { status });
+  updateRescueStatus: async (
+    requestId: string,
+    status: string,
+    options?: {
+      notes?: string;
+      failure_reason?: string;
+      rejection_rationale?: string;
+      severity?: string;
+      is_urgent?: boolean;
+    }
+  ) => {
+    const normalizedStatus = String(status || "").toLowerCase().trim();
+    let responseData: any;
+
+    if (normalizedStatus === "verified") {
+      const payload: Record<string, unknown> = { status: "verified" };
+      if (options?.severity) payload.severity = options.severity;
+      if (typeof options?.is_urgent === "boolean") payload.is_urgent = options.is_urgent;
+      if (options?.rejection_rationale) payload.rejection_rationale = options.rejection_rationale;
+      const res = await api.post(`/rescue/${requestId}/verify`, payload);
+      responseData = res.data;
+    } else if (normalizedStatus === "located") {
+      const res = await api.post(`/rescue/${requestId}/located`);
+      responseData = res.data;
+    } else if (normalizedStatus === "rescued" || normalizedStatus === "secured") {
+      const res = await api.post(`/rescue/${requestId}/secured`);
+      responseData = res.data;
+    } else if (normalizedStatus === "admitted") {
+      const payload: Record<string, unknown> = {};
+      if (options?.notes) payload.notes = options.notes;
+      const res = await api.post(`/rescue/${requestId}/admitted`, payload);
+      responseData = res.data;
+    } else if (normalizedStatus === "rejected") {
+      const reason = options?.failure_reason || options?.rejection_rationale || options?.notes || "Case rejected or closed";
+      try {
+        const res = await api.post(`/rescue/${requestId}/fail`, null, {
+          params: { failure_reason: reason },
+        });
+        responseData = res.data;
+      } catch {
+        const res = await api.post(`/rescue/${requestId}/verify`, {
+          status: "rejected",
+          rejection_rationale: reason,
+        });
+        responseData = res.data;
+      }
+    } else {
+      throw new Error(`Unsupported rescue status transition: '${status}'. Supported statuses are: reported, verified, dispatched, located, rescued, admitted, rejected.`);
+    }
+
     await publishActionEvent({
       module: "rescue",
       action: "update",
-      title: "Rescue Status Verified",
-      message: `Rescue incident ${requestId} verified with status: ${status}.`,
-      targetRoles: ["super_admin", "rescue_centre_admin", "rescue_coordinator"],
+      title: "Rescue Status Updated",
+      message: `Rescue incident ${requestId} updated to status: ${normalizedStatus}.`,
+      targetRoles: ["super_admin", "rescue_centre_admin", "rescue_coordinator", "rescue_agent"],
     });
-    return response.data;
+    return responseData;
   },
 
   deleteRescueCase: async (id: string) => {
