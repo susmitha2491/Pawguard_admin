@@ -10,6 +10,7 @@ import {
   FaPhoneAlt,
   FaBalanceScale,
   FaExclamationTriangle,
+  FaEnvelope,
 } from "react-icons/fa";
 
 const navTabs = [
@@ -20,6 +21,7 @@ const navTabs = [
   { path: "/cms/articles", label: "Articles & Awareness", icon: <FaNewspaper /> },
   { path: "/cms/faq", label: "FAQ Management", icon: <FaQuestionCircle /> },
   { path: "/cms/contact", label: "Contact & Hotlines", icon: <FaPhoneAlt /> },
+  { path: "/cms/inquiries", label: "Contact Inquiries", icon: <FaEnvelope /> },
   { path: "/cms/legal", label: "Legal Pages", icon: <FaBalanceScale /> },
   { path: "/cms/alerts", label: "Urgent Alerts", icon: <FaExclamationTriangle /> },
 ];

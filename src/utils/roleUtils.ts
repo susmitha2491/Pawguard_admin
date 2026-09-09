@@ -478,6 +478,7 @@ export const MODULE_VIEW_PERMISSIONS: Record<string, string> = {
   "/cms/articles": "view_cms",
   "/cms/faq": "view_cms",
   "/cms/contact": "view_cms",
+  "/cms/inquiries": "view_cms",
   "/cms/legal": "view_cms",
   "/cms/alerts": "view_cms",
   "/audit-logs": "view_audit_logs",

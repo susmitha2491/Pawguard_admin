@@ -40,6 +40,7 @@ import CmsSuccessStoriesView from "./pages/cms/CmsSuccessStoriesView";
 import CmsArticlesView from "./pages/cms/CmsArticlesView";
 import CmsFaqView from "./pages/cms/CmsFaqView";
 import CmsContactView from "./pages/cms/CmsContactView";
+import CmsContactInquiriesView from "./pages/cms/CmsContactInquiriesView";
 import CmsLegalView from "./pages/cms/CmsLegalView";
 import CmsAlertsView from "./pages/cms/CmsAlertsView";
 
@@ -408,6 +409,7 @@ function App() {
                 <Route path="articles" element={<CmsArticlesView />} />
                 <Route path="faq" element={<CmsFaqView />} />
                 <Route path="contact" element={<CmsContactView />} />
+                <Route path="inquiries" element={<CmsContactInquiriesView />} />
                 <Route path="legal" element={<CmsLegalView />} />
                 <Route path="alerts" element={<CmsAlertsView />} />
               </Route>

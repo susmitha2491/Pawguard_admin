@@ -1,4 +1,4 @@
-export type ContentStatus = "draft" | "published" | "archived";
+export type ContentStatus = "draft" | "pending_review" | "published" | "rejected" | "archived";
 export type AlertSeverity = "info" | "warning" | "critical";
 export type LegalDocumentType = "terms" | "privacy" | "adoption_agreement" | "data_usage" | "other";
 
@@ -77,6 +77,9 @@ export interface SuccessStoryRecord {
   body: string;
   hero_image_url?: string | null;
   dog_id?: string | null;
+  adopter_id?: string | null;
+  has_consent?: boolean;
+  rejection_reason?: string | null;
   status: ContentStatus;
   published_at?: string | null;
   created_at: string;
@@ -92,6 +95,8 @@ export interface SuccessStoryCreatePayload {
   body: string;
   hero_image_url?: string | null;
   dog_id?: string | null;
+  adopter_id?: string | null;
+  has_consent?: boolean;
   status?: ContentStatus;
   slug?: string | null;
   is_featured?: boolean;
@@ -104,10 +109,59 @@ export interface SuccessStoryUpdatePayload {
   body?: string | null;
   hero_image_url?: string | null;
   dog_id?: string | null;
+  adopter_id?: string | null;
+  has_consent?: boolean;
+  rejection_reason?: string | null;
   status?: ContentStatus | null;
   slug?: string | null;
   is_featured?: boolean | null;
   sort_order?: number | null;
+}
+
+export interface SuccessStoryRejectPayload {
+  rejection_reason: string;
+}
+
+export type ContactInquiryStatus =
+  | "new"
+  | "in_progress"
+  | "waiting_for_user"
+  | "resolved"
+  | "closed";
+
+export interface ContactInquiryRecord {
+  id: string;
+  user_id?: string | null;
+  name?: string | null;
+  email: string;
+  phone?: string | null;
+  category: string;
+  subject: string;
+  message: string;
+  status: ContactInquiryStatus;
+  assigned_to_user_id?: string | null;
+  staff_response?: string | null;
+  internal_notes?: string | null;
+  responded_at?: string | null;
+  responded_by_user_id?: string | null;
+  has_consent?: boolean;
+  consent?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContactInquiryRespondPayload {
+  staff_response?: string | null;
+  internal_notes?: string | null;
+  new_status?: ContactInquiryStatus | null;
+}
+
+export interface ContactInquiryAssignPayload {
+  assigned_to_user_id: string | null;
+}
+
+export interface ContactInquiryStatusPayload {
+  status: ContactInquiryStatus;
 }
 
 export interface BlogPostRecord {

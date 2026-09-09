@@ -8,6 +8,12 @@ import type {
   SuccessStoryRecord,
   SuccessStoryCreatePayload,
   SuccessStoryUpdatePayload,
+  SuccessStoryRejectPayload,
+  ContactInquiryRecord,
+  ContactInquiryRespondPayload,
+  ContactInquiryAssignPayload,
+  ContactInquiryStatusPayload,
+  ContactInquiryStatus,
   BlogPostRecord,
   BlogPostCreatePayload,
   BlogPostUpdatePayload,
@@ -277,6 +283,21 @@ export const discardSuccessStory = async (storyId: string): Promise<SuccessStory
   return unwrap<SuccessStoryRecord>(response.data);
 };
 
+export const rejectSuccessStory = async (
+  storyId: string,
+  payload: SuccessStoryRejectPayload
+): Promise<SuccessStoryRecord> => {
+  const response = await api.post(`/portal/admin/success-stories/${storyId}/reject`, payload);
+  await publishActionEvent({
+    module: "cms",
+    action: "update",
+    title: "Success Story Rejected",
+    message: `Rejected success story ${storyId}.`,
+    targetRoles: ["super_admin"],
+  });
+  return unwrap<SuccessStoryRecord>(response.data);
+};
+
 export const bulkDeleteSuccessStories = async (storyIds: string[]): Promise<void> => {
   await api.post("/portal/admin/success-stories/bulk/delete", { story_ids: storyIds });
 };
@@ -476,6 +497,120 @@ export const deleteContactLocation = async (locationId: string): Promise<void> =
 };
 
 // ----------------------------------------------------
+// Contact Inquiries Management
+// ----------------------------------------------------
+
+export const getContactInquiries = async (params?: {
+  status?: string;
+  category?: string;
+  assigned_to_user_id?: string;
+  search?: string;
+  sort_by?: string;
+  sort_order?: "asc" | "desc";
+  page?: number;
+  page_size?: number;
+}): Promise<PaginatedResult<ContactInquiryRecord>> => {
+  const validStatuses: ContactInquiryStatus[] = ["new", "in_progress", "waiting_for_user", "resolved", "closed"];
+  const page = params?.page || 1;
+  const pageSize = params?.page_size || 20;
+
+  // If a specific valid status is provided (and not 'all'), query directly
+  if (params?.status && validStatuses.includes(params.status as ContactInquiryStatus)) {
+    const cleanParams: Record<string, unknown> = {
+      ...params,
+      page,
+      page_size: pageSize,
+    };
+    const response = await api.get("/portal/admin/contact-inquiries", { params: cleanParams });
+    return unwrapPaginated<ContactInquiryRecord>(response.data);
+  }
+
+  // If status is 'all' or omitted, query across all 5 valid statuses in parallel
+  // to safely bypass backend FastAPI 422 error on omitted status parameter
+  const queryPromises = validStatuses.map((s) => {
+    const cleanParams: Record<string, unknown> = {
+      ...params,
+      status: s,
+      page: 1,
+      page_size: 100,
+    };
+    return api
+      .get("/portal/admin/contact-inquiries", { params: cleanParams })
+      .then((res) => unwrapPaginated<ContactInquiryRecord>(res.data))
+      .catch(() => ({ items: [], total: 0, page: 1, page_size: 100, pages: 1 }));
+  });
+
+  const results = await Promise.all(queryPromises);
+  const combinedItems = results.flatMap((r) => r.items);
+  // Sort by created_at desc by default
+  combinedItems.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  const total = results.reduce((sum, r) => sum + r.total, 0);
+  const startIndex = (page - 1) * pageSize;
+  const paginatedSlice = combinedItems.slice(startIndex, startIndex + pageSize);
+
+  return {
+    items: paginatedSlice,
+    total,
+    page,
+    page_size: pageSize,
+    pages: Math.ceil(total / pageSize) || 1,
+  };
+};
+
+export const getContactInquiryById = async (
+  inquiryId: string
+): Promise<ContactInquiryRecord> => {
+  const response = await api.get(`/portal/admin/contact-inquiries/${inquiryId}`);
+  return unwrap<ContactInquiryRecord>(response.data);
+};
+
+export const updateContactInquiryStatus = async (
+  inquiryId: string,
+  payload: ContactInquiryStatusPayload
+): Promise<ContactInquiryRecord> => {
+  const response = await api.put(`/portal/admin/contact-inquiries/${inquiryId}/status`, payload);
+  await publishActionEvent({
+    module: "cms",
+    action: "update",
+    title: "Contact Inquiry Status Updated",
+    message: `Inquiry status changed to ${payload.status}.`,
+    targetRoles: ["super_admin"],
+  });
+  return unwrap<ContactInquiryRecord>(response.data);
+};
+
+export const assignContactInquiry = async (
+  inquiryId: string,
+  payload: ContactInquiryAssignPayload
+): Promise<ContactInquiryRecord> => {
+  const response = await api.put(`/portal/admin/contact-inquiries/${inquiryId}/assign`, payload);
+  await publishActionEvent({
+    module: "cms",
+    action: "update",
+    title: "Contact Inquiry Assigned",
+    message: `Inquiry assigned to staff member.`,
+    targetRoles: ["super_admin"],
+  });
+  return unwrap<ContactInquiryRecord>(response.data);
+};
+
+export const respondToContactInquiry = async (
+  inquiryId: string,
+  payload: ContactInquiryRespondPayload
+): Promise<ContactInquiryRecord> => {
+  const response = await api.post(`/portal/admin/contact-inquiries/${inquiryId}/respond`, payload);
+  await publishActionEvent({
+    module: "cms",
+    action: "create",
+    title: "Contact Inquiry Responded",
+    message: `Staff response recorded for inquiry ${inquiryId}.`,
+    targetRoles: ["super_admin"],
+  });
+  return unwrap<ContactInquiryRecord>(response.data);
+};
+
+// ----------------------------------------------------
 // Legal Documents
 // ----------------------------------------------------
 
@@ -621,6 +756,7 @@ const cmsService = {
   deleteSuccessStory,
   publishSuccessStory,
   discardSuccessStory,
+  rejectSuccessStory,
   bulkDeleteSuccessStories,
   bulkStatusSuccessStories,
   getBlogPosts,
@@ -644,6 +780,11 @@ const cmsService = {
   createContactLocation,
   updateContactLocation,
   deleteContactLocation,
+  getContactInquiries,
+  getContactInquiryById,
+  updateContactInquiryStatus,
+  assignContactInquiry,
+  respondToContactInquiry,
   getLegalDocuments,
   getLegalDocumentById,
   createLegalDocument,

@@ -4,6 +4,7 @@ import cmsService from "../../services/cmsService";
 import type { SuccessStoryRecord, ContentStatus } from "../../types/cms";
 import Modal from "../../components/common/Modal";
 import { useToast } from "../../context/ToastContext";
+import petService from "../../services/petService";
 import {
   FaPlus,
   FaSearch,
@@ -14,6 +15,13 @@ import {
   FaSpinner,
   FaUpload,
   FaImage,
+  FaEye,
+  FaBan,
+  FaUndo,
+  FaClock,
+  FaCheckCircle,
+  FaTimesCircle,
+  FaExclamationTriangle,
 } from "react-icons/fa";
 
 const getErrorMsg = (err: unknown, fallback: string): string => {
@@ -112,6 +120,17 @@ const CmsSuccessStoriesView = () => {
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editingStory, setEditingStory] = useState<SuccessStoryRecord | null>(null);
 
+  // Story Detail / Review Modal State
+  const [viewingStory, setViewingStory] = useState<SuccessStoryRecord | null>(null);
+  const [viewingDog, setViewingDog] = useState<any | null>(null);
+  const [loadingDog, setLoadingDog] = useState<boolean>(false);
+
+  // Reject Story Modal State
+  const [rejectModalOpen, setRejectModalOpen] = useState<boolean>(false);
+  const [storyToReject, setStoryToReject] = useState<SuccessStoryRecord | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string>("");
+  const [rejecting, setRejecting] = useState<boolean>(false);
+
   const [form, setForm] = useState({
     title: "",
     slug: "",
@@ -119,6 +138,8 @@ const CmsSuccessStoriesView = () => {
     body: "",
     hero_image_url: "",
     dog_id: "",
+    adopter_id: "",
+    has_consent: true,
     is_featured: false,
     sort_order: 0,
     status: "draft" as ContentStatus,
@@ -184,6 +205,8 @@ const CmsSuccessStoriesView = () => {
       body: "",
       hero_image_url: "",
       dog_id: "",
+      adopter_id: "",
+      has_consent: true,
       is_featured: false,
       sort_order: 0,
       status: "draft",
@@ -205,6 +228,8 @@ const CmsSuccessStoriesView = () => {
       body: story.body || "",
       hero_image_url: story.hero_image_url || "",
       dog_id: story.dog_id || "",
+      adopter_id: story.adopter_id || "",
+      has_consent: story.has_consent ?? true,
       is_featured: story.is_featured ?? false,
       sort_order: story.sort_order ?? 0,
       status: story.status || "draft",
@@ -214,6 +239,80 @@ const CmsSuccessStoriesView = () => {
     setMediaFileId(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     setModalOpen(true);
+  };
+
+  const openViewModal = async (story: SuccessStoryRecord) => {
+    setViewingStory(story);
+    setViewingDog(null);
+    if (story.dog_id) {
+      setLoadingDog(true);
+      try {
+        const dogRes = await petService.getPetById(story.dog_id);
+        setViewingDog(dogRes?.data || dogRes);
+      } catch {
+        setViewingDog(null);
+      } finally {
+        setLoadingDog(false);
+      }
+    }
+  };
+
+  const openRejectModal = (story: SuccessStoryRecord) => {
+    setStoryToReject(story);
+    setRejectionReason(story.rejection_reason || "");
+    setRejectModalOpen(true);
+  };
+
+  const handleRejectSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!storyToReject) return;
+    const reason = rejectionReason.trim();
+    if (!reason) {
+      addToast("Rejection reason is required (1-2000 characters).", "error");
+      return;
+    }
+    if (reason.length > 2000) {
+      addToast("Rejection reason cannot exceed 2000 characters.", "error");
+      return;
+    }
+
+    try {
+      setRejecting(true);
+      await cmsService.rejectSuccessStory(storyToReject.id, { rejection_reason: reason });
+      addToast(`Success story "${storyToReject.title}" has been rejected.`, "success");
+      setRejectModalOpen(false);
+      setStoryToReject(null);
+      setRejectionReason("");
+      if (viewingStory && viewingStory.id === storyToReject.id) {
+        setViewingStory((prev) =>
+          prev ? { ...prev, status: "rejected", rejection_reason: reason } : null
+        );
+      }
+      await fetchStories();
+    } catch (err: unknown) {
+      addToast(getErrorMsg(err, "Failed to reject success story."), "error");
+    } finally {
+      setRejecting(false);
+    }
+  };
+
+  const handleDiscard = async (story: SuccessStoryRecord) => {
+    if (
+      !window.confirm(
+        `Unpublish story "${story.title}"? This will return the story to draft status.`
+      )
+    )
+      return;
+    try {
+      await cmsService.discardSuccessStory(story.id);
+      addToast(`Story "${story.title}" unpinned/returned to draft status.`, "success");
+      if (viewingStory && viewingStory.id === story.id) {
+        setViewingStory((prev) => (prev ? { ...prev, status: "draft" } : null));
+      }
+      await fetchStories();
+    } catch (err: unknown) {
+      addToast(getErrorMsg(err, "Failed to unpublish story."), "error");
+    }
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -339,6 +438,8 @@ const CmsSuccessStoriesView = () => {
           body: form.body.trim(),
           hero_image_url: form.hero_image_url.trim() || null,
           dog_id: form.dog_id.trim() || null,
+          adopter_id: form.adopter_id.trim() || null,
+          has_consent: form.has_consent,
           is_featured: form.is_featured,
           sort_order: form.sort_order,
           status: form.status,
@@ -352,6 +453,8 @@ const CmsSuccessStoriesView = () => {
           body: form.body.trim(),
           hero_image_url: form.hero_image_url.trim() || null,
           dog_id: form.dog_id.trim() || null,
+          adopter_id: form.adopter_id.trim() || null,
+          has_consent: form.has_consent,
           is_featured: form.is_featured,
           sort_order: form.sort_order,
           status: form.status,
@@ -368,9 +471,21 @@ const CmsSuccessStoriesView = () => {
   };
 
   const handlePublish = async (story: SuccessStoryRecord) => {
+    if (story.has_consent === false) {
+      if (
+        !window.confirm(
+          `Consent is not confirmed for this story. The backend enforces that consent is required before publishing. Attempt to publish anyway?`
+        )
+      ) {
+        return;
+      }
+    }
     try {
       await cmsService.publishSuccessStory(story.id);
       addToast(`Published success story "${story.title}".`, "success");
+      if (viewingStory && viewingStory.id === story.id) {
+        setViewingStory((prev) => (prev ? { ...prev, status: "published" } : null));
+      }
       await fetchStories();
     } catch (err: unknown) {
       addToast(getErrorMsg(err, "Failed to publish story."), "error");
@@ -484,8 +599,10 @@ const CmsSuccessStoriesView = () => {
           }}
         >
           <option value="all">All Statuses</option>
+          <option value="pending_review">Pending Review</option>
           <option value="draft">Drafts</option>
           <option value="published">Published</option>
+          <option value="rejected">Rejected</option>
           <option value="archived">Archived</option>
         </select>
 
@@ -534,6 +651,7 @@ const CmsSuccessStoriesView = () => {
               <th style={{ padding: "12px", textAlign: "left", color: "#475569", fontWeight: 700 }}>Story Title</th>
               <th style={{ padding: "12px", textAlign: "left", color: "#475569", fontWeight: 700 }}>Featured</th>
               <th style={{ padding: "12px", textAlign: "left", color: "#475569", fontWeight: 700 }}>Status</th>
+              <th style={{ padding: "12px", textAlign: "left", color: "#475569", fontWeight: 700 }}>Consent</th>
               <th style={{ padding: "12px", textAlign: "left", color: "#475569", fontWeight: 700 }}>Created</th>
               <th style={{ padding: "12px", textAlign: "right", color: "#475569", fontWeight: 700 }}>Actions</th>
             </tr>
@@ -541,13 +659,13 @@ const CmsSuccessStoriesView = () => {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5} style={{ padding: "30px", textAlign: "center", color: "#2563EB" }}>
+                <td colSpan={6} style={{ padding: "30px", textAlign: "center", color: "#2563EB" }}>
                   <FaSpinner className="spin" size={18} /> Loading stories...
                 </td>
               </tr>
             ) : stories.length === 0 ? (
               <tr>
-                <td colSpan={5} style={{ padding: "30px", textAlign: "center", color: "#64748B" }}>
+                <td colSpan={6} style={{ padding: "30px", textAlign: "center", color: "#64748B" }}>
                   No success stories found matching your filter criteria.
                 </td>
               </tr>
@@ -596,34 +714,63 @@ const CmsSuccessStoriesView = () => {
                     )}
                   </td>
                   <td style={{ padding: "12px" }}>
-                    <span
-                      style={{
-                        padding: "3px 8px",
-                        borderRadius: 999,
-                        fontSize: 11.5,
-                        fontWeight: 700,
-                        background:
-                          story.status === "published"
-                            ? "#ECFDF5"
-                            : story.status === "draft"
-                            ? "#FEF3C7"
-                            : "#F1F5F9",
-                        color:
-                          story.status === "published"
-                            ? "#059669"
-                            : story.status === "draft"
-                            ? "#D97706"
-                            : "#475569",
-                      }}
-                    >
-                      {story.status}
-                    </span>
+                    {story.status === "published" ? (
+                      <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <FaCheckCircle size={10} /> Published
+                      </span>
+                    ) : story.status === "pending_review" ? (
+                      <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "#FEF3C7", color: "#B45309", border: "1px solid #FDE68A", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <FaClock size={10} /> Pending Review
+                      </span>
+                    ) : story.status === "rejected" ? (
+                      <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "#FEF2F2", color: "#DC2626", border: "1px solid #FCA5A5", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <FaTimesCircle size={10} /> Rejected
+                      </span>
+                    ) : story.status === "archived" ? (
+                      <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "#F8FAFC", color: "#64748B", border: "1px solid #CBD5E1" }}>
+                        Archived
+                      </span>
+                    ) : (
+                      <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "#F1F5F9", color: "#475569", border: "1px solid #E2E8F0" }}>
+                        Draft
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: "12px" }}>
+                    {story.has_consent === true ? (
+                      <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <FaCheckCircle size={10} /> Consent Confirmed
+                      </span>
+                    ) : (
+                      <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: "#FFFBEB", color: "#B45309", border: "1px solid #FDE68A", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <FaExclamationTriangle size={10} /> Consent Missing
+                      </span>
+                    )}
                   </td>
                   <td style={{ padding: "12px", color: "#64748B", fontSize: 12 }}>
                     {new Date(story.created_at).toLocaleDateString()}
                   </td>
                   <td style={{ padding: "12px", textAlign: "right" }}>
-                    <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+                    <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
+                      <button
+                        onClick={() => openViewModal(story)}
+                        title="View details & moderation"
+                        style={{
+                          padding: "5px 9px",
+                          borderRadius: 6,
+                          border: "1px solid #CBD5E1",
+                          background: "#F8FAFC",
+                          color: "#1E293B",
+                          fontSize: 11.5,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        <FaEye /> View
+                      </button>
                       {story.status !== "published" && (
                         <button
                           onClick={() => handlePublish(story)}
@@ -637,9 +784,54 @@ const CmsSuccessStoriesView = () => {
                             fontSize: 11.5,
                             fontWeight: 700,
                             cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
                           }}
                         >
                           <FaPaperPlane /> Publish
+                        </button>
+                      )}
+                      {(story.status === "pending_review" || story.status === "draft") && (
+                        <button
+                          onClick={() => openRejectModal(story)}
+                          title="Reject story"
+                          style={{
+                            padding: "5px 9px",
+                            borderRadius: 6,
+                            border: "1px solid #FCA5A5",
+                            background: "#FEF2F2",
+                            color: "#DC2626",
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                          }}
+                        >
+                          <FaBan /> Reject
+                        </button>
+                      )}
+                      {story.status === "published" && (
+                        <button
+                          onClick={() => handleDiscard(story)}
+                          title="Unpublish (return to draft)"
+                          style={{
+                            padding: "5px 9px",
+                            borderRadius: 6,
+                            border: "1px solid #FDE68A",
+                            background: "#FFFBEB",
+                            color: "#D97706",
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                          }}
+                        >
+                          <FaUndo /> Discard
                         </button>
                       )}
                       <button
@@ -924,6 +1116,33 @@ const CmsSuccessStoriesView = () => {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 4 }}>
+                Dog ID (Optional)
+              </label>
+              <input
+                type="text"
+                value={form.dog_id}
+                onChange={(e) => setForm({ ...form, dog_id: e.target.value })}
+                placeholder="e.g. UUID of the pet"
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 13, boxSizing: "border-box" }}
+              />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 4 }}>
+                Adopter ID (Optional)
+              </label>
+              <input
+                type="text"
+                value={form.adopter_id}
+                onChange={(e) => setForm({ ...form, adopter_id: e.target.value })}
+                placeholder="e.g. UUID of adopter"
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 13, boxSizing: "border-box" }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 4 }}>
                 Status
               </label>
               <select
@@ -932,12 +1151,14 @@ const CmsSuccessStoriesView = () => {
                 style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 13 }}
               >
                 <option value="draft">Draft</option>
+                <option value="pending_review">Pending Review</option>
                 <option value="published">Published</option>
+                <option value="rejected">Rejected</option>
                 <option value="archived">Archived</option>
               </select>
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", marginTop: 20 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "#334155", cursor: "pointer" }}>
                 <input
                   type="checkbox"
@@ -945,6 +1166,14 @@ const CmsSuccessStoriesView = () => {
                   onChange={(e) => setForm({ ...form, is_featured: e.target.checked })}
                 />
                 Feature on Homepage
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: form.has_consent ? "#059669" : "#B45309", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={form.has_consent}
+                  onChange={(e) => setForm({ ...form, has_consent: e.target.checked })}
+                />
+                Adopter Consent Confirmed (Required for publishing)
               </label>
             </div>
           </div>
@@ -966,6 +1195,407 @@ const CmsSuccessStoriesView = () => {
           </div>
         </div>
       </Modal>
+
+      {/* View Detail & Moderation Modal */}
+      {viewingStory && (
+        <Modal
+          isOpen={true}
+          onClose={() => setViewingStory(null)}
+          title={`Success Story Details: ${viewingStory.title}`}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxHeight: "75vh", overflowY: "auto" }}>
+            {/* Status & Consent Header Banner */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "12px 16px",
+                borderRadius: "8px",
+                background: "#F8FAFC",
+                border: "1px solid #E2E8F0",
+                flexWrap: "wrap",
+                gap: "10px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>Status:</span>
+                {viewingStory.status === "published" ? (
+                  <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700, background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <FaCheckCircle size={12} /> Published
+                  </span>
+                ) : viewingStory.status === "pending_review" ? (
+                  <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700, background: "#FEF3C7", color: "#B45309", border: "1px solid #FDE68A", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <FaClock size={12} /> Pending Review
+                  </span>
+                ) : viewingStory.status === "rejected" ? (
+                  <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700, background: "#FEF2F2", color: "#DC2626", border: "1px solid #FCA5A5", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <FaTimesCircle size={12} /> Rejected
+                  </span>
+                ) : viewingStory.status === "archived" ? (
+                  <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700, background: "#F8FAFC", color: "#64748B", border: "1px solid #CBD5E1" }}>
+                    Archived
+                  </span>
+                ) : (
+                  <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700, background: "#F1F5F9", color: "#475569", border: "1px solid #E2E8F0" }}>
+                    Draft
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>Consent:</span>
+                {viewingStory.has_consent === true ? (
+                  <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 12, fontWeight: 700, background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <FaCheckCircle size={12} /> Consent Confirmed
+                  </span>
+                ) : (
+                  <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 12, fontWeight: 700, background: "#FFFBEB", color: "#B45309", border: "1px solid #FDE68A", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <FaExclamationTriangle size={12} /> Consent Not Confirmed
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Rejection Alert Banner if Rejected */}
+            {viewingStory.status === "rejected" && viewingStory.rejection_reason && (
+              <div
+                style={{
+                  padding: "14px 16px",
+                  borderRadius: "8px",
+                  background: "#FEF2F2",
+                  border: "1px solid #FCA5A5",
+                  color: "#991B1B",
+                }}
+              >
+                <div style={{ fontWeight: 700, fontSize: "13px", display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <FaTimesCircle /> Story Rejection Reason:
+                </div>
+                <div style={{ fontSize: "13px", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                  {viewingStory.rejection_reason}
+                </div>
+              </div>
+            )}
+
+            {/* Hero Image */}
+            {viewingStory.hero_image_url && (
+              <div style={{ borderRadius: "8px", overflow: "hidden", border: "1px solid #E2E8F0", maxHeight: "240px" }}>
+                <img
+                  src={viewingStory.hero_image_url}
+                  alt={viewingStory.title}
+                  style={{ width: "100%", height: "240px", objectFit: "cover", display: "block" }}
+                />
+              </div>
+            )}
+
+            {/* Title & Summary */}
+            <div>
+              <h3 style={{ margin: "0 0 6px 0", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
+                {viewingStory.title}
+              </h3>
+              <p style={{ margin: 0, fontSize: "13.5px", color: "#475569", fontStyle: "italic", lineHeight: 1.5 }}>
+                {viewingStory.summary}
+              </p>
+            </div>
+
+            {/* Story Body */}
+            <div>
+              <div style={{ fontSize: "12px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", marginBottom: 6 }}>
+                Story Narrative
+              </div>
+              <div
+                style={{
+                  padding: "14px",
+                  borderRadius: "8px",
+                  background: "#F8FAFC",
+                  border: "1px solid #E2E8F0",
+                  fontSize: "13px",
+                  lineHeight: 1.6,
+                  color: "#1E293B",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {viewingStory.body}
+              </div>
+            </div>
+
+            {/* Metadata Grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", fontSize: "12.5px" }}>
+              <div style={{ padding: "10px", background: "#F8FAFC", borderRadius: 6, border: "1px solid #E2E8F0" }}>
+                <span style={{ color: "#64748B", display: "block" }}>Adopter ID:</span>
+                <span style={{ fontWeight: 600, color: "#1E293B" }}>
+                  {viewingStory.adopter_id || "None specified"}
+                </span>
+              </div>
+              <div style={{ padding: "10px", background: "#F8FAFC", borderRadius: 6, border: "1px solid #E2E8F0" }}>
+                <span style={{ color: "#64748B", display: "block" }}>Created Date:</span>
+                <span style={{ fontWeight: 600, color: "#1E293B" }}>
+                  {new Date(viewingStory.created_at).toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            {/* Dog Information Section (from real petService or dog_id) */}
+            <div style={{ padding: "12px", background: "#F8FAFC", borderRadius: 8, border: "1px solid #E2E8F0" }}>
+              <div style={{ fontSize: "12px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", marginBottom: 6 }}>
+                Associated Dog / Companion Pet
+              </div>
+              {loadingDog ? (
+                <div style={{ fontSize: "12.5px", color: "#64748B", display: "flex", alignItems: "center", gap: 6 }}>
+                  <FaSpinner className="spin" /> Looking up pet details...
+                </div>
+              ) : viewingDog ? (
+                <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                  {viewingDog.primary_photo_url || viewingDog.photos?.[0] ? (
+                    <img
+                      src={viewingDog.primary_photo_url || viewingDog.photos?.[0]}
+                      alt={viewingDog.name}
+                      style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover" }}
+                    />
+                  ) : null}
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: "13.5px", color: "#0F172A" }}>
+                      {viewingDog.name} {viewingDog.breed ? `(${viewingDog.breed})` : ""}
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#64748B" }}>
+                      Status: <strong>{viewingDog.status}</strong> • ID: <code>{viewingStory.dog_id}</code>
+                    </div>
+                  </div>
+                </div>
+              ) : viewingStory.dog_id ? (
+                <div style={{ fontSize: "12.5px", color: "#475569" }}>
+                  Pet ID: <code>{viewingStory.dog_id}</code> (No additional details available)
+                </div>
+              ) : (
+                <div style={{ fontSize: "12.5px", color: "#94A3B8" }}>
+                  No associated dog linked to this story.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Moderation Actions */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                paddingTop: "14px",
+                borderTop: "1px solid #E2E8F0",
+                flexWrap: "wrap",
+                gap: "10px",
+              }}
+            >
+              <div style={{ display: "flex", gap: "8px" }}>
+                {viewingStory.status !== "published" && (
+                  <button
+                    onClick={() => handlePublish(viewingStory)}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 6,
+                      border: "none",
+                      background: "#10B981",
+                      color: "#FFF",
+                      fontWeight: 700,
+                      fontSize: 12.5,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <FaPaperPlane /> Publish Story
+                  </button>
+                )}
+                {(viewingStory.status === "pending_review" || viewingStory.status === "draft") && (
+                  <button
+                    onClick={() => openRejectModal(viewingStory)}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 6,
+                      border: "1px solid #FCA5A5",
+                      background: "#FEF2F2",
+                      color: "#DC2626",
+                      fontWeight: 700,
+                      fontSize: 12.5,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <FaBan /> Reject Story
+                  </button>
+                )}
+                {viewingStory.status === "published" && (
+                  <button
+                    onClick={() => handleDiscard(viewingStory)}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 6,
+                      border: "1px solid #FDE68A",
+                      background: "#FFFBEB",
+                      color: "#D97706",
+                      fontWeight: 700,
+                      fontSize: 12.5,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <FaUndo /> Discard (Unpublish)
+                  </button>
+                )}
+              </div>
+
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  onClick={() => {
+                    const storyToEdit = viewingStory;
+                    setViewingStory(null);
+                    openEditModal(storyToEdit);
+                  }}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 6,
+                    border: "1px solid #CBD5E1",
+                    background: "#F8FAFC",
+                    color: "#334155",
+                    fontWeight: 600,
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <FaEdit /> Edit
+                </button>
+                <button
+                  onClick={() => setViewingStory(null)}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 6,
+                    border: "1px solid #CBD5E1",
+                    background: "#FFFFFF",
+                    color: "#334155",
+                    fontWeight: 600,
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Reject Reason Modal */}
+      {rejectModalOpen && storyToReject && (
+        <Modal
+          isOpen={true}
+          onClose={() => {
+            if (!rejecting) {
+              setRejectModalOpen(false);
+              setStoryToReject(null);
+            }
+          }}
+          title={`Reject Success Story: "${storyToReject.title}"`}
+        >
+          <form onSubmit={handleRejectSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            <div
+              style={{
+                padding: "10px 14px",
+                borderRadius: "6px",
+                background: "#FEF2F2",
+                border: "1px solid #FCA5A5",
+                color: "#991B1B",
+                fontSize: "12.5px",
+                lineHeight: 1.5,
+              }}
+            >
+              Please provide a clear reason for rejecting this story submission. The rejection reason will be recorded for audit and internal review.
+            </div>
+
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 700, color: "#334155" }}>
+                  Rejection Reason *
+                </label>
+                <span
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    color: rejectionReason.length > 2000 ? "#DC2626" : "#64748B",
+                  }}
+                >
+                  {rejectionReason.length} / 2000 characters
+                </span>
+              </div>
+              <textarea
+                rows={4}
+                required
+                maxLength={2000}
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                placeholder="Explain why this story is not suitable for publication (e.g., photo copyright issues, missing verification, inappropriate content, etc.)..."
+                style={{
+                  width: "100%",
+                  padding: "8px 10px",
+                  borderRadius: 6,
+                  border: "1px solid #CBD5E1",
+                  fontSize: 13,
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
+              <button
+                type="button"
+                disabled={rejecting}
+                onClick={() => {
+                  setRejectModalOpen(false);
+                  setStoryToReject(null);
+                }}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: "1px solid #CBD5E1",
+                  background: "#F8FAFC",
+                  color: "#334155",
+                  fontWeight: 600,
+                  fontSize: 13,
+                  cursor: rejecting ? "not-allowed" : "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={rejecting || !rejectionReason.trim() || rejectionReason.length > 2000}
+                style={{
+                  padding: "8px 18px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: "#DC2626",
+                  color: "#FFF",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: rejecting || !rejectionReason.trim() || rejectionReason.length > 2000 ? "not-allowed" : "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                {rejecting ? <FaSpinner className="spin" /> : <FaBan />} Reject Story
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 };
