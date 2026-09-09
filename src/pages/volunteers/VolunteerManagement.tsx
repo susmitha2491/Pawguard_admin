@@ -28,6 +28,7 @@ import shelterService from "../../services/shelterService";
 import { notifyDataChanged } from "../../utils/dataSync";
 import { formatDateTime } from "../../utils/dateUtils";
 import { getCurrentUserRole } from "../../utils/roleUtils";
+import { VolunteerShiftScheduleModal } from "../../components/volunteers/VolunteerShiftScheduleModal";
 
 type TabKey = "applications" | "active" | "shifts";
 
@@ -101,14 +102,7 @@ const VolunteerManagement = () => {
     legal_consent: false,
   });
 
-  // Shift Form
-  const [shiftForm, setShiftForm] = useState({
-    shelter_facility_id: "",
-    role_name: "Dog Walking & Socialization",
-    start_at: "",
-    end_at: "",
-    capacity: 5,
-  });
+
 
   // Fetch Applications / Roster
   const fetchApplications = useCallback(async () => {
@@ -236,32 +230,7 @@ const VolunteerManagement = () => {
     }
   };
 
-  // Create Shift Schedule
-  const handleCreateShift = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!shiftForm.role_name || !shiftForm.start_at || !shiftForm.end_at) {
-      addToast("Role name, start time, and end time are required.", "error");
-      return;
-    }
-    try {
-      setIsSubmitting(true);
-      await volunteerService.createShift({
-        shelter_facility_id: shiftForm.shelter_facility_id || null,
-        role_name: shiftForm.role_name,
-        start_at: new Date(shiftForm.start_at).toISOString(),
-        end_at: new Date(shiftForm.end_at).toISOString(),
-        capacity: Number(shiftForm.capacity || 5),
-      });
-      addToast("Volunteer shift schedule created successfully!", "success");
-      setIsShiftModalOpen(false);
-      fetchShifts();
-      notifyDataChanged();
-    } catch (err: any) {
-      addToast(err?.response?.data?.detail || err?.response?.data?.message || "Failed to create shift schedule.", "error");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+
 
   // APPROVE Application: POST /api/v1/volunteers/applications/{id}/approve
   const handleApproveApplication = async (appRow: any) => {
@@ -1438,48 +1407,18 @@ const VolunteerManagement = () => {
         </form>
       </Modal>
 
-      {/* Create Shift Modal */}
-      <Modal isOpen={isShiftModalOpen} onClose={() => setIsShiftModalOpen(false)} title="Create Volunteer Shift Schedule">
-        <form onSubmit={handleCreateShift} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Role / Activity Name *</label>
-            <input type="text" required placeholder="e.g. Dog Walking & Socialization" value={shiftForm.role_name} onChange={(e) => setShiftForm({ ...shiftForm, role_name: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} />
-          </div>
-
-          {facilities.length > 0 && (
-            <div>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Shelter Facility</label>
-              <select value={shiftForm.shelter_facility_id} onChange={(e) => setShiftForm({ ...shiftForm, shelter_facility_id: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF" }}>
-                <option value="">Central Shelter Facility</option>
-                {facilities.map((f: any) => (
-                  <option key={f.id} value={f.id}>{f.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            <div>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Start Date &amp; Time *</label>
-              <input type="datetime-local" required value={shiftForm.start_at} onChange={(e) => setShiftForm({ ...shiftForm, start_at: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} />
-            </div>
-            <div>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>End Date &amp; Time *</label>
-              <input type="datetime-local" required value={shiftForm.end_at} onChange={(e) => setShiftForm({ ...shiftForm, end_at: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} />
-            </div>
-          </div>
-
-          <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Volunteer Capacity Limit *</label>
-            <input type="number" min="1" required value={shiftForm.capacity} onChange={(e) => setShiftForm({ ...shiftForm, capacity: Number(e.target.value) })} style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} />
-          </div>
-
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>
-            <button type="button" onClick={() => setIsShiftModalOpen(false)} style={{ padding: "10px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}>Cancel</button>
-            <button type="submit" disabled={isSubmitting} style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 600 }}>{isSubmitting ? "Creating..." : "Save Shift Schedule"}</button>
-          </div>
-        </form>
-      </Modal>
+      {/* Unified Volunteer Shift Schedule Modal */}
+      <VolunteerShiftScheduleModal
+        isOpen={isShiftModalOpen}
+        onClose={() => setIsShiftModalOpen(false)}
+        onSuccess={() => {
+          fetchShifts();
+          fetchApplications();
+          notifyDataChanged();
+        }}
+        facilities={facilities}
+        approvedVolunteers={activeVolunteersList}
+      />
 
       {/* REJECT Application Modal (Requires Admin Reason) */}
       <Modal isOpen={isRejectModalOpen} onClose={() => setIsRejectModalOpen(false)} title="Reject Volunteer Application">
