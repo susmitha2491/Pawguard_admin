@@ -1,9 +1,12 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import StatCard from "../../../components/dashboard/StatCard";
 import DataTable from "../../../components/common/DataTable";
 import QuickActionCard from "../../../components/dashboard/QuickActionCard";
 import Modal from "../../../components/common/Modal";
+import HealthClearanceCertificateModal, {
+  type CertificatePreviewData,
+} from "../../../components/certificates/HealthClearanceCertificateModal";
 import { useToast } from "../../../context/ToastContext";
 import {
   FaStethoscope,
@@ -20,6 +23,7 @@ import {
   FaCheckCircle,
   FaHome,
   FaChartBar,
+  FaCertificate,
 } from "react-icons/fa";
 import vetService from "../../../services/vetService";
 import medicalService from "../../../services/medicalService";
@@ -28,6 +32,7 @@ import userService from "../../../services/userService";
 import dashboardService from "../../../services/dashboardService";
 import storageService from "../../../services/storageService";
 import { useDataSync, notifyDataChanged } from "../../../utils/dataSync";
+import { getStoredUser } from "../../../utils/authStorage";
 import api from "../../../api/axios";
 
 type Row = Record<string, unknown>;
@@ -106,6 +111,30 @@ const VeterinarianDashboard = () => {
   const [activeSourceTab, setActiveSourceTab] = useState<"shelter_requests" | "public_appts">(
     tabParam === "public_appts" ? "public_appts" : "shelter_requests"
   );
+
+  // Authenticated user / veterinarian info
+  const currentUser = useMemo(() => getStoredUser<Record<string, unknown>>(), []);
+  const vetDisplayName = useMemo(() => {
+    if (!currentUser) return "Dr. Authenticated Veterinarian";
+    const firstName = currentUser.first_name ? String(currentUser.first_name).trim() : "";
+    const lastName = currentUser.last_name ? String(currentUser.last_name).trim() : "";
+    if (firstName) {
+      return `Dr. ${firstName} ${lastName}`.trim();
+    }
+    if (currentUser.full_name) {
+      return `Dr. ${String(currentUser.full_name).trim()}`;
+    }
+    if (currentUser.username) {
+      const formatted = String(currentUser.username).replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      return `Dr. ${formatted}`;
+    }
+    return "Dr. Attending Veterinarian";
+  }, [currentUser]);
+
+  // Certificate Preview State from Dog Master Profile
+  const [certPreview, setCertPreview] = useState<CertificatePreviewData | null>(null);
+  const [certAssessment, setCertAssessment] = useState<any | null>(null);
+  const [loadingCert, setLoadingCert] = useState(false);
 
   // Dog Master Profile Modal State
   const [selectedDogMaster, setSelectedDogMaster] = useState<Row | null>(null);
@@ -232,6 +261,82 @@ const VeterinarianDashboard = () => {
       addToast(msg, "error");
     } finally {
       setIsClearingAdoption(false);
+    }
+  };
+
+  const handleViewHealthCertificate = async (dog: Row) => {
+    const dogId = str(pick(dog, "id", "dog_id"));
+    if (!dogId) return;
+
+    try {
+      setLoadingCert(true);
+      // 1. Fetch clearance records for this dog from backend source of truth
+      const clearancesRes = await medicalService.getDogClearances(dogId);
+      const clearances = Array.isArray(clearancesRes) ? clearancesRes : [];
+
+      // Filter for approved/cleared health clearance
+      const validClearance =
+        clearances.find((c: any) => {
+          const isHealth = c.clearance_type === "health_clearance" || !c.clearance_type?.includes("adoption");
+          const isApproved = /approved|cleared|valid/i.test(String(c.status || ""));
+          return isHealth && isApproved;
+        }) ||
+        clearances.find((c: any) => /approved|cleared|valid/i.test(String(c.status || ""))) ||
+        clearances[0];
+
+      if (!validClearance) {
+        addToast("Health clearance certificate is not available for this dog.", "info");
+        return;
+      }
+
+      // 2. Fetch or match clinical exam assessment for details
+      let assessmentRec = null;
+      if (petHistory && petHistory.length > 0) {
+        assessmentRec = petHistory[0];
+      } else {
+        try {
+          const examsRes = await medicalService.getExams({ dog_id: dogId });
+          const items = Array.isArray(examsRes?.data?.items)
+            ? examsRes.data.items
+            : Array.isArray(examsRes?.data)
+            ? examsRes.data
+            : [];
+          if (items.length > 0) {
+            assessmentRec = items[0];
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      const rawId = str(validClearance.id || "");
+      const formattedCertId = rawId ? `HC-${rawId.slice(0, 8).toUpperCase()}` : `HC-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const certData: CertificatePreviewData = {
+        certId: formattedCertId,
+        type: "Health Clearance",
+        dogId: dogId,
+        dogName: str(dog.name || "Canine Patient"),
+        dogBreed: str(dog.breed || "Mixed Breed"),
+        pet: dog.name ? `${dog.name} (DOG-${dogId.slice(0, 8).toUpperCase()})` : `DOG-${dogId.slice(0, 8).toUpperCase()}`,
+        issuedTo: validClearance.decision_notes || "Medically cleared – Ready for Adoption",
+        issuedBy: validClearance.authorized_by_id
+          ? currentUser?.id === validClearance.authorized_by_id
+            ? vetDisplayName
+            : "Dr. Attending Veterinarian"
+          : vetDisplayName,
+        vetId: validClearance.authorized_by_id,
+        date: validClearance.authorized_at || validClearance.created_at || new Date().toISOString(),
+        status: validClearance.status ? String(validClearance.status).toUpperCase() : "APPROVED",
+      };
+
+      setCertAssessment(assessmentRec);
+      setCertPreview(certData);
+    } catch (err) {
+      console.error("Error fetching health clearance certificate:", err);
+      addToast("Health clearance certificate is not available for this dog.", "info");
+    } finally {
+      setLoadingCert(false);
     }
   };
 
@@ -1888,44 +1993,68 @@ const VeterinarianDashboard = () => {
               )}
             </div>
 
-            <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", marginTop: "8px", flexWrap: "wrap" }}>
-              {selectedDogMaster.is_fit_for_adoption || selectedDogMaster.is_adoptable || str(selectedDogMaster.medical_status).toLowerCase().includes("clear") ? (
-                <span
-                  style={{ padding: "9px 16px", borderRadius: "8px", background: "#ECFDF5", color: "#15803D", fontWeight: 800, fontSize: "13px", border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: "6px" }}
-                >
-                  <FaCheckCircle /> Medically Cleared & Ready for Adoption
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  disabled={isClearingAdoption}
-                  onClick={() => handleIssueMedicalClearance(selectedDogMaster)}
-                  style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
-                >
-                  <FaCheckCircle /> {isClearingAdoption ? "Clearing..." : "Issue Medical Clearance & Adoption Fitness"}
-                </button>
-              )}
+            {(() => {
+              const isDogMedicallyCleared = Boolean(
+                selectedDogMaster.is_fit_for_adoption ||
+                selectedDogMaster.is_adoptable ||
+                str(selectedDogMaster.medical_status).toLowerCase().includes("clear") ||
+                str(selectedDogMaster.medical_status).toLowerCase().includes("ready") ||
+                str(selectedDogMaster.adoption_readiness).toUpperCase() === "READY_FOR_ADOPTION" ||
+                str(selectedDogMaster.vet_clearance_status).toLowerCase().includes("clear")
+              );
 
-              <div style={{ display: "flex", gap: "10px" }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsDogProfileOpen(false);
-                    handleOpenConsultation({ pet_id: selectedDogMaster.id || selectedDogMaster.dog_id, reason: selectedDogMaster.medical_status || "Shelter Exam" });
-                  }}
-                  style={{ padding: "9px 14px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
-                >
-                  <FaStethoscope /> Perform Examination
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsDogProfileOpen(false)}
-                  style={{ padding: "9px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF", color: "#334155", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
+              return (
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", marginTop: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                  {isDogMedicallyCleared ? (
+                    <span
+                      style={{ padding: "9px 16px", borderRadius: "8px", background: "#ECFDF5", color: "#15803D", fontWeight: 800, fontSize: "13px", border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    >
+                      <FaCheckCircle /> Medically Cleared &amp; Ready for Adoption
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={isClearingAdoption}
+                      onClick={() => handleIssueMedicalClearance(selectedDogMaster)}
+                      style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: isClearingAdoption ? "not-allowed" : "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    >
+                      <FaCheckCircle /> {isClearingAdoption ? "Clearing..." : "Issue Medical Clearance & Adoption Fitness"}
+                    </button>
+                  )}
+
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    {isDogMedicallyCleared ? (
+                      <button
+                        type="button"
+                        disabled={loadingCert}
+                        onClick={() => handleViewHealthCertificate(selectedDogMaster)}
+                        style={{ padding: "9px 16px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: loadingCert ? "not-allowed" : "pointer", display: "inline-flex", alignItems: "center", gap: "6px", boxShadow: "0 1px 2px rgba(0,0,0,0.05)" }}
+                      >
+                        <FaCertificate /> {loadingCert ? "Loading Cert..." : "View Health Certificate"}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsDogProfileOpen(false);
+                          handleOpenConsultation({ pet_id: selectedDogMaster.id || selectedDogMaster.dog_id, reason: selectedDogMaster.medical_status || "Shelter Exam" });
+                        }}
+                        style={{ padding: "9px 14px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      >
+                        <FaStethoscope /> Perform Examination
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setIsDogProfileOpen(false)}
+                      style={{ padding: "9px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF", color: "#334155", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </Modal>
       )}
@@ -2429,6 +2558,14 @@ const VeterinarianDashboard = () => {
           })()}
         </Modal>
       )}
+
+      {/* Official Digital Health Clearance Certificate Modal Preview from Dog Profile */}
+      <HealthClearanceCertificateModal
+        isOpen={!!certPreview}
+        onClose={() => setCertPreview(null)}
+        certificate={certPreview}
+        assessment={certAssessment}
+      />
     </div>
   );
 };

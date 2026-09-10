@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Modal from "../common/Modal";
+import Select, { type SelectOption } from "../common/Select";
 import shelterService from "../../services/shelterService";
 import petService from "../../services/petService";
 import { useToast } from "../../context/ToastContext";
@@ -146,6 +147,56 @@ export const KennelAssignmentModal: React.FC<KennelAssignmentModalProps> = ({
 
   if (!isOpen) return null;
 
+  const dogOptions: SelectOption[] = useMemo(() => {
+    return dogs.map((d) => {
+      const dId = String(d.id || d.dog_id || "");
+      const isQuarantine = !d.is_quarantine_passed;
+      return {
+        value: dId,
+        label: `${d.name || "Dog"} (${d.registration_number || dId.slice(0, 8)})`,
+        sublabel: `Breed: ${d.breed || "Indie"} • ${isQuarantine ? "Quarantine Required" : "Cleared"}`,
+        badge: {
+          text: isQuarantine ? "Quarantine" : "Cleared",
+          bg: isQuarantine ? "#FEF3C7" : "#ECFDF5",
+          color: isQuarantine ? "#92400E" : "#059669",
+        },
+      };
+    });
+  }, [dogs]);
+
+  const facilityOptions: SelectOption[] = useMemo(() => {
+    return facilities.map((f) => ({
+      value: String(f.id),
+      label: String(f.name || f.id),
+      sublabel: `Type: ${f.facility_type || "Shelter"} • Capacity: ${f.capacity || "—"}`,
+    }));
+  }, [facilities]);
+
+  const sectionOptions: SelectOption[] = useMemo(() => {
+    return sections.map((s) => ({
+      value: String(s.id),
+      label: String(s.name || s.id),
+      sublabel: `Section Type: ${s.section_type || "General"}`,
+    }));
+  }, [sections]);
+
+  const kennelOptions: SelectOption[] = useMemo(() => {
+    return kennels.map((k) => {
+      const isOcc = Boolean(k.is_occupied);
+      return {
+        value: String(k.id),
+        label: `Unit ${k.identifier || k.id} (Cap: ${k.capacity ?? 1})`,
+        sublabel: `Sanitation: ${(k.sanitation_state || "clean").toUpperCase()} • ${isOcc ? "Occupied" : "Available"}`,
+        disabled: isOcc,
+        badge: {
+          text: isOcc ? "Occupied" : "Available",
+          bg: isOcc ? "#FEF2F2" : "#ECFDF5",
+          color: isOcc ? "#DC2626" : "#059669",
+        },
+      };
+    });
+  }, [kennels]);
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Kennel Unit Assignment Workflow" size="lg">
       {loading ? (
@@ -156,22 +207,15 @@ export const KennelAssignmentModal: React.FC<KennelAssignmentModalProps> = ({
         <form onSubmit={handleSubmitAssignment} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           {/* Step 1: Select Animal */}
           <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "6px" }}>
-              1. Select Animal / Dog *
-            </label>
-            <select
+            <Select
+              label="1. Select Animal / Dog"
+              required
+              placeholder="Search or select animal..."
+              options={dogOptions}
               value={selectedDogId}
-              onChange={(e) => setSelectedDogId(e.target.value)}
-              style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px" }}
-            >
-              <option value="">-- Choose Animal --</option>
-              {dogs.map((d) => (
-                <option key={d.id || d.dog_id} value={d.id || d.dog_id}>
-                  {d.name} ({d.registration_number || d.id?.slice(0, 8)}) - {d.breed || "Dog"} [
-                  {d.is_quarantine_passed ? "Cleared" : "Quarantine Required"}]
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setSelectedDogId(String(val))}
+              searchable={true}
+            />
           </div>
 
           {/* Quarantine Advisory */}
@@ -184,65 +228,46 @@ export const KennelAssignmentModal: React.FC<KennelAssignmentModalProps> = ({
             </div>
           )}
 
-          {/* Step 2: Select Shelter Facility */}
+          {/* Step 2: Select Shelter Facility & Section */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "6px" }}>
-                2. Shelter Facility *
-              </label>
-              <select
+              <Select
+                label="2. Shelter Facility"
+                required
+                placeholder="Choose Facility..."
+                options={facilityOptions}
                 value={selectedFacilityId}
-                onChange={(e) => handleFacilityChange(e.target.value)}
-                style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px" }}
-              >
-                <option value="">-- Choose Facility --</option>
-                {facilities.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name} ({f.facility_type || "shelter"})
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => handleFacilityChange(String(val))}
+                searchable={facilityOptions.length >= 5}
+              />
             </div>
 
             <div>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "6px" }}>
-                3. Facility Section *
-              </label>
-              <select
-                value={selectedSectionId}
-                onChange={(e) => handleSectionChange(e.target.value)}
+              <Select
+                label="3. Facility Section"
+                required
+                placeholder={!selectedFacilityId ? "Select Facility first..." : "Choose Section..."}
                 disabled={!selectedFacilityId || sections.length === 0}
-                style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px" }}
-              >
-                <option value="">-- Choose Section --</option>
-                {sections.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.section_type || "general"})
-                  </option>
-                ))}
-              </select>
+                options={sectionOptions}
+                value={selectedSectionId}
+                onChange={(val) => handleSectionChange(String(val))}
+                searchable={sectionOptions.length >= 5}
+              />
             </div>
           </div>
 
           {/* Step 3: Select Kennel Unit */}
           <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "6px" }}>
-              4. Target Kennel Unit *
-            </label>
-            <select
-              value={selectedKennelId}
-              onChange={(e) => setSelectedKennelId(e.target.value)}
+            <Select
+              label="4. Target Kennel Unit"
+              required
+              placeholder={!selectedSectionId ? "Select Section first..." : "Choose Kennel Unit..."}
               disabled={!selectedSectionId || kennels.length === 0}
-              style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px" }}
-            >
-              <option value="">-- Choose Kennel Unit --</option>
-              {kennels.map((k) => (
-                <option key={k.id} value={k.id} disabled={k.is_occupied}>
-                  Unit {k.identifier} (Cap: {k.capacity ?? 1}) - [{k.sanitation_state || "clean"}]{" "}
-                  {k.is_occupied ? "— OCCUPIED (FULL)" : "— AVAILABLE"}
-                </option>
-              ))}
-            </select>
+              options={kennelOptions}
+              value={selectedKennelId}
+              onChange={(val) => setSelectedKennelId(String(val))}
+              searchable={kennelOptions.length >= 5}
+            />
           </div>
 
           {/* Selected Kennel Details Card */}

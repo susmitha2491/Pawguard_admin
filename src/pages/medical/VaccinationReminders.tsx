@@ -568,6 +568,70 @@ const VaccinationReminders = () => {
     window.location.href = "/notifications";
   };
 
+const safeDisplay = (val: unknown, fallback = "—"): string => {
+  if (val === null || val === undefined || val === "") return fallback;
+  if (typeof val === "object") {
+    if (Array.isArray(val)) {
+      if (val.length === 0) return fallback;
+      return val
+        .map((item) => (typeof item === "object" && item !== null ? (item as any).name || (item as any).id || "Item" : String(item)))
+        .join(", ");
+    }
+    const obj = val as Record<string, unknown>;
+    const name = obj.name || obj.title || obj.label || obj.dog_name;
+    const id = obj.id || obj.dog_id || obj.registration_number;
+    if (name && id) return `${String(name)} (${String(id)})`;
+    if (name) return String(name);
+    if (id) return String(id);
+    return fallback;
+  }
+  return String(val);
+};
+
+const renderStatusBadge = (val: string) => {
+  const s = String(val || "").trim();
+  if (!s) return <span style={badge("#F1F5F9", "#64748B")}>No Status</span>;
+  const lower = s.toLowerCase();
+
+  let bg = "#F1F5F9";
+  let color = "#475569";
+  let label = s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  if (
+    lower.includes("clear") ||
+    lower.includes("success") ||
+    lower.includes("completed") ||
+    lower.includes("approved") ||
+    lower.includes("healthy") ||
+    lower.includes("up to date") ||
+    lower.includes("fit")
+  ) {
+    bg = "#ECFDF5";
+    color = "#15803D";
+  } else if (
+    lower.includes("overdue") ||
+    lower.includes("critical") ||
+    lower.includes("urgent") ||
+    lower.includes("action required")
+  ) {
+    bg = "#FEF2F2";
+    color = "#DC2626";
+  } else if (
+    lower.includes("pending") ||
+    lower.includes("warning") ||
+    lower.includes("due") ||
+    lower.includes("medication")
+  ) {
+    bg = "#FFFBEB";
+    color = "#D97706";
+  } else if (lower.includes("active") || lower.includes("shelter") || lower.includes("intake")) {
+    bg = "#EFF6FF";
+    color = "#1E40AF";
+  }
+
+  return <span style={badge(bg, color)}>{label}</span>;
+};
+
   // Selected Dog Detail calculations
   const detailDogVaccs = useMemo(() => {
     if (!selectedDogDetail) return [];
@@ -583,6 +647,35 @@ const VaccinationReminders = () => {
     if (!selectedDogDetail) return [];
     return allReminders.filter((r) => matchDogRecord(r, selectedDogDetail));
   }, [selectedDogDetail, allReminders]);
+
+  const detailOverdueVaccs = useMemo(() => {
+    return detailDogVaccs.filter((v) => dueStateOf(pick(v, "next_due_at")) === "overdue");
+  }, [detailDogVaccs]);
+
+  const detailUpcomingVaccs = useMemo(() => {
+    return detailDogVaccs.filter((v) => {
+      const s = dueStateOf(pick(v, "next_due_at"));
+      return s === "upcoming" || s === "due_soon";
+    });
+  }, [detailDogVaccs]);
+
+  const detailActiveRxs = useMemo(() => {
+    return detailDogRxs.filter((p) => Boolean(pick(p, "is_active")));
+  }, [detailDogRxs]);
+
+  const detailActiveReminders = useMemo(() => {
+    return detailDogReminders.filter((r) => Boolean(pick(r, "is_active")));
+  }, [detailDogReminders]);
+
+  const detailOverallMedStatus = useMemo(() => {
+    if (!selectedDogDetail) return "Unknown";
+    if (detailOverdueVaccs.length > 0) return "Action Required (Overdue)";
+    if (detailActiveRxs.length > 0) return "Under Medication";
+    const medStatus = str(pick(selectedDogDetail, "medical_status", "status"));
+    if (medStatus && medStatus.toLowerCase() !== "shelter") return medStatus;
+    if (detailDogVaccs.length > 0 || detailDogRxs.length > 0) return "Up to Date";
+    return "No Medical Records";
+  }, [selectedDogDetail, detailOverdueVaccs, detailActiveRxs, detailDogVaccs, detailDogRxs]);
 
   return (
     <div>
@@ -737,12 +830,13 @@ const VaccinationReminders = () => {
           loading={loading}
           module="medical"
           emptyMessage="No registered dogs match your search or filter criteria."
+          onRowClick={(r) => setSelectedDogDetail((r as any)._rawDog || r)}
           renderRowActions={(r) => (
             <div style={{ display: "flex", gap: "6px" }}>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  setSelectedDogDetail(r._rawDog);
+                  setSelectedDogDetail(r._rawDog || r);
                 }}
                 style={{
                   display: "inline-flex",
@@ -764,7 +858,7 @@ const VaccinationReminders = () => {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    openReminderModalForDog("vaccination", null, r._rawDog);
+                    openReminderModalForDog("vaccination", null, r._rawDog || r);
                   }}
                   style={{
                     display: "inline-flex",
@@ -788,214 +882,528 @@ const VaccinationReminders = () => {
         />
       </div>
 
-      {/* Row-Level "View Details" Modal */}
+      {/* Redesigned Row-Level "Medical Registry Details" Modal */}
       <Modal
         isOpen={selectedDogDetail !== null}
         onClose={() => setSelectedDogDetail(null)}
-        title={`Medical Overview — ${selectedDogDetail ? str(pick(selectedDogDetail, "name")) : "Dog"}`}
-        maxWidth="820px"
+        title="Medical Registry Details"
+        maxWidth="920px"
       >
-        {selectedDogDetail && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-            {/* Dog Metadata Header */}
-            <div style={{ background: "#F8FAFC", padding: "16px", borderRadius: "10px", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <div style={{ width: "40px", height: "40px", borderRadius: "10px", background: "#EFF6FF", color: "#2563EB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" }}>
-                  <FaDog />
+        {selectedDogDetail && (() => {
+          const dogNameStr = safeDisplay(pick(selectedDogDetail, "name", "dog_name"), "Unnamed Dog");
+          const dogIdStr = getDogCanonicalId(selectedDogDetail) || safeDisplay(pick(selectedDogDetail, "id", "dog_id", "pet_id"), "—");
+          const dogRegStr = safeDisplay(pick(selectedDogDetail, "registration_number", "reg_no"), "—");
+          const dogBreedStr = safeDisplay(pick(selectedDogDetail, "breed"), "Mixed Breed");
+          const dogGenderStr = safeDisplay(pick(selectedDogDetail, "gender"), "—");
+          const dogShelterStr = safeDisplay(pick(selectedDogDetail, "shelter_name", "shelter_id", "facility", "location", "shelter"), "Central Shelter");
+          const dogStatusStr = safeDisplay(pick(selectedDogDetail, "status", "medical_status", "adoption_readiness"), "SHELTER");
+
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxHeight: "80vh", overflowY: "auto", paddingRight: "4px" }}>
+              {/* Top Patient Header Card */}
+              <div
+                style={{
+                  background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)",
+                  borderRadius: "12px",
+                  padding: "16px 20px",
+                  color: "#FFFFFF",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: "12px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                  <div
+                    style={{
+                      width: "48px",
+                      height: "48px",
+                      borderRadius: "12px",
+                      background: "rgba(59, 130, 246, 0.2)",
+                      border: "1px solid rgba(147, 197, 253, 0.3)",
+                      color: "#93C5FD",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "22px",
+                    }}
+                  >
+                    <FaDog />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "18px", fontWeight: 800, color: "#FFFFFF", display: "flex", alignItems: "center", gap: "8px" }}>
+                      {dogNameStr}
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: "#94A3B8" }}>
+                        ({dogBreedStr})
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#94A3B8", marginTop: "2px", fontFamily: "monospace" }}>
+                      Canonical ID: {dogIdStr}
+                      {dogRegStr !== "—" ? ` • Reg: ${dogRegStr}` : ""}
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <div style={{ fontSize: "16px", fontWeight: 700, color: "#0F172A" }}>
-                    {str(pick(selectedDogDetail, "name"))}
-                    {str(pick(selectedDogDetail, "breed")) ? ` (${str(pick(selectedDogDetail, "breed"))})` : ""}
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px", fontFamily: "monospace" }}>
-                    ID: {getDogCanonicalId(selectedDogDetail) || "Unassigned"}
-                  </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  {renderStatusBadge(dogStatusStr)}
+                  <Can permission="create_medical">
+                    <button
+                      onClick={() => openReminderModalForDog("vaccination", null, selectedDogDetail)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        padding: "8px 14px",
+                        borderRadius: "8px",
+                        border: "none",
+                        background: "#2563EB",
+                        color: "#FFF",
+                        fontWeight: 600,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                        boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                      }}
+                    >
+                      <FaPlus size={11} /> Create Reminder
+                    </button>
+                  </Can>
                 </div>
               </div>
-              <Can permission="create_medical">
-                <button
-                  onClick={() => openReminderModalForDog("vaccination", null, selectedDogDetail)}
-                  style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "8px 14px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
+
+              {/* 2-Column Balanced Grid: Section 1 (Dog Information) & Section 2 (Medical Summary) */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: "16px" }}>
+                {/* SECTION 1: Dog Information */}
+                <div
+                  style={{
+                    background: "#FFFFFF",
+                    border: "1px solid #E2E8F0",
+                    borderRadius: "12px",
+                    padding: "16px",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                  }}
                 >
-                  <FaPlus size={11} /> Create Reminder
-                </button>
-              </Can>
-            </div>
+                  <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#2563EB" }}></span>
+                    Section 1 — Dog Information
+                  </div>
 
-            {/* Detail Tabs */}
-            <div style={{ display: "flex", gap: "8px", borderBottom: "1px solid #E2E8F0", paddingBottom: "10px" }}>
-              <button
-                onClick={() => setDetailTab("vaccination")}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  padding: "8px 14px",
-                  borderRadius: "7px",
-                  border: "none",
-                  background: detailTab === "vaccination" ? "#2563EB" : "#F1F5F9",
-                  color: detailTab === "vaccination" ? "#FFFFFF" : "#475569",
-                  fontWeight: 600,
-                  fontSize: "13px",
-                  cursor: "pointer",
-                }}
-              >
-                <FaSyringe /> Vaccination Schedule ({detailDogVaccs.length})
-              </button>
-              <button
-                onClick={() => setDetailTab("medication")}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  padding: "8px 14px",
-                  borderRadius: "7px",
-                  border: "none",
-                  background: detailTab === "medication" ? "#2563EB" : "#F1F5F9",
-                  color: detailTab === "medication" ? "#FFFFFF" : "#475569",
-                  fontWeight: 600,
-                  fontSize: "13px",
-                  cursor: "pointer",
-                }}
-              >
-                <FaPills /> Medication Schedule ({detailDogRxs.length})
-              </button>
-              <button
-                onClick={() => setDetailTab("reminders")}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  padding: "8px 14px",
-                  borderRadius: "7px",
-                  border: "none",
-                  background: detailTab === "reminders" ? "#2563EB" : "#F1F5F9",
-                  color: detailTab === "reminders" ? "#FFFFFF" : "#475569",
-                  fontWeight: 600,
-                  fontSize: "13px",
-                  cursor: "pointer",
-                }}
-              >
-                <FaBell /> Pet Reminders ({detailDogReminders.length})
-              </button>
-            </div>
-
-            {/* Tab Contents */}
-            {detailTab === "vaccination" && (
-              <div>
-                <DataTable
-                  columns={detailVaccinationColumns}
-                  data={detailDogVaccs}
-                  module="medical"
-                  emptyMessage={`No vaccination records logged for ${str(pick(selectedDogDetail, "name"))} yet.`}
-                  renderRowActions={(row) => (
-                    <Can permission="create_medical">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openReminderModalForDog("vaccination", row, selectedDogDetail);
-                        }}
-                        style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "5px 10px", borderRadius: "6px", border: "1px solid #BFDBFE", background: "#EFF6FF", color: "#2563EB", fontWeight: 600, fontSize: "11px", cursor: "pointer" }}
-                      >
-                        <FaPlus size={10} /> Create Reminder
-                      </button>
-                    </Can>
-                  )}
-                />
-              </div>
-            )}
-
-            {detailTab === "medication" && (
-              <div>
-                <DataTable
-                  columns={detailPrescriptionColumns}
-                  data={detailDogRxs}
-                  module="medical"
-                  emptyMessage={`No medication prescriptions logged for ${str(pick(selectedDogDetail, "name"))}.`}
-                  renderRowActions={(row) => (
-                    <div style={{ display: "flex", gap: "6px" }}>
-                      <Can permission="create_medical">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openReminderModalForDog("medication", row, selectedDogDetail);
-                          }}
-                          style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "5px 10px", borderRadius: "6px", border: "1px solid #FDE68A", background: "#FFFBEB", color: "#D97706", fontWeight: 600, fontSize: "11px", cursor: "pointer" }}
-                        >
-                          <FaPlus size={10} /> Reminder
-                        </button>
-                      </Can>
-                      <Can permission="edit_medical">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void handleTogglePrescription(row);
-                          }}
-                          disabled={togglingRxId === str(pick(row, "id"))}
-                          style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "5px 10px", borderRadius: "6px", border: "1px solid #E2E8F0", background: "#F8FAFC", color: "#475569", fontWeight: 600, fontSize: "11px", cursor: "pointer" }}
-                        >
-                          {pick(row, "is_active") ? "Mark Inactive" : "Mark Active"}
-                        </button>
-                      </Can>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <div style={{ background: "#F8FAFC", padding: "10px 12px", borderRadius: "8px", border: "1px solid #F1F5F9" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Dog Name</div>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", marginTop: "2px" }}>
+                        {dogNameStr}
+                      </div>
                     </div>
-                  )}
-                />
-              </div>
-            )}
 
-            {detailTab === "reminders" && (
-              <div>
-                <DataTable
-                  columns={detailReminderColumns}
-                  data={detailDogReminders}
-                  module="medical"
-                  emptyMessage={`No active reminders created for ${str(pick(selectedDogDetail, "name"))}.`}
-                  renderRowActions={(row) => (
-                    <div style={{ display: "flex", gap: "6px" }}>
-                      <Can permission="create_medical">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setNotifyTarget({ row, dogName: str(pick(selectedDogDetail, "name")) });
-                          }}
-                          style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "5px 10px", borderRadius: "6px", border: "1px solid #BFDBFE", background: "#EFF6FF", color: "#2563EB", fontWeight: 600, fontSize: "11px", cursor: "pointer" }}
-                        >
-                          <FaPaperPlane size={10} /> Send
-                        </button>
-                      </Can>
-                      <Can permission="delete_medical">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteTarget({
-                              row,
-                              dogId: getDogCanonicalId(selectedDogDetail),
-                              dogName: str(pick(selectedDogDetail, "name")),
-                            });
-                          }}
-                          style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "5px 10px", borderRadius: "6px", border: "1px solid #FECACA", background: "#FEF2F2", color: "#EF4444", fontWeight: 600, fontSize: "11px", cursor: "pointer" }}
-                        >
-                          <FaTrash size={10} /> Delete
-                        </button>
-                      </Can>
+                    <div style={{ background: "#F8FAFC", padding: "10px 12px", borderRadius: "8px", border: "1px solid #F1F5F9" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Dog ID</div>
+                      <div style={{ fontSize: "12px", fontWeight: 700, color: "#1E3A8A", marginTop: "2px", fontFamily: "monospace" }}>
+                        {dogIdStr}
+                      </div>
                     </div>
-                  )}
-                />
-              </div>
-            )}
 
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "8px" }}>
-              <button
-                type="button"
-                onClick={() => setSelectedDogDetail(null)}
-                style={{ padding: "10px 20px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9", color: "#334155", fontWeight: 600, cursor: "pointer" }}
+                    <div style={{ background: "#F8FAFC", padding: "10px 12px", borderRadius: "8px", border: "1px solid #F1F5F9" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Registration Number</div>
+                      <div style={{ fontSize: "12px", fontWeight: 700, color: "#475569", marginTop: "2px", fontFamily: "monospace" }}>
+                        {dogRegStr}
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#F8FAFC", padding: "10px 12px", borderRadius: "8px", border: "1px solid #F1F5F9" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Breed</div>
+                      <div style={{ fontSize: "13px", fontWeight: 600, color: "#0F172A", marginTop: "2px" }}>
+                        {dogBreedStr}
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#F8FAFC", padding: "10px 12px", borderRadius: "8px", border: "1px solid #F1F5F9" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Gender</div>
+                      <div style={{ fontSize: "13px", fontWeight: 600, color: "#0F172A", marginTop: "2px", textTransform: "capitalize" }}>
+                        {dogGenderStr}
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#F8FAFC", padding: "10px 12px", borderRadius: "8px", border: "1px solid #F1F5F9" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Shelter / Facility</div>
+                      <div style={{ fontSize: "13px", fontWeight: 600, color: "#0F172A", marginTop: "2px" }}>
+                        {dogShelterStr}
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#F8FAFC", padding: "10px 12px", borderRadius: "8px", border: "1px solid #F1F5F9", gridColumn: "span 2" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", marginBottom: "4px" }}>Current Status</div>
+                      <div>
+                        {renderStatusBadge(dogStatusStr)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SECTION 2: Medical Summary */}
+                <div
+                  style={{
+                    background: "#FFFFFF",
+                    border: "1px solid #E2E8F0",
+                    borderRadius: "12px",
+                    padding: "16px",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                  }}
+                >
+                  <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#10B981" }}></span>
+                    Section 2 — Medical Summary
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <div style={{ background: "#EFF6FF", padding: "10px 12px", borderRadius: "8px", border: "1px solid #BFDBFE" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#1E40AF", textTransform: "uppercase" }}>Vaccinations Total</div>
+                      <div style={{ fontSize: "18px", fontWeight: 800, color: "#1E3A8A", marginTop: "2px" }}>
+                        {detailDogVaccs.length}
+                      </div>
+                    </div>
+
+                    <div style={{ background: detailOverdueVaccs.length > 0 ? "#FEF2F2" : "#F8FAFC", padding: "10px 12px", borderRadius: "8px", border: detailOverdueVaccs.length > 0 ? "1px solid #FECACA" : "1px solid #F1F5F9" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: detailOverdueVaccs.length > 0 ? "#991B1B" : "#64748B", textTransform: "uppercase" }}>Overdue Vaccinations</div>
+                      <div style={{ fontSize: "18px", fontWeight: 800, color: detailOverdueVaccs.length > 0 ? "#DC2626" : "#475569", marginTop: "2px" }}>
+                        {detailOverdueVaccs.length}
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#F0FDF4", padding: "10px 12px", borderRadius: "8px", border: "1px solid #BBF7D0" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#166534", textTransform: "uppercase" }}>Upcoming Vaccinations</div>
+                      <div style={{ fontSize: "18px", fontWeight: 800, color: "#15803D", marginTop: "2px" }}>
+                        {detailUpcomingVaccs.length}
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#FFFBEB", padding: "10px 12px", borderRadius: "8px", border: "1px solid #FDE68A" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#92400E", textTransform: "uppercase" }}>Active Prescriptions</div>
+                      <div style={{ fontSize: "18px", fontWeight: 800, color: "#D97706", marginTop: "2px" }}>
+                        {detailActiveRxs.length}
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#F5F3FF", padding: "10px 12px", borderRadius: "8px", border: "1px solid #DDD6FE" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#5B21B6", textTransform: "uppercase" }}>Active Reminders</div>
+                      <div style={{ fontSize: "18px", fontWeight: 800, color: "#7C3AED", marginTop: "2px" }}>
+                        {detailActiveReminders.length}
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#F8FAFC", padding: "10px 12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#475569", textTransform: "uppercase" }}>Overall Medical Status</div>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: detailOverdueVaccs.length > 0 ? "#DC2626" : "#15803D", marginTop: "4px" }}>
+                        {detailOverallMedStatus}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 3: Current Care & Clinical Schedules */}
+              <div
+                style={{
+                  background: "#FFFFFF",
+                  border: "1px solid #E2E8F0",
+                  borderRadius: "12px",
+                  padding: "16px",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                }}
               >
-                Close
-              </button>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "10px" }}>
+                  <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#F59E0B" }}></span>
+                    Section 3 — Current Care &amp; Clinical Schedules
+                  </div>
+
+                  {/* Tab buttons */}
+                  <div style={{ display: "flex", gap: "6px", background: "#F1F5F9", padding: "4px", borderRadius: "8px" }}>
+                    <button
+                      type="button"
+                      onClick={() => setDetailTab("vaccination")}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        padding: "6px 12px",
+                        borderRadius: "6px",
+                        border: "none",
+                        background: detailTab === "vaccination" ? "#FFFFFF" : "transparent",
+                        color: detailTab === "vaccination" ? "#1E3A8A" : "#64748B",
+                        fontWeight: 700,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                        boxShadow: detailTab === "vaccination" ? "0 1px 2px rgba(0,0,0,0.05)" : "none",
+                      }}
+                    >
+                      <FaSyringe size={11} /> Vaccinations ({detailDogVaccs.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDetailTab("medication")}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        padding: "6px 12px",
+                        borderRadius: "6px",
+                        border: "none",
+                        background: detailTab === "medication" ? "#FFFFFF" : "transparent",
+                        color: detailTab === "medication" ? "#1E3A8A" : "#64748B",
+                        fontWeight: 700,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                        boxShadow: detailTab === "medication" ? "0 1px 2px rgba(0,0,0,0.05)" : "none",
+                      }}
+                    >
+                      <FaPills size={11} /> Prescriptions ({detailDogRxs.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDetailTab("reminders")}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        padding: "6px 12px",
+                        borderRadius: "6px",
+                        border: "none",
+                        background: detailTab === "reminders" ? "#FFFFFF" : "transparent",
+                        color: detailTab === "reminders" ? "#1E3A8A" : "#64748B",
+                        fontWeight: 700,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                        boxShadow: detailTab === "reminders" ? "0 1px 2px rgba(0,0,0,0.05)" : "none",
+                      }}
+                    >
+                      <FaBell size={11} /> Reminders ({detailDogReminders.length})
+                    </button>
+                  </div>
+                </div>
+
+                {/* Tab Contents with Clean Tables */}
+                {detailTab === "vaccination" && (
+                  <div>
+                    <DataTable
+                      columns={detailVaccinationColumns}
+                      data={detailDogVaccs}
+                      module="medical"
+                      emptyMessage={`No vaccination records logged for ${dogNameStr}.`}
+                      renderRowActions={(row) => (
+                        <Can permission="create_medical">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openReminderModalForDog("vaccination", row, selectedDogDetail);
+                            }}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "5px",
+                              padding: "5px 10px",
+                              borderRadius: "6px",
+                              border: "1px solid #BFDBFE",
+                              background: "#EFF6FF",
+                              color: "#2563EB",
+                              fontWeight: 600,
+                              fontSize: "11px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <FaPlus size={10} /> Create Reminder
+                          </button>
+                        </Can>
+                      )}
+                    />
+                  </div>
+                )}
+
+                {detailTab === "medication" && (
+                  <div>
+                    <DataTable
+                      columns={detailPrescriptionColumns}
+                      data={detailDogRxs}
+                      module="medical"
+                      emptyMessage={`No medication prescriptions logged for ${dogNameStr}.`}
+                      renderRowActions={(row) => (
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <Can permission="create_medical">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openReminderModalForDog("medication", row, selectedDogDetail);
+                              }}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "5px",
+                                padding: "5px 10px",
+                                borderRadius: "6px",
+                                border: "1px solid #FDE68A",
+                                background: "#FFFBEB",
+                                color: "#D97706",
+                                fontWeight: 600,
+                                fontSize: "11px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <FaPlus size={10} /> Reminder
+                            </button>
+                          </Can>
+                          <Can permission="edit_medical">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleTogglePrescription(row);
+                              }}
+                              disabled={togglingRxId === str(pick(row, "id"))}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "5px",
+                                padding: "5px 10px",
+                                borderRadius: "6px",
+                                border: "1px solid #E2E8F0",
+                                background: "#F8FAFC",
+                                color: "#475569",
+                                fontWeight: 600,
+                                fontSize: "11px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {pick(row, "is_active") ? "Mark Inactive" : "Mark Active"}
+                            </button>
+                          </Can>
+                        </div>
+                      )}
+                    />
+                  </div>
+                )}
+
+                {detailTab === "reminders" && (
+                  <div>
+                    <DataTable
+                      columns={detailReminderColumns}
+                      data={detailDogReminders}
+                      module="medical"
+                      emptyMessage={`No active reminders created for ${dogNameStr}.`}
+                      renderRowActions={(row) => (
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <Can permission="create_medical">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setNotifyTarget({ row, dogName: dogNameStr });
+                              }}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "5px",
+                                padding: "5px 10px",
+                                borderRadius: "6px",
+                                border: "1px solid #BFDBFE",
+                                background: "#EFF6FF",
+                                color: "#2563EB",
+                                fontWeight: 600,
+                                fontSize: "11px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <FaPaperPlane size={10} /> Send
+                            </button>
+                          </Can>
+                          <Can permission="delete_medical">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteTarget({
+                                  row,
+                                  dogId: dogIdStr,
+                                  dogName: dogNameStr,
+                                });
+                              }}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "5px",
+                                padding: "5px 10px",
+                                borderRadius: "6px",
+                                border: "1px solid #FECACA",
+                                background: "#FEF2F2",
+                                color: "#EF4444",
+                                fontWeight: 600,
+                                fontSize: "11px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <FaTrash size={10} /> Delete
+                            </button>
+                          </Can>
+                        </div>
+                      )}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Compact Action Footer */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginTop: "4px",
+                  paddingTop: "12px",
+                  borderTop: "1px solid #E2E8F0",
+                }}
+              >
+                <div style={{ fontSize: "12px", color: "#64748B" }}>
+                  Viewing medical schedule &amp; reminders for <strong>{dogNameStr}</strong>
+                </div>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <Can permission="create_medical">
+                    <button
+                      type="button"
+                      onClick={() => openReminderModalForDog("vaccination", null, selectedDogDetail)}
+                      style={{
+                        padding: "8px 16px",
+                        borderRadius: "8px",
+                        border: "none",
+                        background: "#2563EB",
+                        color: "#FFFFFF",
+                        fontWeight: 600,
+                        fontSize: "13px",
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                      }}
+                    >
+                      <FaPlus size={11} /> New Reminder
+                    </button>
+                  </Can>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDogDetail(null)}
+                    style={{
+                      padding: "8px 18px",
+                      borderRadius: "8px",
+                      border: "1px solid #CBD5E1",
+                      background: "#F1F5F9",
+                      color: "#334155",
+                      fontWeight: 600,
+                      fontSize: "13px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </Modal>
 
       {/* Create Reminder Modal */}

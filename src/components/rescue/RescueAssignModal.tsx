@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Modal from "../common/Modal";
+import Select, { type SelectOption } from "../common/Select";
 import { useToast } from "../../context/ToastContext";
 import rescueService from "../../services/rescueService";
 import { notifyDataChanged } from "../../utils/dataSync";
@@ -242,6 +243,63 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
     }
   };
 
+  const coordinatorOptions: SelectOption[] = useMemo(() => {
+    return coordinatorsList.map((u) => {
+      const uId = String((u as any).id || (u as any).user_id || (u as any).userId || (u as any).agent_id || "");
+      const rawName = String((u as any).full_name || (u as any).name || (u as any).agent_name || (u as any).email || "").trim();
+      const displayName = rawName && !isUuidString(rawName) ? rawName : `Coordinator #${uId.substring(0, 8)}`;
+      const loc = String((u as any).service_area || (u as any).location || "").trim();
+      return {
+        value: uId,
+        label: displayName,
+        sublabel: loc && !isUuidString(loc) ? `Area: ${loc}` : undefined,
+      };
+    });
+  }, [coordinatorsList]);
+
+  const agentOptions: SelectOption[] = useMemo(() => {
+    return agentsList.map((u) => {
+      const uId = String((u as any).id || (u as any).user_id || (u as any).userId || (u as any).agent_id || "");
+      const rawName = String((u as any).full_name || (u as any).name || (u as any).agent_name || (u as any).email || "").trim();
+      const displayName = rawName && !isUuidString(rawName) ? rawName : `Agent #${uId.substring(0, 8)}`;
+      const isBusy = (u as any).availability === "Busy" || (u as any).status === "busy" || (u as any).is_busy === true;
+      return {
+        value: uId,
+        label: displayName,
+        sublabel: isBusy ? "Status: Busy on Rescue" : "Status: Available for Dispatch",
+        disabled: isBusy,
+        badge: {
+          text: isBusy ? "Busy" : "Available",
+          bg: isBusy ? "#FEF2F2" : "#ECFDF5",
+          color: isBusy ? "#DC2626" : "#059669",
+        },
+      };
+    });
+  }, [agentsList]);
+
+  const vehicleOptions: SelectOption[] = useMemo(() => {
+    return vehicles.map((v) => {
+      const vId = String((v as any).id || "");
+      const rawReg = (v as any).registration_number || (v as any).vehicle_number || (v as any).license_plate || (v as any).vehicle_code || (v as any).plate;
+      const displayReg = rawReg && !isUuidString(String(rawReg)) ? String(rawReg) : `Vehicle #${vId.substring(0, 8)}`;
+      const rawModel = String((v as any).make_model || (v as any).model || (v as any).vehicle_type || (v as any).type || "").trim();
+      const rawStatus = String((v as any).status || "").toLowerCase().trim();
+      const isAvail = !rawStatus || rawStatus === "active" || rawStatus === "available" || rawStatus === "ready" || rawStatus === "idle";
+      const displayStatus = rawStatus ? rawStatus.replace(/_/g, " ") : "available";
+      return {
+        value: vId,
+        label: displayReg,
+        sublabel: rawModel && !isUuidString(rawModel) ? `Model: ${rawModel}` : undefined,
+        disabled: !isAvail,
+        badge: {
+          text: isAvail ? "Ready" : displayStatus,
+          bg: isAvail ? "#ECFDF5" : "#FEF2F2",
+          color: isAvail ? "#059669" : "#DC2626",
+        },
+      };
+    });
+  }, [vehicles]);
+
   return (
     <Modal
       isOpen={isOpen}
@@ -251,103 +309,41 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
       <form onSubmit={handleAssignSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
         {/* 1. Rescue Coordinator Dropdown */}
         <div>
-          <label style={{ display: "block", fontSize: "12px", fontWeight: 700, marginBottom: "4px", color: "#334155" }}>
-            Select Rescue Coordinator *
-          </label>
-          <select
+          <Select
+            label="Rescue Coordinator"
+            required
+            placeholder="Select Rescue Coordinator..."
+            options={coordinatorOptions}
             value={assignForm.coordinator_id}
-            onChange={(e) => setAssignForm({ ...assignForm, coordinator_id: e.target.value })}
-            style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px", background: "#FFF" }}
-          >
-            {coordinatorsList.length === 0 ? (
-              <option value="" disabled>-- No rescue coordinators available --</option>
-            ) : (
-              <option value="">-- Select Rescue Coordinator --</option>
-            )}
-            {coordinatorsList.map((u) => {
-              const uId = String((u as any).id || (u as any).user_id || (u as any).userId || (u as any).agent_id || "");
-              const rawName = String((u as any).full_name || (u as any).name || (u as any).agent_name || (u as any).email || "").trim();
-              const displayName = rawName && !isUuidString(rawName) ? rawName : `Coordinator #${uId.substring(0, 8)}`;
-              const loc = String((u as any).service_area || (u as any).location || "").trim();
-              const extra = loc && !isUuidString(loc) ? ` (${loc})` : "";
-
-              return (
-                <option key={uId} value={uId}>
-                  {displayName}{extra}
-                </option>
-              );
-            })}
-          </select>
+            onChange={(val) => setAssignForm({ ...assignForm, coordinator_id: String(val) })}
+            searchable={coordinatorOptions.length >= 5}
+          />
         </div>
 
         {/* 2. Field Rescue Agent Dropdown */}
         <div>
-          <label style={{ display: "block", fontSize: "12px", fontWeight: 700, marginBottom: "4px", color: "#334155" }}>
-            Select Field Rescue Agent *
-          </label>
-          <select
+          <Select
+            label="Field Rescue Agent"
+            required
+            placeholder="Select Field Rescue Agent..."
+            options={agentOptions}
             value={assignForm.agent_id}
-            onChange={(e) => setAssignForm({ ...assignForm, agent_id: e.target.value })}
-            style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px", background: "#FFF" }}
-          >
-            {agentsList.length === 0 ? (
-              <option value="" disabled>-- No rescue agents available --</option>
-            ) : (
-              <option value="">-- Select Field Rescue Agent --</option>
-            )}
-            {agentsList.map((u) => {
-              const uId = String((u as any).id || (u as any).user_id || (u as any).userId || (u as any).agent_id || "");
-              const rawName = String((u as any).full_name || (u as any).name || (u as any).agent_name || (u as any).email || "").trim();
-              const displayName = rawName && !isUuidString(rawName) ? rawName : `Agent #${uId.substring(0, 8)}`;
-              const isBusy = (u as any).availability === "Busy" || (u as any).status === "busy" || (u as any).is_busy === true;
-
-              const label = isBusy
-                ? `✕ ${displayName} (Busy on Rescue)`
-                : `✓ ${displayName} (Available)`;
-
-              return (
-                <option key={uId} value={uId} disabled={isBusy}>
-                  {label}
-                </option>
-              );
-            })}
-          </select>
+            onChange={(val) => setAssignForm({ ...assignForm, agent_id: String(val) })}
+            searchable={agentOptions.length >= 5}
+          />
         </div>
 
         {/* 3. Fleet Vehicle Dropdown */}
         <div>
-          <label style={{ display: "block", fontSize: "12px", fontWeight: 700, marginBottom: "4px", color: "#334155" }}>
-            Select Fleet Vehicle Unit *
-          </label>
-          <select
+          <Select
+            label="Fleet Vehicle Unit"
+            required
+            placeholder="Select Fleet Vehicle..."
+            options={vehicleOptions}
             value={assignForm.vehicle_id}
-            onChange={(e) => setAssignForm({ ...assignForm, vehicle_id: e.target.value })}
-            style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "13px", background: "#FFF" }}
-          >
-            <option value="">-- Select Fleet Vehicle --</option>
-            {vehicles.map((v) => {
-              const vId = String((v as any).id || "");
-              const rawReg = (v as any).registration_number || (v as any).vehicle_number || (v as any).license_plate || (v as any).vehicle_code || (v as any).plate;
-              const displayReg = rawReg && !isUuidString(String(rawReg)) ? String(rawReg) : `Vehicle Unit #${vId.substring(0, 8)}`;
-
-              const rawModel = String((v as any).make_model || (v as any).model || (v as any).vehicle_type || (v as any).type || "").trim();
-              const displayModel = rawModel && !isUuidString(rawModel) ? ` (${rawModel})` : "";
-
-              const rawStatus = String((v as any).status || "").toLowerCase().trim();
-              const isAvail = !rawStatus || rawStatus === "active" || rawStatus === "available" || rawStatus === "ready" || rawStatus === "idle";
-              const displayStatus = rawStatus ? rawStatus.replace(/_/g, " ") : "available";
-
-              const label = isAvail
-                ? `✓ ${displayReg}${displayModel}`
-                : `✕ ${displayReg} (${displayStatus})`;
-
-              return (
-                <option key={vId} value={vId} disabled={!isAvail}>
-                  {label}
-                </option>
-              );
-            })}
-          </select>
+            onChange={(val) => setAssignForm({ ...assignForm, vehicle_id: String(val) })}
+            searchable={vehicleOptions.length >= 5}
+          />
         </div>
 
         {/* 4. Equipment & Instructions / Notes */}

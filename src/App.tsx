@@ -459,7 +459,7 @@ function App() {
               element={
                 <ProtectedRoute
                   permission="view_certificates"
-                  allowedRoles={["super_admin", "veterinarian"]}
+                  allowedRoles={["super_admin", "veterinarian", "adoption_coordinator", "shelter_manager"]}
                 />
               }
             >

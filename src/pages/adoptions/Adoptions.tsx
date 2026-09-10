@@ -4,6 +4,7 @@ import DataTable, { type Column } from "../../components/common/DataTable";
 import QuickActionCard from "../../components/dashboard/QuickActionCard";
 import StatCard from "../../components/dashboard/StatCard";
 import Modal from "../../components/common/Modal";
+import Select, { type SelectOption } from "../../components/common/Select";
 import { useToast } from "../../context/ToastContext";
 import Can from "../../components/rbac/Can";
 import {
@@ -277,6 +278,26 @@ const Adoptions = () => {
     fetchAdoptions();
     fetchDogs();
   }, [fetchAdoptions, fetchDogs]);
+
+  const dogOptions: SelectOption[] = useMemo(() => {
+    return dogs.map((d: any) => ({
+      value: String(d.id),
+      label: String(d.name || "Dog"),
+      sublabel: d.label ? String(d.label) : undefined,
+    }));
+  }, [dogs]);
+
+  const stageFilterOptions = useMemo(() => [
+    { value: "all", label: "All Stages" },
+    { value: "submitted", label: "Submitted" },
+    { value: "vetting", label: "Vetting" },
+    { value: "screening", label: "Screening" },
+    { value: "interview", label: "Interview" },
+    { value: "home_check", label: "Home Visit" },
+    { value: "approved", label: "Approved" },
+    { value: "completed", label: "Completed" },
+    { value: "rejected", label: "Rejected" },
+  ], []);
 
   // Derived filtered adoptions
   const filteredAdoptions = useMemo(() => {
@@ -750,24 +771,18 @@ const Adoptions = () => {
               setPage(1);
             }}
             leftHeaderControls={
-              <select
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value);
-                  setPage(1);
-                }}
-                style={{ ...inputStyle, width: "auto" }}
-              >
-                <option value="all">All Stages</option>
-                <option value="submitted">Submitted</option>
-                <option value="vetting">Vetting</option>
-                <option value="screening">Screening</option>
-                <option value="interview">Interview</option>
-                <option value="home_check">Home Visit</option>
-                <option value="approved">Approved</option>
-                <option value="completed">Completed</option>
-                <option value="rejected">Rejected</option>
-              </select>
+              <div style={{ minWidth: "160px" }}>
+                <Select
+                  value={statusFilter}
+                  onChange={(val) => {
+                    setStatusFilter(String(val));
+                    setPage(1);
+                  }}
+                  options={stageFilterOptions}
+                  searchable={false}
+                  size="sm"
+                />
+              </div>
             }
             onRowClick={(row) => void openInspectModal(row)}
             onDelete={(row) => {
@@ -1042,13 +1057,15 @@ const Adoptions = () => {
       <Modal isOpen={isNewModalOpen} onClose={() => setIsNewModalOpen(false)} title="Register Adoption Application">
         <form onSubmit={handleNewAppSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Select Rescue Dog *</label>
-            <select required value={newAppForm.dog_id} onChange={(e) => setNewAppForm({ ...newAppForm, dog_id: e.target.value })} style={inputStyle}>
-              <option value="">Select dog...</option>
-              {dogs.map((d) => (
-                <option key={d.id} value={d.id}>{d.label}</option>
-              ))}
-            </select>
+            <Select
+              label="Select Rescue Dog"
+              required
+              placeholder="Search or select rescue dog..."
+              options={dogOptions}
+              value={newAppForm.dog_id}
+              onChange={(val) => setNewAppForm({ ...newAppForm, dog_id: String(val) })}
+              searchable={true}
+            />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div>

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import DataTable from "../common/DataTable";
 import Modal from "../common/Modal";
+import Select, { type SelectOption } from "../common/Select";
 import { useToast } from "../../context/ToastContext";
 import Can from "../rbac/Can";
 import { getCurrentUserRole } from "../../utils/roleUtils";
@@ -264,29 +265,47 @@ const ShelterTransfers = () => {
   const pendingCount = transfers.filter((t) => String(t.status).toLowerCase() === "pending").length;
   const completedCount = transfers.filter((t) => String(t.status).toLowerCase() === "completed").length;
 
+  const dogOptions: SelectOption[] = useMemo(() => {
+    return dogs.map((d) => ({
+      value: dogId(d),
+      label: String(d.name || "Dog"),
+      sublabel: `Reg: ${d.registration_number || d.id || dogId(d)} • Status: ${d.status || "Unknown"}`,
+    }));
+  }, [dogs]);
+
+  const facilityOptions: SelectOption[] = useMemo(() => {
+    return facilities.map((f) => ({
+      value: String(f.id),
+      label: String(f.name || f.id),
+      sublabel: f.facility_type ? `Type: ${f.facility_type}` : undefined,
+    }));
+  }, [facilities]);
+
   return (
-    <div className="soft-card" style={{ padding: "20px", marginTop: "24px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          marginBottom: "14px",
           flexWrap: "wrap",
-          gap: "10px",
+          gap: "12px",
         }}
       >
         <div>
-          <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700 }}>Shelter Placement & Transfers</h3>
-          <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#64748B" }}>
-            Request placement for cleared dogs. The receiving shelter manager approves the transfer.
+          <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#0F172A" }}>
+            Shelter Placements &amp; Transfers
+          </h2>
+          <p style={{ margin: "4px 0 0", color: "#64748B", fontSize: "13px" }}>
+            Request and confirm transfers of medically cleared dogs between centres and shelters.
           </p>
         </div>
         <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
           <span style={{ fontSize: "12px", fontWeight: 600, color: "#B45309" }}>{pendingCount} pending</span>
           <span style={{ fontSize: "12px", fontWeight: 600, color: "#059669" }}>{completedCount} completed</span>
-          <Can permission={["create_shelters", "edit_shelters", "manage_shelters"]}>
+          <Can permission="create_shelter">
             <button
+              type="button"
               onClick={() => setIsModalOpen(true)}
               style={{
                 display: "inline-flex",
@@ -339,48 +358,37 @@ const ShelterTransfers = () => {
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Request Shelter Placement">
         <form onSubmit={handleCreate} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Dog *</label>
-            <select
+            <Select
+              label="Dog"
               required
+              placeholder="Search and select dog..."
+              options={dogOptions}
               value={form.dog_id}
-              onChange={(e) => setForm({ ...form, dog_id: e.target.value })}
-              style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px", boxSizing: "border-box" }}
-            >
-              <option value="">Select a dog...</option>
-              {dogs.map((d) => (
-                <option key={dogId(d)} value={dogId(d)}>
-                  {d.name || "Dog"} ({d.registration_number || d.id || dogId(d)}) — {d.status || "unknown"}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setForm({ ...form, dog_id: String(val) })}
+              searchable={true}
+            />
           </div>
           <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>From Facility (sending) *</label>
-            <select
+            <Select
+              label="From Facility (sending)"
               required
+              placeholder="Select source facility..."
+              options={facilityOptions}
               value={form.from_facility_id}
-              onChange={(e) => setForm({ ...form, from_facility_id: e.target.value })}
-              style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px", boxSizing: "border-box" }}
-            >
-              <option value="">Select source facility...</option>
-              {facilities.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
+              onChange={(val) => setForm({ ...form, from_facility_id: String(val) })}
+              searchable={facilityOptions.length >= 5}
+            />
           </div>
           <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>To Facility (receiving shelter) *</label>
-            <select
+            <Select
+              label="To Facility (receiving shelter)"
               required
+              placeholder="Select destination facility..."
+              options={facilityOptions}
               value={form.to_facility_id}
-              onChange={(e) => setForm({ ...form, to_facility_id: e.target.value })}
-              style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px", boxSizing: "border-box" }}
-            >
-              <option value="">Select destination facility...</option>
-              {facilities.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
+              onChange={(val) => setForm({ ...form, to_facility_id: String(val) })}
+              searchable={facilityOptions.length >= 5}
+            />
           </div>
           <div>
             <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Notes</label>

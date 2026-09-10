@@ -4,6 +4,7 @@ import DataTable, { type Column } from "../../components/common/DataTable";
 import QuickActionCard from "../../components/dashboard/QuickActionCard";
 import StatCard from "../../components/dashboard/StatCard";
 import Modal from "../../components/common/Modal";
+import Select from "../../components/common/Select";
 import { useToast } from "../../context/ToastContext";
 import Can from "../../components/rbac/Can";
 import {
@@ -232,8 +233,35 @@ const MedicalRecords = () => {
     loadAllData();
   }, [loadAllData]);
 
-  const dogLabel = (d: Record<string, unknown> | undefined) =>
-    d?.name ? `${String(d.name)}${d.breed ? ` (${String(d.breed)})` : ""}` : d?.id ? String(d.id) : "";
+  const dogOptions = useMemo(() => {
+    return dogs.map((d) => ({
+      value: String(d.id),
+      label: String(d.name || d.id || "Unnamed Patient"),
+      sublabel: d.breed ? `Breed: ${String(d.breed)}${d.status ? ` • ${String(d.status)}` : ""}` : (d.status ? String(d.status) : undefined),
+    }));
+  }, [dogs]);
+
+  const categoryOptions = useMemo(() => [
+    { value: "all", label: "All Medical Categories" },
+    { value: "exams", label: "Clinical Exams" },
+    { value: "vaccinations", label: "Vaccinations" },
+    { value: "treatments", label: "Treatments & Surgeries" },
+    { value: "prescriptions", label: "Prescriptions" },
+  ], []);
+
+  const routeOptions = useMemo(() => [
+    { value: "Oral", label: "Oral" },
+    { value: "Subcutaneous", label: "Subcutaneous (SC)" },
+    { value: "Intramuscular", label: "Intramuscular (IM)" },
+    { value: "Intravenous", label: "Intravenous (IV)" },
+    { value: "Topical", label: "Topical" },
+  ], []);
+
+  const clearanceTypeOptions = useMemo(() => [
+    { value: "adoption_surgery", label: "Adoption & Surgery Clearance" },
+    { value: "health_clearance", label: "Health & Quarantine Clearance" },
+    { value: "travel_clearance", label: "Travel / Export Clearance" },
+  ], []);
 
   const getContextField = (key: string): string => {
     const ctx = selectedDogProfile?.recordContext as Record<string, unknown> | undefined;
@@ -593,20 +621,17 @@ const MedicalRecords = () => {
                 style={{ ...inputStyle, paddingLeft: "36px" }}
               />
             </div>
-            <select
-              value={categoryFilter}
-              onChange={(e) => {
-                setCategoryFilter(e.target.value);
-                setPage(1);
-              }}
-              style={{ ...inputStyle, width: "auto" }}
-            >
-              <option value="all">All Medical Categories</option>
-              <option value="exams">Clinical Exams</option>
-              <option value="vaccinations">Vaccinations</option>
-              <option value="treatments">Treatments &amp; Surgeries</option>
-              <option value="prescriptions">Prescriptions</option>
-            </select>
+            <div style={{ minWidth: "200px" }}>
+              <Select
+                value={categoryFilter}
+                onChange={(val) => {
+                  setCategoryFilter(String(val));
+                  setPage(1);
+                }}
+                options={categoryOptions}
+                searchable={false}
+              />
+            </div>
           </div>
         </div>
 
@@ -658,13 +683,15 @@ const MedicalRecords = () => {
       <Modal isOpen={isExamModalOpen} onClose={() => setIsExamModalOpen(false)} title="Log Clinical Examination">
         <form onSubmit={handleCreateExam} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Patient Dog *</label>
-            <select required value={examForm.dog_id} onChange={(e) => setExamForm({ ...examForm, dog_id: e.target.value })} style={inputStyle}>
-              <option value="">Select dog...</option>
-              {dogs.map((d) => (
-                <option key={String(d.id)} value={String(d.id)}>{dogLabel(d)}</option>
-              ))}
-            </select>
+            <Select
+              label="Patient Dog"
+              required
+              placeholder="Search or select dog..."
+              value={examForm.dog_id}
+              onChange={(val) => setExamForm({ ...examForm, dog_id: String(val) })}
+              options={dogOptions}
+              searchable={true}
+            />
           </div>
           <div>
             <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Triage Diagnosis *</label>
@@ -699,13 +726,15 @@ const MedicalRecords = () => {
       <Modal isOpen={isVaccineModalOpen} onClose={() => setIsVaccineModalOpen(false)} title="Log Vaccination Booster">
         <form onSubmit={handleLogVaccine} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Patient Dog *</label>
-            <select required value={vaccineForm.dog_id} onChange={(e) => setVaccineForm({ ...vaccineForm, dog_id: e.target.value })} style={inputStyle}>
-              <option value="">Select dog...</option>
-              {dogs.map((d) => (
-                <option key={String(d.id)} value={String(d.id)}>{dogLabel(d)}</option>
-              ))}
-            </select>
+            <Select
+              label="Patient Dog"
+              required
+              placeholder="Search or select dog..."
+              value={vaccineForm.dog_id}
+              onChange={(val) => setVaccineForm({ ...vaccineForm, dog_id: String(val) })}
+              options={dogOptions}
+              searchable={true}
+            />
           </div>
           <div>
             <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Vaccine Name *</label>
@@ -732,13 +761,15 @@ const MedicalRecords = () => {
       <Modal isOpen={isSurgeryModalOpen} onClose={() => setIsSurgeryModalOpen(false)} title="Record Treatment & Surgery">
         <form onSubmit={handleScheduleSurgery} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Patient Dog *</label>
-            <select required value={surgeryForm.dog_id} onChange={(e) => setSurgeryForm({ ...surgeryForm, dog_id: e.target.value })} style={inputStyle}>
-              <option value="">Select dog...</option>
-              {dogs.map((d) => (
-                <option key={String(d.id)} value={String(d.id)}>{dogLabel(d)}</option>
-              ))}
-            </select>
+            <Select
+              label="Patient Dog"
+              required
+              placeholder="Search or select dog..."
+              value={surgeryForm.dog_id}
+              onChange={(val) => setSurgeryForm({ ...surgeryForm, dog_id: String(val) })}
+              options={dogOptions}
+              searchable={true}
+            />
           </div>
           <div>
             <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Treatment / Procedure Type *</label>
@@ -767,13 +798,15 @@ const MedicalRecords = () => {
       <Modal isOpen={isPrescriptionModalOpen} onClose={() => setIsPrescriptionModalOpen(false)} title="Prescribe Medication">
         <form onSubmit={handleCreatePrescription} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Patient Dog *</label>
-            <select required value={prescriptionForm.dog_id} onChange={(e) => setPrescriptionForm({ ...prescriptionForm, dog_id: e.target.value })} style={inputStyle}>
-              <option value="">Select dog...</option>
-              {dogs.map((d) => (
-                <option key={String(d.id)} value={String(d.id)}>{dogLabel(d)}</option>
-              ))}
-            </select>
+            <Select
+              label="Patient Dog"
+              required
+              placeholder="Search or select dog..."
+              value={prescriptionForm.dog_id}
+              onChange={(val) => setPrescriptionForm({ ...prescriptionForm, dog_id: String(val) })}
+              options={dogOptions}
+              searchable={true}
+            />
           </div>
           <div>
             <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Drug Name *</label>
@@ -785,14 +818,13 @@ const MedicalRecords = () => {
               <input type="text" required placeholder="e.g. 250mg twice daily" value={prescriptionForm.dosage} onChange={(e) => setPrescriptionForm({ ...prescriptionForm, dosage: e.target.value })} style={inputStyle} />
             </div>
             <div>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Route</label>
-              <select value={prescriptionForm.route} onChange={(e) => setPrescriptionForm({ ...prescriptionForm, route: e.target.value })} style={inputStyle}>
-                <option value="Oral">Oral</option>
-                <option value="Subcutaneous">Subcutaneous (SC)</option>
-                <option value="Intramuscular">Intramuscular (IM)</option>
-                <option value="Intravenous">Intravenous (IV)</option>
-                <option value="Topical">Topical</option>
-              </select>
+              <Select
+                label="Route"
+                value={prescriptionForm.route}
+                onChange={(val) => setPrescriptionForm({ ...prescriptionForm, route: String(val) })}
+                options={routeOptions}
+                searchable={false}
+              />
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
@@ -816,13 +848,15 @@ const MedicalRecords = () => {
       <Modal isOpen={isAdministrationModalOpen} onClose={() => setIsAdministrationModalOpen(false)} title="Log Medication Administration">
         <form onSubmit={handleLogAdministration} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Patient Dog *</label>
-            <select required value={adminForm.dog_id} onChange={(e) => setAdminForm({ ...adminForm, dog_id: e.target.value })} style={inputStyle}>
-              <option value="">Select dog...</option>
-              {dogs.map((d) => (
-                <option key={String(d.id)} value={String(d.id)}>{dogLabel(d)}</option>
-              ))}
-            </select>
+            <Select
+              label="Patient Dog"
+              required
+              placeholder="Search or select dog..."
+              value={adminForm.dog_id}
+              onChange={(val) => setAdminForm({ ...adminForm, dog_id: String(val) })}
+              options={dogOptions}
+              searchable={true}
+            />
           </div>
           <div>
             <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Medication Name *</label>
@@ -834,14 +868,13 @@ const MedicalRecords = () => {
               <input type="text" required placeholder="e.g. 250mg" value={adminForm.dosage} onChange={(e) => setAdminForm({ ...adminForm, dosage: e.target.value })} style={inputStyle} />
             </div>
             <div>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Route</label>
-              <select value={adminForm.route} onChange={(e) => setAdminForm({ ...adminForm, route: e.target.value })} style={inputStyle}>
-                <option value="Oral">Oral</option>
-                <option value="Subcutaneous">Subcutaneous (SC)</option>
-                <option value="Intramuscular">Intramuscular (IM)</option>
-                <option value="Intravenous">Intravenous (IV)</option>
-                <option value="Topical">Topical</option>
-              </select>
+              <Select
+                label="Route"
+                value={adminForm.route}
+                onChange={(val) => setAdminForm({ ...adminForm, route: String(val) })}
+                options={routeOptions}
+                searchable={false}
+              />
             </div>
           </div>
           <div>
@@ -859,21 +892,24 @@ const MedicalRecords = () => {
       <Modal isOpen={isCertModalOpen} onClose={() => setIsCertModalOpen(false)} title="Issue Medical Clearance Certificate">
         <form onSubmit={handleIssueCert} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Patient Dog *</label>
-            <select required value={certDogId} onChange={(e) => setCertDogId(e.target.value)} style={inputStyle}>
-              <option value="">Select dog...</option>
-              {dogs.map((d) => (
-                <option key={String(d.id)} value={String(d.id)}>{dogLabel(d)}</option>
-              ))}
-            </select>
+            <Select
+              label="Patient Dog"
+              required
+              placeholder="Search or select dog..."
+              value={certDogId}
+              onChange={(val) => setCertDogId(String(val))}
+              options={dogOptions}
+              searchable={true}
+            />
           </div>
           <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Clearance Type</label>
-            <select value={certForm.clearance_type} onChange={(e) => setCertForm({ ...certForm, clearance_type: e.target.value })} style={inputStyle}>
-              <option value="adoption_surgery">Adoption & Surgery Clearance</option>
-              <option value="health_clearance">Health & Quarantine Clearance</option>
-              <option value="travel_clearance">Travel / Export Clearance</option>
-            </select>
+            <Select
+              label="Clearance Type"
+              value={certForm.clearance_type}
+              onChange={(val) => setCertForm({ ...certForm, clearance_type: String(val) })}
+              options={clearanceTypeOptions}
+              searchable={false}
+            />
           </div>
           <div>
             <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Decision Notes</label>

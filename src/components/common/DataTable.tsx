@@ -671,18 +671,46 @@ function DataTable<T = any>({
         >
           {modalMode === "view" ? (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-              {Object.entries(selectedRow).map(([key, val]) => (
-                <div key={key} style={{ background: "#F8FAFC", padding: "12px 14px", borderRadius: "10px", border: "1px solid #F1F5F9" }}>
-                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", marginBottom: "4px" }}>
-                    {formatLabel(key)}
-                  </div>
-                  <div style={{ fontSize: "14px", fontWeight: 600, color: "#0F172A", wordBreak: "break-word" }}>
-                    {key === "status" || key === "state" || key === "condition"
-                      ? renderStatusBadge(String(val ?? ""))
-                      : String(val ?? "-")}
-                  </div>
-                </div>
-              ))}
+              {Object.entries(selectedRow)
+                .filter(([key]) => !key.startsWith("_") && key !== "raw" && key !== "rawDog" && key !== "_rawDog")
+                .map(([key, val]) => {
+                  const formatVal = (v: unknown): React.ReactNode => {
+                    if (v === null || v === undefined || v === "") return "—";
+                    if (key === "status" || key === "state" || key === "condition") {
+                      return renderStatusBadge(String(v));
+                    }
+                    if (typeof v === "boolean") {
+                      return v ? "Yes" : "No";
+                    }
+                    if (typeof v === "object") {
+                      if (Array.isArray(v)) {
+                        if (v.length === 0) return "—";
+                        return v
+                          .map((item) => (typeof item === "object" && item !== null ? (item as any).name || (item as any).id || "Item" : String(item)))
+                          .join(", ");
+                      }
+                      const obj = v as Record<string, unknown>;
+                      const name = obj.name || obj.title || obj.label || obj.dog_name;
+                      const id = obj.id || obj.dog_id || obj.registration_number;
+                      if (name && id) return `${String(name)} (${String(id)})`;
+                      if (name) return String(name);
+                      if (id) return String(id);
+                      return "—";
+                    }
+                    return String(v);
+                  };
+
+                  return (
+                    <div key={key} style={{ background: "#F8FAFC", padding: "12px 14px", borderRadius: "10px", border: "1px solid #F1F5F9" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", marginBottom: "4px" }}>
+                        {formatLabel(key)}
+                      </div>
+                      <div style={{ fontSize: "14px", fontWeight: 600, color: "#0F172A", wordBreak: "break-word" }}>
+                        {formatVal(val)}
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>

@@ -21,13 +21,18 @@ const QuickActionCard = ({
   onClick,
 }: QuickActionCardProps) => {
   const navigate = useNavigate();
-  const handleClick = () => {
+  const handleClick = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     if (onClick) onClick();
     else if (path) navigate(path);
   };
 
   return (
     <button
+      type="button"
       onClick={handleClick}
       style={{
         background: "#FFFFFF",
@@ -42,6 +47,9 @@ const QuickActionCard = ({
         width: "100%",
         transition: "all 0.2s ease-in-out",
         boxShadow: "0 1px 3px rgba(15, 23, 42, 0.05)",
+        position: "relative",
+        zIndex: 1,
+        pointerEvents: "auto",
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = "translateY(-2px)";

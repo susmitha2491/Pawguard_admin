@@ -84,6 +84,12 @@ export const dogService = {
     const response = await api.post(`/dogs/safety-tag/resolve`, { raw_token: clean, token: clean });
     return response.data;
   },
+
+  // PATCH /dogs/{dog_id}/adoptability - update adoptability & quarantine status
+  updateAdoptability: async (dogId: string, data: { is_adoptable?: boolean; is_quarantine_passed?: boolean }) => {
+    const response = await api.patch(`/dogs/${dogId}/adoptability`, data);
+    return response.data;
+  },
 };
 
 export default dogService;
