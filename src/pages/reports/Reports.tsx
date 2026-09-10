@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
+import api from "../../api/axios";
 import StatCard from "../../components/dashboard/StatCard";
 import QuickActionCard from "../../components/dashboard/QuickActionCard";
 import VolunteerActivityChart from "../../components/dashboard/VolunteerActivityChart";
@@ -662,6 +663,37 @@ const Reports = () => {
             return acc + Number(f.total_capacity || f.capacity || f._section_capacity || 0);
           }, 0);
 
+          // Production-safe diagnostic logging for deployed runtime audit
+          console.group("🔍 [Shelter Reports Diagnostic]");
+          console.log("authenticated user role:", userRole);
+          console.log("currentUser:", currentUser ? {
+            id: (currentUser as any)?.id,
+            email: (currentUser as any)?.email,
+            roles: (currentUser as any)?.roles,
+            shelter_id: (currentUser as any)?.shelter_id,
+            shelterId: (currentUser as any)?.shelterId,
+            facility_id: (currentUser as any)?.facility_id,
+            facilityId: (currentUser as any)?.facilityId,
+            managed_facility_id: (currentUser as any)?.managed_facility_id,
+            managed_shelter_id: (currentUser as any)?.managed_shelter_id,
+          } : null);
+          console.log("API Base URL (axios):", api.defaults.baseURL);
+          console.log("allPets.length:", allPets.length);
+          console.log("rawFacList.length:", rawFacList.length);
+          console.log("scopedFacilities.length:", scopedFacilities.length);
+          console.log("scopedPets.length:", scopedPets.length);
+          console.log("first 3 animals:", (scopedPets.length > 0 ? scopedPets : allPets).slice(0, 3).map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            status: a.status,
+            shelter_facility_id: a.shelter_facility_id,
+            shelter_id: a.shelter_id,
+            facility_id: a.facility_id,
+            shelterId: a.shelterId,
+            facilityId: a.facilityId,
+          })));
+          console.groupEnd();
+
           setShelterFacilities(scopedFacilities);
           setShelterDogs(scopedPets);
           setShelterTransfers(scopedTransfers);
@@ -697,7 +729,7 @@ const Reports = () => {
           const petsList = petRes.status === "fulfilled" ? (Array.isArray(petRes.value?.data) ? petRes.value.data : Array.isArray(petRes.value) ? petRes.value : []) : [];
 
           setAdoptions(adoptList);
-          if (!shelterDogs.length) setShelterDogs(petsList);
+          if (isAdoptionCoordinator && !shelterDogs.length) setShelterDogs(petsList);
         } catch (e) {
           console.error("Error loading adoption reports data:", e);
         }
@@ -1439,8 +1471,14 @@ const Reports = () => {
   // Export handlers
   const handleExportCSV = (filename: string, headers: string, rows: string[]) => {
     try {
+      console.log(`[CSV Export Audit] ${filename} - shelterDogs.length: ${shelterDogs.length}, exportRows.length: ${rows.length}`);
+      if (rows.length > 0) {
+        console.log(`[CSV Export Audit] First data row: ${rows[0]}`);
+      }
       addToast(`Generating ${filename} Export (CSV)...`, "info");
-      const blob = new Blob([headers + "\n" + rows.join("\n")], { type: "text/csv;charset=utf-8;" });
+      const csvString = headers + "\n" + rows.join("\n");
+      console.log(`[CSV Export Audit] Export file content length: ${csvString.length} bytes`);
+      const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -1449,15 +1487,21 @@ const Reports = () => {
       link.click();
       document.body.removeChild(link);
       addToast(`${filename} CSV downloaded successfully!`, "success");
-    } catch {
+    } catch (err: any) {
+      console.error(`[CSV Export Error] ${filename}:`, err);
       addToast(`Failed to export ${filename} CSV.`, "error");
     }
   };
 
   const handleExportExcel = (filename: string, headers: string, rows: string[]) => {
     try {
+      console.log(`[Excel Export Audit] ${filename} - shelterDogs.length: ${shelterDogs.length}, exportRows.length: ${rows.length}`);
+      if (rows.length > 0) {
+        console.log(`[Excel Export Audit] First data row: ${rows[0]}`);
+      }
       addToast(`Generating ${filename} Export (Excel)...`, "info");
       const excelContent = `\uFEFF` + headers + "\n" + rows.join("\n");
+      console.log(`[Excel Export Audit] Export file content length: ${excelContent.length} bytes`);
       const blob = new Blob([excelContent], { type: "application/vnd.ms-excel;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -1467,7 +1511,8 @@ const Reports = () => {
       link.click();
       document.body.removeChild(link);
       addToast(`${filename} Excel spreadsheet downloaded!`, "success");
-    } catch {
+    } catch (err: any) {
+      console.error(`[Excel Export Error] ${filename}:`, err);
       addToast(`Failed to export ${filename} Excel.`, "error");
     }
   };
@@ -3138,10 +3183,17 @@ const Reports = () => {
       <div style={{ width: "100%", boxSizing: "border-box" }}>
         {/* Header */}
         <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
-          <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Shelter Capacity &amp; Turnover Audit</h1>
-          <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-            Official shelter capacity and movement report tracking average length of stay per animal, kennel utilization across authorized facilities, quarantine clearing duration, and inter-facility transfer volumes.
-          </p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "10px" }}>
+            <div>
+              <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Shelter Capacity &amp; Turnover Audit</h1>
+              <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
+                Official shelter capacity and movement report tracking average length of stay per animal, kennel utilization across authorized facilities, quarantine clearing duration, and inter-facility transfer volumes.
+              </p>
+            </div>
+            <div style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", padding: "6px 12px", fontSize: "12px", color: "#E2E8F0" }}>
+              Shelter Capacity export data: <strong style={{ color: "#38BDF8" }}>{shelterDogs.length} animals</strong>
+            </div>
+          </div>
         </div>
 
         {/* Quick Export Actions */}
@@ -3186,6 +3238,14 @@ const Reports = () => {
             subtitle="Full shelter animal stay &amp; facility log dataset"
             color="#2563EB"
             onClick={() => {
+              if (shelterDogs.length === 0) {
+                if (loading) {
+                  addToast("Shelter report data is still loading. Please wait...", "info");
+                } else {
+                  addToast("No animal records available to export for this facility scope.", "info");
+                }
+                return;
+              }
               const facNameMap = new Map<string, string>();
               shelterFacilities.forEach((f: any) => {
                 const id = String(f.id || f.facility_id || f.shelter_id || "").trim().toLowerCase();
@@ -3201,6 +3261,9 @@ const Reports = () => {
                 const quarantinePassed = d.is_quarantine_passed === true ? "true" : "false";
                 return `"${d.id || "-"}","${d.name || "-"}","${d.breed || "-"}","${facName}","${rawIntake ? String(rawIntake).slice(0, 10) : "-"}","${stayDays}","${d.status || "shelter"}","${quarantinePassed}"`;
               });
+              if (import.meta.env.DEV) {
+                console.log("[Shelter Export CSV] final exportRows.length:", rows.length);
+              }
               handleExportCSV("shelter_capacity_and_turnover_report", headers, rows);
             }}
           />
@@ -3210,6 +3273,14 @@ const Reports = () => {
             subtitle="Structured Excel spreadsheet dataset"
             color="#10B981"
             onClick={() => {
+              if (shelterDogs.length === 0) {
+                if (loading) {
+                  addToast("Shelter report data is still loading. Please wait...", "info");
+                } else {
+                  addToast("No animal records available to export for this facility scope.", "info");
+                }
+                return;
+              }
               const facNameMap = new Map<string, string>();
               shelterFacilities.forEach((f: any) => {
                 const id = String(f.id || f.facility_id || f.shelter_id || "").trim().toLowerCase();
@@ -3225,6 +3296,9 @@ const Reports = () => {
                 const quarantinePassed = d.is_quarantine_passed === true ? "true" : "false";
                 return `"${d.id || "-"}","${d.name || "-"}","${d.breed || "-"}","${facName}","${rawIntake ? String(rawIntake).slice(0, 10) : "-"}","${stayDays}","${d.status || "shelter"}","${quarantinePassed}"`;
               });
+              if (import.meta.env.DEV) {
+                console.log("[Shelter Export Excel] final exportRows.length:", rows.length);
+              }
               handleExportExcel("shelter_capacity_and_turnover_report", headers, rows);
             }}
           />
