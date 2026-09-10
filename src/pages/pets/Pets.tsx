@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import DataTable from "../../components/common/DataTable";
 import QuickActionCard from "../../components/dashboard/QuickActionCard";
 import StatCard from "../../components/dashboard/StatCard";
@@ -25,6 +25,7 @@ import {
   FaHistory,
   FaCopy,
   FaEdit,
+  FaCertificate,
 } from "react-icons/fa";
 
 import petService from "../../services/petService";
@@ -216,6 +217,7 @@ const Pets = () => {
   const [totalCount, setTotalCount] = useState(0);
   const { addToast } = useToast();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [adoptableOnly, setAdoptableOnly] = useState<boolean>(false);
@@ -3132,6 +3134,61 @@ const extractTagData = (res: any) => {
         footer={
           selectedViewDog ? (
             <>
+              {normalizeRole(getCurrentUser()) === "veterinarian" && (
+                isDogMedicallyCleared(selectedViewDog) ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const dog = selectedViewDog;
+                      const id = dogId(dog);
+                      setIsViewModalOpen(false);
+                      setSelectedViewDog(null);
+                      navigate(`/certificates?dog_id=${encodeURIComponent(id)}`);
+                    }}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "9px 16px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: "#10B981",
+                      color: "#FFFFFF",
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <FaCertificate /> View Health Certificate
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const dog = selectedViewDog;
+                      const id = dogId(dog);
+                      setIsViewModalOpen(false);
+                      setSelectedViewDog(null);
+                      navigate(`/medical-records?dog_id=${encodeURIComponent(id)}&action=exam`);
+                    }}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "9px 16px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: "#2563EB",
+                      color: "#FFFFFF",
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <FaStethoscope /> Perform Examination
+                  </button>
+                )
+              )}
               <button
                 type="button"
                 onClick={() => {

@@ -30,7 +30,6 @@ import type {
   UrgentAlertCreatePayload,
   UrgentAlertUpdatePayload,
   UploadUrlResponse,
-  CmsMediaUploadPayload,
   ContentStatus,
 } from "../types/cms";
 
@@ -459,7 +458,7 @@ export const bulkStatusFaqs = async (
 // ----------------------------------------------------
 
 export const getContactLocations = async (): Promise<ContactLocationRecord[]> => {
-  const response = await api.get("/portal/admin/contact");
+  const response = await api.get("/portal/contact");
   return unwrap<ContactLocationRecord[]>(response.data);
 };
 
@@ -497,8 +496,18 @@ export const deleteContactLocation = async (locationId: string): Promise<void> =
 };
 
 // ----------------------------------------------------
+// ----------------------------------------------------
 // Contact Inquiries Management
 // ----------------------------------------------------
+
+export interface ContactInquiryStatusCounts {
+  all: number;
+  new: number;
+  in_progress: number;
+  waiting_for_user: number;
+  resolved: number;
+  closed: number;
+}
 
 export const getContactInquiries = async (params?: {
   status?: string;
@@ -510,44 +519,96 @@ export const getContactInquiries = async (params?: {
   page?: number;
   page_size?: number;
 }): Promise<PaginatedResult<ContactInquiryRecord>> => {
-  const validStatuses: ContactInquiryStatus[] = ["new", "in_progress", "waiting_for_user", "resolved", "closed"];
+  const validStatuses: ContactInquiryStatus[] = [
+    "new",
+    "in_progress",
+    "waiting_for_user",
+    "resolved",
+    "closed",
+  ];
   const page = params?.page || 1;
-  const pageSize = params?.page_size || 20;
+  const pageSize = params?.page_size || 10;
 
-  // If a specific valid status is provided (and not 'all'), query directly
-  if (params?.status && validStatuses.includes(params.status as ContactInquiryStatus)) {
-    const cleanParams: Record<string, unknown> = {
-      ...params,
-      page,
+  // Build clean query params (omit empty or 'all' filters to prevent backend 422 errors)
+  const buildCleanParams = (statusVal?: string): Record<string, unknown> => {
+    const p: Record<string, unknown> = {
+      page: 1,
       page_size: pageSize,
     };
-    const response = await api.get("/portal/admin/contact-inquiries", { params: cleanParams });
+    if (statusVal && validStatuses.includes(statusVal as ContactInquiryStatus)) {
+      p.status = statusVal;
+    }
+    if (params?.category && params.category !== "all") {
+      p.category = params.category;
+    }
+    if (
+      params?.assigned_to_user_id &&
+      params.assigned_to_user_id !== "all" &&
+      /^[0-9a-fA-F-]{36}$/.test(params.assigned_to_user_id)
+    ) {
+      p.assigned_to_user_id = params.assigned_to_user_id;
+    }
+    if (params?.search && params.search.trim()) {
+      p.search = params.search.trim();
+    }
+    if (params?.sort_by) {
+      p.sort_by = params.sort_by;
+    }
+    if (params?.sort_order) {
+      p.sort_order = params.sort_order;
+    }
+    return p;
+  };
+
+  // If a specific valid status is selected (e.g. 'new', 'in_progress'), query directly
+  if (params?.status && validStatuses.includes(params.status as ContactInquiryStatus)) {
+    const clean = buildCleanParams(params.status);
+    clean.page = page;
+    const response = await api.get("/portal/admin/contact-inquiries", { params: clean });
     return unwrapPaginated<ContactInquiryRecord>(response.data);
   }
 
   // If status is 'all' or omitted, query across all 5 valid statuses in parallel
-  // to safely bypass backend FastAPI 422 error on omitted status parameter
+  // to safely bypass backend FastAPI 422 error on omitted/all status parameter
   const queryPromises = validStatuses.map((s) => {
-    const cleanParams: Record<string, unknown> = {
-      ...params,
-      status: s,
-      page: 1,
-      page_size: 100,
-    };
+    const clean = buildCleanParams(s);
+    clean.page = 1;
+    clean.page_size = 100;
     return api
-      .get("/portal/admin/contact-inquiries", { params: cleanParams })
+      .get("/portal/admin/contact-inquiries", { params: clean })
       .then((res) => unwrapPaginated<ContactInquiryRecord>(res.data))
       .catch(() => ({ items: [], total: 0, page: 1, page_size: 100, pages: 1 }));
   });
 
   const results = await Promise.all(queryPromises);
   const combinedItems = results.flatMap((r) => r.items);
-  // Sort by created_at desc by default
-  combinedItems.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-  const total = results.reduce((sum, r) => sum + r.total, 0);
+  // Client-side category, search, and assignee fallback filter if needed
+  let filtered = combinedItems;
+  if (params?.category && params.category !== "all") {
+    filtered = filtered.filter((i) => i.category?.toLowerCase() === params.category?.toLowerCase());
+  }
+  if (params?.search && params.search.trim()) {
+    const q = params.search.trim().toLowerCase();
+    filtered = filtered.filter(
+      (i) =>
+        i.name?.toLowerCase().includes(q) ||
+        i.email?.toLowerCase().includes(q) ||
+        i.subject?.toLowerCase().includes(q) ||
+        i.message?.toLowerCase().includes(q) ||
+        (i.phone && i.phone.toLowerCase().includes(q))
+    );
+  }
+  if (params?.assigned_to_user_id && params.assigned_to_user_id !== "all") {
+    filtered = filtered.filter((i) => i.assigned_to_user_id === params.assigned_to_user_id);
+  }
+
+  // Sort by created_at desc
+  filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  const total = filtered.length;
   const startIndex = (page - 1) * pageSize;
-  const paginatedSlice = combinedItems.slice(startIndex, startIndex + pageSize);
+  const paginatedSlice = filtered.slice(startIndex, startIndex + pageSize);
 
   return {
     items: paginatedSlice,
@@ -556,6 +617,38 @@ export const getContactInquiries = async (params?: {
     page_size: pageSize,
     pages: Math.ceil(total / pageSize) || 1,
   };
+};
+
+export const getContactInquiryStatusCounts = async (): Promise<ContactInquiryStatusCounts> => {
+  const validStatuses: ContactInquiryStatus[] = [
+    "new",
+    "in_progress",
+    "waiting_for_user",
+    "resolved",
+    "closed",
+  ];
+  const counts: ContactInquiryStatusCounts = {
+    all: 0,
+    new: 0,
+    in_progress: 0,
+    waiting_for_user: 0,
+    resolved: 0,
+    closed: 0,
+  };
+
+  const promises = validStatuses.map((s) =>
+    api
+      .get("/portal/admin/contact-inquiries", { params: { status: s, page: 1, page_size: 1 } })
+      .then((res) => {
+        const total = res.data?.meta?.total ?? res.data?.total ?? (Array.isArray(res.data?.data) ? res.data.data.length : 0);
+        counts[s] = total;
+        counts.all += total;
+      })
+      .catch(() => {})
+  );
+
+  await Promise.all(promises);
+  return counts;
 };
 
 export const getContactInquiryById = async (
@@ -604,7 +697,7 @@ export const respondToContactInquiry = async (
     module: "cms",
     action: "create",
     title: "Contact Inquiry Responded",
-    message: `Staff response recorded for inquiry ${inquiryId}.`,
+    message: `Responded to inquiry ${inquiryId}.`,
     targetRoles: ["super_admin"],
   });
   return unwrap<ContactInquiryRecord>(response.data);
@@ -704,25 +797,29 @@ export const deleteUrgentAlert = async (alertId: string): Promise<void> => {
 // CMS Media Upload Endpoint
 // ----------------------------------------------------
 
-export type { CmsMediaUploadPayload };
-
-export interface CmsMediaUploadRequest extends Partial<CmsMediaUploadPayload> {
-  // Legacy aliases
-  filename?: string;
-  content_type?: string;
-  size_bytes?: number;
+export interface CmsMediaUploadPayload {
+  original_filename: string;
+  mime_type: string;
+  file_size: number;
+  folder: string;
+  entity_type: string;
+  entity_id?: string | null;
 }
 
 export const requestCmsMediaUploadUrl = async (
-  payload: CmsMediaUploadRequest
+  payload: Partial<CmsMediaUploadPayload> & {
+    filename?: string;
+    content_type?: string;
+    size_bytes?: number;
+  }
 ): Promise<UploadUrlResponse> => {
   const backendPayload = {
-    original_filename: payload.original_filename || payload.filename || "upload.jpg",
+    original_filename: payload.original_filename || payload.filename || "image.jpg",
     mime_type: payload.mime_type || payload.content_type || "image/jpeg",
     file_size: payload.file_size ?? payload.size_bytes ?? 0,
     folder: payload.folder || "cms",
-    entity_type: payload.entity_type || "cms",
-    entity_id: payload.entity_id || null,
+    entity_type: payload.entity_type || "success_story",
+    ...(payload.entity_id ? { entity_id: payload.entity_id } : {}),
   };
   const response = await api.post("/portal/admin/cms/media/upload-url", backendPayload);
   return unwrap<UploadUrlResponse>(response.data);
@@ -781,6 +878,7 @@ const cmsService = {
   updateContactLocation,
   deleteContactLocation,
   getContactInquiries,
+  getContactInquiryStatusCounts,
   getContactInquiryById,
   updateContactInquiryStatus,
   assignContactInquiry,

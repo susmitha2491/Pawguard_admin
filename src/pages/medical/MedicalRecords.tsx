@@ -54,7 +54,8 @@ const MedicalRecords = () => {
 
   // Search & Pagination & Filter state
   const [searchParams] = useSearchParams();
-  const dogIdParam = searchParams.get("dogId");
+  const dogIdParam = searchParams.get("dog_id") || searchParams.get("dogId");
+  const actionParam = searchParams.get("action");
   const categoryParam = searchParams.get("category") || searchParams.get("filter") || searchParams.get("priority");
   const [dogIdFilter, setDogIdFilter] = useState<string | null>(null);
 
@@ -63,7 +64,7 @@ const MedicalRecords = () => {
   const [categoryFilter, setCategoryFilter] = useState(() => {
     if (categoryParam) {
       const cp = categoryParam.toLowerCase();
-      if (["critical", "exams", "vaccinations", "treatments", "prescriptions"].includes(cp)) {
+      if (["critical", "quarantine", "exams", "vaccinations", "treatments", "prescriptions"].includes(cp)) {
         return cp;
       }
     }
@@ -75,15 +76,22 @@ const MedicalRecords = () => {
   useEffect(() => {
     if (dogIdParam) {
       setDogIdFilter(dogIdParam);
+      if (actionParam === "exam") {
+        setExamForm((prev) => ({
+          ...prev,
+          dog_id: dogIdParam,
+        }));
+        setIsExamModalOpen(true);
+      }
     } else {
       setDogIdFilter(null);
     }
-  }, [dogIdParam]);
+  }, [dogIdParam, actionParam]);
 
   useEffect(() => {
     if (categoryParam) {
       const cp = categoryParam.toLowerCase();
-      if (["critical", "exams", "vaccinations", "treatments", "prescriptions", "all"].includes(cp)) {
+      if (["critical", "quarantine", "exams", "vaccinations", "treatments", "prescriptions", "all"].includes(cp)) {
         setCategoryFilter(cp);
         setPage(1);
       }
@@ -253,6 +261,7 @@ const MedicalRecords = () => {
   const categoryOptions = useMemo(() => [
     { value: "all", label: "All Medical Categories" },
     { value: "critical", label: "Critical & High Priority Cases" },
+    { value: "quarantine", label: "Isolation & Quarantine Register" },
     { value: "exams", label: "Clinical Exams" },
     { value: "vaccinations", label: "Vaccinations" },
     { value: "treatments", label: "Treatments & Surgeries" },
@@ -311,6 +320,22 @@ const MedicalRecords = () => {
       let matchesCategory = categoryFilter === "all" || r.type === categoryFilter;
       if (categoryFilter === "critical") {
         matchesCategory = isCriticalMedicalRecord(r);
+      } else if (categoryFilter === "quarantine") {
+        const raw = (r.raw as Record<string, unknown>) || {};
+        const diag = String(r.diagnosis || raw.triage_diagnosis || "").toLowerCase();
+        const treat = String(r.treatment || raw.visible_injuries || "").toLowerCase();
+        const stat = String(r.status || raw.medical_status || "").toLowerCase();
+        matchesCategory =
+          raw.is_quarantine_passed === false ||
+          diag.includes("quarantine") ||
+          diag.includes("isolation") ||
+          diag.includes("parvo") ||
+          diag.includes("distemper") ||
+          diag.includes("contagious") ||
+          treat.includes("isolation") ||
+          treat.includes("quarantine") ||
+          stat.includes("quarantine") ||
+          stat.includes("isolation");
       }
       if (!matchesCategory) return false;
 
@@ -340,6 +365,37 @@ const MedicalRecords = () => {
     const start = (page - 1) * pageSize;
     return filteredRecords.slice(start, start + pageSize);
   }, [filteredRecords, page]);
+
+  const openExamModalForDog = (dogOrRecord: Record<string, unknown>) => {
+    const rawDogId = String(dogOrRecord.petId || dogOrRecord.pet_id || dogOrRecord.dog_id || dogOrRecord.id || "");
+    let resolvedDogId = rawDogId;
+
+    const matchingDog = dogs.find(
+      (d) =>
+        String(d.id || d.dog_id) === rawDogId ||
+        (dogOrRecord.petName && String(d.name || "").toLowerCase() === String(dogOrRecord.petName).toLowerCase()) ||
+        (dogOrRecord.name && String(d.name || "").toLowerCase() === String(dogOrRecord.name).toLowerCase())
+    );
+
+    if (matchingDog) {
+      resolvedDogId = String(matchingDog.id || matchingDog.dog_id || resolvedDogId);
+    }
+
+    const existingDiag = String(dogOrRecord.diagnosis && dogOrRecord.diagnosis !== "-" ? dogOrRecord.diagnosis : "");
+    const raw = (dogOrRecord.raw as Record<string, unknown>) || {};
+    const existingInjuries = String(raw.visible_injuries || (dogOrRecord.treatment !== "-" ? dogOrRecord.treatment : "") || "");
+
+    setExamForm({
+      dog_id: resolvedDogId,
+      body_condition_score: typeof dogOrRecord.body_condition_score === "number" ? dogOrRecord.body_condition_score : 5,
+      dental_health: String(dogOrRecord.dental_health || ""),
+      ocular_aural_notes: String(dogOrRecord.ocular_aural_notes || ""),
+      coat_condition: String(dogOrRecord.coat_condition || ""),
+      visible_injuries: existingInjuries && existingInjuries !== "-" ? existingInjuries : "",
+      triage_diagnosis: existingDiag && existingDiag !== "-" ? existingDiag : "",
+    });
+    setIsExamModalOpen(true);
+  };
 
   const handleCreateExam = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -707,28 +763,93 @@ const MedicalRecords = () => {
             setSelectedRecord(row);
             setIsDeleteModalOpen(true);
           }}
-          renderRowActions={(row: Record<string, unknown>) => (
-            <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
-              <button
-                onClick={() => void openMedicalProfile(row)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  padding: "6px 12px",
-                  borderRadius: "6px",
-                  border: "1px solid #93C5FD",
-                  background: "#EFF6FF",
-                  color: "#1D4ED8",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                <FaEye /> Medical Profile
-              </button>
-            </div>
-          )}
+          renderRowActions={(row: Record<string, unknown>) => {
+            const isCritical = isCriticalMedicalRecord(row);
+            const raw = (row.raw as Record<string, unknown>) || {};
+            const statusStr = String(row.status || raw.status || raw.medical_status || "").toLowerCase();
+            const isCleared = Boolean(row.is_fit_for_adoption || row.is_adoptable || statusStr.includes("clear"));
+            const isExamined = statusStr.includes("exam") || statusStr.includes("consult") || statusStr.includes("pending clearance");
+
+            return (
+              <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                {!isCleared ? (
+                  <>
+                    <button
+                      type="button"
+                      title="Perform Clinical Examination"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openExamModalForDog(row);
+                      }}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        padding: "6px 12px",
+                        borderRadius: "6px",
+                        border: "none",
+                        background: isCritical ? "#DC2626" : "#2563EB",
+                        color: "#FFFFFF",
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        boxShadow: isCritical ? "0 1px 2px rgba(220, 38, 38, 0.25)" : "none",
+                      }}
+                    >
+                      <FaStethoscope /> {isExamined ? "Re-examine" : "Perform Examination"}
+                    </button>
+                    <button
+                      type="button"
+                      title="View Medical History Profile"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void openMedicalProfile(row);
+                      }}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        padding: "6px 12px",
+                        borderRadius: "6px",
+                        border: "1px solid #CBD5E1",
+                        background: "#FFFFFF",
+                        color: "#475569",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <FaEye /> View Profile
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    title="View Dog Medical Profile"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void openMedicalProfile(row);
+                    }}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      border: "1px solid #93C5FD",
+                      background: "#EFF6FF",
+                      color: "#1D4ED8",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <FaEye /> Medical Profile
+                  </button>
+                )}
+              </div>
+            );
+          }}
         />
       </div>
 
@@ -1073,6 +1194,32 @@ const MedicalRecords = () => {
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const targetDog = selectedDogProfile;
+                  setIsProfileModalOpen(false);
+                  setSelectedDogProfile(null);
+                  if (targetDog) {
+                    openExamModalForDog(targetDog);
+                  }
+                }}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: "8px",
+                  border: "none",
+                  background: "#2563EB",
+                  color: "#FFFFFF",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <FaStethoscope /> Perform Examination
+              </button>
               <button
                 type="button"
                 onClick={() => {

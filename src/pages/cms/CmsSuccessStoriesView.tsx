@@ -178,6 +178,7 @@ const CmsSuccessStoriesView = () => {
   const [mediaFileId, setMediaFileId] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [removingImage, setRemovingImage] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const fetchCounts = useCallback(async () => {
@@ -323,6 +324,7 @@ const CmsSuccessStoriesView = () => {
     setImagePreview(null);
     setImageFileName("");
     setMediaFileId(null);
+    setUploadError(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     setModalOpen(true);
   };
@@ -346,6 +348,7 @@ const CmsSuccessStoriesView = () => {
     setImagePreview(story.hero_image_url || null);
     setImageFileName(getDisplayFileName(story.hero_image_url));
     setMediaFileId(null);
+    setUploadError(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     setModalOpen(true);
   };
@@ -445,28 +448,35 @@ const CmsSuccessStoriesView = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Reset input so re-uploading the same file still triggers onChange
+    // Reset input so selecting the same file again triggers onChange
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
     e.target.value = "";
+    setUploadError(null);
 
     // Client-side file validation matching backend requirements
     const allowedImageMimes = ["image/jpeg", "image/png", "image/webp"];
     const mimeType = (file.type || "image/jpeg").toLowerCase();
     if (file.type && !allowedImageMimes.includes(mimeType)) {
-      addToast("Only JPEG, PNG, and WebP images are allowed.", "error");
+      const errMsg = "Only JPEG, PNG, and WebP images are allowed.";
+      setUploadError(errMsg);
+      addToast(errMsg, "error");
       return;
     }
 
-    const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB limit for images per backend
+    const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB limit for images
     if (file.size > MAX_IMAGE_SIZE) {
-      addToast(
-        `Image size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds maximum allowed limit of 10 MB.`,
-        "error"
-      );
+      const errMsg = `Image size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds maximum allowed limit of 10 MB.`;
+      setUploadError(errMsg);
+      addToast(errMsg, "error");
       return;
     }
 
     if (file.size <= 0) {
-      addToast("Selected file is empty.", "error");
+      const errMsg = "Selected file is empty.";
+      setUploadError(errMsg);
+      addToast(errMsg, "error");
       return;
     }
 
@@ -514,13 +524,19 @@ const CmsSuccessStoriesView = () => {
         ...prev,
         hero_image_url: finalKey,
       }));
-      addToast("Image uploaded successfully!", "success");
+      setUploadError(null);
+      addToast("Hero image uploaded successfully!", "success");
     } catch (err: unknown) {
+      const errMsg = getErrorMsg(err, "Failed to upload hero image.");
+      setUploadError(errMsg);
       setImagePreview(form.hero_image_url || null);
       setImageFileName(getDisplayFileName(form.hero_image_url));
-      addToast(getErrorMsg(err, "Failed to upload media file."), "error");
+      addToast(errMsg, "error");
     } finally {
       setUploadingImage(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
   };
 
@@ -539,16 +555,22 @@ const CmsSuccessStoriesView = () => {
       setImagePreview(null);
       setImageFileName("");
       setMediaFileId(null);
+      setUploadError(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
-      addToast("Image removed.", "info");
+      addToast("Hero image removed.", "info");
     } finally {
       setRemovingImage(false);
     }
   };
 
   const handleSave = async () => {
+    if (uploadingImage || removingImage) {
+      addToast("Please wait for image upload to complete before saving.", "info");
+      return;
+    }
+
     if (!form.title.trim() || !form.summary.trim() || !form.body.trim()) {
       addToast("Title, Summary, and Body are required fields.", "error");
       return;
@@ -1259,6 +1281,45 @@ const CmsSuccessStoriesView = () => {
               style={{ display: "none" }}
             />
 
+            {uploadError && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "8px 12px",
+                  borderRadius: "6px",
+                  background: "#FEF2F2",
+                  border: "1px solid #FCA5A5",
+                  color: "#991B1B",
+                  fontSize: "12px",
+                  marginBottom: "8px",
+                  gap: "8px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <FaExclamationTriangle style={{ flexShrink: 0 }} />
+                  <span>{uploadError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#2563EB",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    textDecoration: "underline",
+                    padding: 0,
+                  }}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
             {!imagePreview && !form.hero_image_url ? (
               <button
                 type="button"
@@ -1269,17 +1330,17 @@ const CmsSuccessStoriesView = () => {
                   borderRadius: "6px",
                   border: "1px dashed #CBD5E1",
                   background: "#F8FAFC",
-                  color: "#2563EB",
+                  color: uploadingImage ? "#94A3B8" : "#2563EB",
                   fontSize: "12.5px",
                   fontWeight: 600,
-                  cursor: "pointer",
+                  cursor: uploadingImage ? "not-allowed" : "pointer",
                   display: "inline-flex",
                   alignItems: "center",
                   gap: "7px",
                   transition: "all 0.15s ease",
                 }}
               >
-                {uploadingImage ? <FaSpinner className="spin" /> : <FaUpload />} Upload Image
+                {uploadingImage ? <FaSpinner className="spin" /> : <FaUpload />} {uploadingImage ? "Uploading Image..." : "Upload Image"}
               </button>
             ) : (
               <div
@@ -1305,6 +1366,7 @@ const CmsSuccessStoriesView = () => {
                     justifyContent: "center",
                     flexShrink: 0,
                     border: "1px solid #CBD5E1",
+                    position: "relative",
                   }}
                 >
                   {imagePreview ? (
@@ -1312,12 +1374,24 @@ const CmsSuccessStoriesView = () => {
                       src={imagePreview}
                       alt="Hero preview"
                       style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                      onError={() => {
-                        // If signed URL fails or expires, preserve state but clear broken image
-                      }}
                     />
                   ) : (
                     <FaImage style={{ color: "#94A3B8", fontSize: "20px" }} />
+                  )}
+                  {uploadingImage && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        background: "rgba(0,0,0,0.4)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#FFFFFF",
+                      }}
+                    >
+                      <FaSpinner className="spin" size={16} />
+                    </div>
                   )}
                 </div>
 
@@ -1333,7 +1407,7 @@ const CmsSuccessStoriesView = () => {
                     }}
                     title={imageFileName || "Uploaded image"}
                   >
-                    {imageFileName || "Uploaded image"}
+                    {uploadingImage ? "Uploading new image..." : (imageFileName || "Uploaded image")}
                   </div>
                   <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
                     <button
@@ -1345,16 +1419,16 @@ const CmsSuccessStoriesView = () => {
                         borderRadius: "5px",
                         border: "1px solid #CBD5E1",
                         background: "#FFFFFF",
-                        color: "#334155",
+                        color: (uploadingImage || removingImage) ? "#94A3B8" : "#334155",
                         fontSize: "11.5px",
                         fontWeight: 600,
-                        cursor: "pointer",
+                        cursor: (uploadingImage || removingImage) ? "not-allowed" : "pointer",
                         display: "inline-flex",
                         alignItems: "center",
                         gap: "4px",
                       }}
                     >
-                      {uploadingImage ? <FaSpinner className="spin" /> : <FaUpload />} Replace
+                      {uploadingImage ? <FaSpinner className="spin" /> : <FaUpload />} {uploadingImage ? "Uploading..." : "Replace"}
                     </button>
                     <button
                       type="button"
@@ -1365,10 +1439,10 @@ const CmsSuccessStoriesView = () => {
                         borderRadius: "5px",
                         border: "1px solid #FCA5A5",
                         background: "#FEF2F2",
-                        color: "#991B1B",
+                        color: (uploadingImage || removingImage) ? "#94A3B8" : "#991B1B",
                         fontSize: "11.5px",
                         fontWeight: 600,
-                        cursor: "pointer",
+                        cursor: (uploadingImage || removingImage) ? "not-allowed" : "pointer",
                         display: "inline-flex",
                         alignItems: "center",
                         gap: "4px",
@@ -1480,11 +1554,19 @@ const CmsSuccessStoriesView = () => {
             </button>
             <button
               type="button"
-              disabled={submitting}
+              disabled={submitting || uploadingImage || removingImage}
               onClick={handleSave}
-              style={{ padding: "8px 18px", borderRadius: 6, border: "none", background: "#2563EB", color: "#FFFFFF", fontWeight: 700, cursor: submitting ? "not-allowed" : "pointer" }}
+              style={{
+                padding: "8px 18px",
+                borderRadius: 6,
+                border: "none",
+                background: (submitting || uploadingImage || removingImage) ? "#94A3B8" : "#2563EB",
+                color: "#FFFFFF",
+                fontWeight: 700,
+                cursor: (submitting || uploadingImage || removingImage) ? "not-allowed" : "pointer",
+              }}
             >
-              {submitting ? "Saving..." : modalMode === "create" ? "Create Story" : "Save Changes"}
+              {uploadingImage ? "Uploading Image..." : submitting ? "Saving..." : modalMode === "create" ? "Create Story" : "Save Changes"}
             </button>
           </div>
         </div>

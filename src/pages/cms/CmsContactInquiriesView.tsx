@@ -1,14 +1,15 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import DataTable, { type Column } from "../../components/common/DataTable";
 import Modal from "../../components/common/Modal";
 import { useToast } from "../../context/ToastContext";
-import cmsService from "../../services/cmsService";
+import cmsService, { type ContactInquiryStatusCounts } from "../../services/cmsService";
 import { userService } from "../../services/userService";
 import type {
   ContactInquiryRecord,
   ContactInquiryStatus,
   ContactInquiryRespondPayload,
 } from "../../types/cms";
+import { formatDateTime } from "../../utils/dateUtils";
 import {
   FaFilter,
   FaUserCheck,
@@ -22,15 +23,50 @@ import {
   FaReply,
   FaEye,
   FaSync,
+  FaEnvelope,
+  FaPhoneAlt,
+  FaEdit,
+  FaUser,
 } from "react-icons/fa";
 
 const getErrorMsg = (err: unknown, fallback: string): string => {
   if (err && typeof err === "object") {
-    const r = err as { response?: { data?: { detail?: unknown; message?: unknown } } };
-    const detail = r?.response?.data?.detail ?? r?.response?.data?.message;
+    const r = err as {
+      response?: {
+        status?: number;
+        data?: { detail?: unknown; message?: unknown; error?: { message?: string } };
+      };
+    };
+    const status = r?.response?.status;
+    const detail =
+      r?.response?.data?.detail ??
+      r?.response?.data?.message ??
+      r?.response?.data?.error?.message;
+
+    if (status === 404) {
+      return "Contact inquiry could not be found. It may have been archived or removed.";
+    }
+    if (status === 401 || status === 403) {
+      return "You do not have permission to perform this action.";
+    }
+    if (status === 422) {
+      if (typeof detail === "string" && detail) return `Validation error: ${detail}`;
+      if (Array.isArray(detail) && detail.length > 0) {
+        return detail
+          .map((d: any) => (typeof d === "object" ? d.msg || JSON.stringify(d) : String(d)))
+          .join("; ");
+      }
+      return "Invalid request data. Please check all fields.";
+    }
+    if (status && status >= 500) {
+      return "Server error while processing contact inquiry. Please try again.";
+    }
+
     if (typeof detail === "string" && detail) return detail;
-    if (Array.isArray(detail)) {
-      return detail.map((d) => (typeof d === "string" ? d : d.msg || JSON.stringify(d))).join(", ");
+    if (Array.isArray(detail) && detail.length > 0) {
+      return detail
+        .map((d: any) => (typeof d === "object" ? d.msg || JSON.stringify(d) : String(d)))
+        .join("; ");
     }
   }
   return fallback;
@@ -67,6 +103,16 @@ const CmsContactInquiriesView: React.FC = () => {
   const [pageSize] = useState(10);
   const [totalCount, setTotalCount] = useState(0);
 
+  // Status Counts across all inquiries
+  const [statusCounts, setStatusCounts] = useState<ContactInquiryStatusCounts>({
+    all: 0,
+    new: 0,
+    in_progress: 0,
+    waiting_for_user: 0,
+    resolved: 0,
+    closed: 0,
+  });
+
   // Filters State
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -81,6 +127,7 @@ const CmsContactInquiriesView: React.FC = () => {
   const [selectedInquiry, setSelectedInquiry] = useState<ContactInquiryRecord | null>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [isEditingResponse, setIsEditingResponse] = useState(false);
 
   // Quick Action / In-Modal Status & Assign Submitting States
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -90,7 +137,7 @@ const CmsContactInquiriesView: React.FC = () => {
   // Response Form State
   const [staffResponseText, setStaffResponseText] = useState("");
   const [internalNotesText, setInternalNotesText] = useState("");
-  const [responseNewStatus, setResponseNewStatus] = useState<string>("");
+  const [responseNewStatus, setResponseNewStatus] = useState<ContactInquiryStatus>("in_progress");
   const [sendingResponse, setSendingResponse] = useState(false);
 
   // Load Staff Users once on mount
@@ -101,10 +148,10 @@ const CmsContactInquiriesView: React.FC = () => {
         const res = await userService.getUsers({ page_size: 100 });
         const usersList: StaffUser[] = Array.isArray(res)
           ? res
-          : Array.isArray(res?.data)
-          ? res.data
-          : Array.isArray(res?.items)
-          ? res.items
+          : Array.isArray((res as any)?.data)
+          ? (res as any).data
+          : Array.isArray((res as any)?.items)
+          ? (res as any).items
           : [];
         setStaffUsers(usersList);
       } catch {
@@ -114,6 +161,16 @@ const CmsContactInquiriesView: React.FC = () => {
       }
     };
     fetchStaff();
+  }, []);
+
+  // Fetch Status Counts
+  const fetchStatusCounts = useCallback(async () => {
+    try {
+      const counts = await cmsService.getContactInquiryStatusCounts();
+      setStatusCounts(counts);
+    } catch {
+      // Fallback: keep existing counts
+    }
   }, []);
 
   // Fetch Inquiries from Backend
@@ -164,15 +221,17 @@ const CmsContactInquiriesView: React.FC = () => {
 
   useEffect(() => {
     fetchInquiries();
-  }, [fetchInquiries]);
+    fetchStatusCounts();
+  }, [fetchInquiries, fetchStatusCounts]);
 
-  // Open Inquiry Detail
+  // Open Inquiry Detail & Response Modal
   const handleOpenDetail = async (inquiry: ContactInquiryRecord) => {
     setSelectedInquiry(inquiry);
     setSelectedAssigneeId(inquiry.assigned_to_user_id || "");
     setStaffResponseText(inquiry.staff_response || "");
     setInternalNotesText(inquiry.internal_notes || "");
-    setResponseNewStatus(inquiry.status);
+    setResponseNewStatus(inquiry.status === "new" ? "in_progress" : inquiry.status);
+    setIsEditingResponse(!inquiry.staff_response);
     setDetailModalOpen(true);
 
     try {
@@ -183,7 +242,8 @@ const CmsContactInquiriesView: React.FC = () => {
         setSelectedAssigneeId(fresh.assigned_to_user_id || "");
         setStaffResponseText(fresh.staff_response || "");
         setInternalNotesText(fresh.internal_notes || "");
-        setResponseNewStatus(fresh.status);
+        setResponseNewStatus(fresh.status === "new" ? "in_progress" : fresh.status);
+        setIsEditingResponse(!fresh.staff_response);
       }
     } catch {
       // Keep selectedInquiry from row
@@ -203,14 +263,15 @@ const CmsContactInquiriesView: React.FC = () => {
       addToast(`Inquiry status updated to "${STATUS_CONFIG[newStatus]?.label || newStatus}".`, "success");
       setSelectedInquiry((prev) => (prev ? { ...prev, ...(updated || {}), status: newStatus } : null));
       setResponseNewStatus(newStatus);
-      await fetchInquiries();
+      await Promise.all([fetchInquiries(), fetchStatusCounts()]);
     } catch (err: unknown) {
       addToast(getErrorMsg(err, "Failed to update inquiry status."), "error");
-      // Refresh current inquiry on error to ensure accurate state
       try {
         const fresh = await cmsService.getContactInquiryById(selectedInquiry.id);
         if (fresh) setSelectedInquiry(fresh);
-      } catch {}
+      } catch {
+        // Silently retain current state on refresh failure
+      }
     } finally {
       setUpdatingStatus(false);
     }
@@ -245,14 +306,15 @@ const CmsContactInquiriesView: React.FC = () => {
       await fetchInquiries();
     } catch (err: unknown) {
       addToast(getErrorMsg(err, "Failed to update inquiry assignment."), "error");
-      // Refresh record on error
       try {
         const fresh = await cmsService.getContactInquiryById(selectedInquiry.id);
         if (fresh) {
           setSelectedInquiry(fresh);
           setSelectedAssigneeId(fresh.assigned_to_user_id || "");
         }
-      } catch {}
+      } catch {
+        // Silently retain current state on refresh failure
+      }
     } finally {
       setUpdatingAssign(false);
     }
@@ -264,7 +326,7 @@ const CmsContactInquiriesView: React.FC = () => {
     if (!selectedInquiry) return;
 
     if (!staffResponseText.trim() && !internalNotesText.trim() && responseNewStatus === selectedInquiry.status) {
-      addToast("Please provide a staff response, internal notes, or change the status.", "info");
+      addToast("Please provide a staff response, internal notes, or choose a new status.", "info");
       return;
     }
 
@@ -280,22 +342,36 @@ const CmsContactInquiriesView: React.FC = () => {
 
     try {
       setSendingResponse(true);
-      const payload: ContactInquiryRespondPayload = {};
-      if (staffResponseText.trim()) payload.staff_response = staffResponseText.trim();
-      if (internalNotesText.trim()) payload.internal_notes = internalNotesText.trim();
-      if (responseNewStatus) payload.new_status = responseNewStatus as ContactInquiryStatus;
+      const payload: ContactInquiryRespondPayload = {
+        staff_response: staffResponseText.trim() || null,
+        internal_notes: internalNotesText.trim() || null,
+        new_status: responseNewStatus || null,
+      };
 
       const updated = await cmsService.respondToContactInquiry(selectedInquiry.id, payload);
       addToast("Response & notes saved successfully.", "success");
-      setSelectedInquiry((prev) => (prev ? { ...prev, ...(updated || {}) } : null));
-      await fetchInquiries();
+      setIsEditingResponse(false);
+      setSelectedInquiry((prev) =>
+        prev
+          ? {
+              ...prev,
+              ...(updated || {}),
+              staff_response: staffResponseText.trim() || prev.staff_response,
+              internal_notes: internalNotesText.trim() || prev.internal_notes,
+              status: responseNewStatus || prev.status,
+              responded_at: new Date().toISOString(),
+            }
+          : null
+      );
+      await Promise.all([fetchInquiries(), fetchStatusCounts()]);
     } catch (err: unknown) {
       addToast(getErrorMsg(err, "Failed to submit inquiry response."), "error");
-      // Refresh record to display accurate state
       try {
         const fresh = await cmsService.getContactInquiryById(selectedInquiry.id);
         if (fresh) setSelectedInquiry(fresh);
-      } catch {}
+      } catch {
+        // Silently retain current state on refresh failure
+      }
     } finally {
       setSendingResponse(false);
     }
@@ -314,48 +390,38 @@ const CmsContactInquiriesView: React.FC = () => {
     );
   };
 
-  // Calculate Status Summary Counts from current view or known items
-  const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = {
-      all: totalCount,
-      new: 0,
-      in_progress: 0,
-      waiting_for_user: 0,
-      resolved: 0,
-      closed: 0,
-    };
-    inquiries.forEach((item) => {
-      if (counts[item.status] !== undefined) {
-        counts[item.status]++;
-      }
-    });
-    return counts;
-  }, [inquiries, totalCount]);
-
-  // Table Columns
+  // Table Columns in Recommended Order
   const columns: Column<ContactInquiryRecord>[] = [
-    {
-      key: "created_at",
-      header: "Received Date",
-      render: (_, row) => (
-        <div style={{ fontSize: "12px", color: "#475569", whiteSpace: "nowrap" }}>
-          <div style={{ fontWeight: 600, color: "#0F172A" }}>
-            {new Date(row.created_at).toLocaleDateString()}
-          </div>
-          <div style={{ fontSize: "11px", color: "#94A3B8" }}>
-            {new Date(row.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-          </div>
-        </div>
-      ),
-    },
     {
       key: "name",
       header: "Sender",
       render: (_, row) => (
-        <div>
-          <div style={{ fontWeight: 700, color: "#0F172A", fontSize: "13px" }}>{row.name}</div>
-          <div style={{ fontSize: "11.5px", color: "#64748B" }}>{row.email}</div>
-          {row.phone && <div style={{ fontSize: "11px", color: "#94A3B8" }}>📞 {row.phone}</div>}
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <div style={{ fontWeight: 700, color: "#0F172A", fontSize: "13.5px" }}>
+            {row.name || "Anonymous / Website Visitor"}
+          </div>
+          <div style={{ fontSize: "12px", color: "#2563EB", display: "flex", alignItems: "center", gap: 4 }}>
+            <FaEnvelope size={10} style={{ color: "#94A3B8" }} />
+            <a
+              href={`mailto:${row.email}`}
+              style={{ color: "#2563EB", textDecoration: "none" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {row.email}
+            </a>
+          </div>
+          {row.phone && (
+            <div style={{ fontSize: "11.5px", color: "#64748B", display: "flex", alignItems: "center", gap: 4 }}>
+              <FaPhoneAlt size={10} style={{ color: "#94A3B8" }} />
+              <a
+                href={`tel:${row.phone}`}
+                style={{ color: "#475569", textDecoration: "none" }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {row.phone}
+              </a>
+            </div>
+          )}
         </div>
       ),
     },
@@ -365,12 +431,13 @@ const CmsContactInquiriesView: React.FC = () => {
       render: (_, row) => (
         <span
           style={{
-            padding: "3px 8px",
+            padding: "4px 9px",
             borderRadius: 6,
-            fontSize: "11.5px",
-            fontWeight: 600,
+            fontSize: "12px",
+            fontWeight: 700,
             background: "#F1F5F9",
             color: "#334155",
+            border: "1px solid #E2E8F0",
             textTransform: "capitalize",
             whiteSpace: "nowrap",
           }}
@@ -383,7 +450,7 @@ const CmsContactInquiriesView: React.FC = () => {
       key: "subject",
       header: "Subject & Message",
       render: (_, row) => (
-        <div style={{ maxWidth: 320 }}>
+        <div style={{ maxWidth: 360, display: "flex", flexDirection: "column", gap: 2 }}>
           <div
             style={{
               fontWeight: 700,
@@ -399,15 +466,34 @@ const CmsContactInquiriesView: React.FC = () => {
           </div>
           <div
             style={{
-              fontSize: "11.5px",
+              fontSize: "12px",
               color: "#64748B",
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
+              lineHeight: 1.4,
             }}
+            title={row.message}
           >
             {row.message}
           </div>
+        </div>
+      ),
+    },
+    {
+      key: "assigned_to_user_id",
+      header: "Assigned Staff",
+      render: (_, row) => (
+        <div style={{ fontSize: "12.5px" }}>
+          {row.assigned_to_user_id ? (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 700, color: "#1E293B" }}>
+              <FaUserCheck style={{ color: "#2563EB" }} /> {getStaffName(row.assigned_to_user_id)}
+            </span>
+          ) : (
+            <span style={{ color: "#94A3B8", fontWeight: 500, fontStyle: "italic" }}>
+              Unassigned
+            </span>
+          )}
         </div>
       ),
     },
@@ -424,17 +510,17 @@ const CmsContactInquiriesView: React.FC = () => {
         return (
           <span
             style={{
-              padding: "3px 9px",
+              padding: "4px 10px",
               borderRadius: 999,
               fontSize: "11.5px",
-              fontWeight: 700,
+              fontWeight: 800,
               background: conf.bg,
               color: conf.color,
               border: `1px solid ${conf.border}`,
               whiteSpace: "nowrap",
               display: "inline-flex",
               alignItems: "center",
-              gap: 4,
+              gap: 5,
             }}
           >
             {row.status === "resolved" ? (
@@ -458,17 +544,13 @@ const CmsContactInquiriesView: React.FC = () => {
       },
     },
     {
-      key: "assigned_to_user_id",
-      header: "Assigned Staff",
+      key: "created_at",
+      header: "Received",
       render: (_, row) => (
-        <div style={{ fontSize: "12px", color: row.assigned_to_user_id ? "#1E293B" : "#94A3B8" }}>
-          {row.assigned_to_user_id ? (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 600 }}>
-              <FaUserCheck style={{ color: "#2563EB" }} /> {getStaffName(row.assigned_to_user_id)}
-            </span>
-          ) : (
-            <span>Unassigned</span>
-          )}
+        <div style={{ fontSize: "12px", color: "#475569", whiteSpace: "nowrap" }}>
+          <div style={{ fontWeight: 600, color: "#0F172A" }}>
+            {formatDateTime(row.created_at)}
+          </div>
         </div>
       ),
     },
@@ -507,10 +589,13 @@ const CmsContactInquiriesView: React.FC = () => {
         </div>
 
         <button
-          onClick={fetchInquiries}
+          onClick={() => {
+            fetchInquiries();
+            fetchStatusCounts();
+          }}
           disabled={loading}
           style={{
-            padding: "8px 14px",
+            padding: "9px 15px",
             borderRadius: "8px",
             border: "1px solid #CBD5E1",
             background: "#F8FAFC",
@@ -523,26 +608,26 @@ const CmsContactInquiriesView: React.FC = () => {
             gap: 6,
           }}
         >
-          <FaSync className={loading ? "spin" : ""} /> Refresh
+          <FaSync className={loading ? "spin" : ""} size={12} /> Refresh
         </button>
       </div>
 
-      {/* Status Summary Pills / Quick Filter Tabs */}
+      {/* Status Summary Pills / Filter Tabs */}
       <div
         style={{
           display: "flex",
           gap: "8px",
-          marginBottom: "20px",
+          marginBottom: "18px",
           flexWrap: "wrap",
         }}
       >
         {[
-          { key: "all", label: "All Inquiries" },
-          { key: "new", label: "New" },
-          { key: "in_progress", label: "In Progress" },
-          { key: "waiting_for_user", label: "Waiting for User" },
-          { key: "resolved", label: "Resolved" },
-          { key: "closed", label: "Closed" },
+          { key: "all", label: "All Inquiries", count: statusCounts.all },
+          { key: "new", label: "New", count: statusCounts.new },
+          { key: "in_progress", label: "In Progress", count: statusCounts.in_progress },
+          { key: "waiting_for_user", label: "Waiting for User", count: statusCounts.waiting_for_user },
+          { key: "resolved", label: "Resolved", count: statusCounts.resolved },
+          { key: "closed", label: "Closed", count: statusCounts.closed },
         ].map((tab) => {
           const isActive = statusFilter === tab.key;
           return (
@@ -568,25 +653,23 @@ const CmsContactInquiriesView: React.FC = () => {
               }}
             >
               {tab.label}
-              {typeof statusCounts[tab.key] === "number" && statusCounts[tab.key] > 0 && (
-                <span
-                  style={{
-                    padding: "1px 6px",
-                    borderRadius: 999,
-                    fontSize: "11px",
-                    background: isActive ? "#1D4ED8" : "#E2E8F0",
-                    color: isActive ? "#FFFFFF" : "#475569",
-                  }}
-                >
-                  {statusCounts[tab.key]}
-                </span>
-              )}
+              <span
+                style={{
+                  padding: "1px 7px",
+                  borderRadius: 999,
+                  fontSize: "11px",
+                  background: isActive ? "#1D4ED8" : "#E2E8F0",
+                  color: isActive ? "#FFFFFF" : "#475569",
+                }}
+              >
+                {tab.count}
+              </span>
             </button>
           );
         })}
       </div>
 
-      {/* Error Alert */}
+      {/* Error Alert with Retry */}
       {error && (
         <div
           style={{
@@ -598,11 +681,32 @@ const CmsContactInquiriesView: React.FC = () => {
             marginBottom: "16px",
             fontSize: "13px",
             display: "flex",
+            justifyContent: "space-between",
             alignItems: "center",
             gap: 8,
           }}
         >
-          <FaExclamationCircle /> {error}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <FaExclamationCircle /> {error}
+          </div>
+          <button
+            onClick={() => {
+              fetchInquiries();
+              fetchStatusCounts();
+            }}
+            style={{
+              padding: "5px 12px",
+              borderRadius: 6,
+              border: "1px solid #F87171",
+              background: "#FFFFFF",
+              color: "#991B1B",
+              fontWeight: 700,
+              fontSize: "12px",
+              cursor: "pointer",
+            }}
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -637,6 +741,7 @@ const CmsContactInquiriesView: React.FC = () => {
           >
             <option value="all">All Categories</option>
             <option value="general">General</option>
+            <option value="medical">Medical</option>
             <option value="adoption">Adoption</option>
             <option value="foster">Foster</option>
             <option value="volunteer">Volunteer</option>
@@ -690,39 +795,91 @@ const CmsContactInquiriesView: React.FC = () => {
           setSearch(s);
           setPage(1);
         }}
-        searchMaxWidth="320px"
+        searchMaxWidth="360px"
         emptyMessage="No contact inquiries found matching the selected filters."
+        onRowClick={(row) => handleOpenDetail(row)}
         renderRowActions={(row) => (
           <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
             <button
               onClick={() => handleOpenDetail(row)}
               style={{
-                padding: "5px 10px",
+                padding: "6px 12px",
                 borderRadius: 6,
                 border: "1px solid #CBD5E1",
                 background: "#F8FAFC",
                 color: "#1E293B",
-                fontSize: 11.5,
+                fontSize: 12,
                 fontWeight: 700,
                 cursor: "pointer",
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 4,
+                gap: 5,
               }}
               title="View inquiry details and respond"
             >
-              <FaEye /> View & Respond
+              <FaEye size={12} style={{ color: "#2563EB" }} /> View & Respond
             </button>
           </div>
         )}
       />
 
-      {/* Detail & Response Modal */}
+      {/* VIEW & RESPOND MODAL */}
       {detailModalOpen && selectedInquiry && (
         <Modal
           isOpen={true}
           onClose={() => setDetailModalOpen(false)}
-          title={`Inquiry Details: ${selectedInquiry.subject}`}
+          title="Contact Inquiry"
+          maxWidth="680px"
+          footer={
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, width: "100%" }}>
+              <button
+                type="button"
+                onClick={() => setDetailModalOpen(false)}
+                style={{
+                  padding: "9px 18px",
+                  borderRadius: "8px",
+                  border: "1px solid #CBD5E1",
+                  background: "#F8FAFC",
+                  color: "#334155",
+                  fontWeight: 600,
+                  fontSize: "13px",
+                  cursor: "pointer",
+                }}
+              >
+                Close
+              </button>
+              {isEditingResponse && (
+                <button
+                  type="button"
+                  onClick={handleSendResponse}
+                  disabled={sendingResponse}
+                  style={{
+                    padding: "9px 20px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: "#2563EB",
+                    color: "#FFFFFF",
+                    fontWeight: 700,
+                    fontSize: "13px",
+                    cursor: sendingResponse ? "not-allowed" : "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  {sendingResponse ? (
+                    <>
+                      <FaSpinner className="spin" size={13} /> Sending Reply...
+                    </>
+                  ) : (
+                    <>
+                      <FaPaperPlane size={12} /> SEND REPLY
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          }
         >
           <div
             style={{
@@ -739,80 +896,172 @@ const CmsContactInquiriesView: React.FC = () => {
               </div>
             )}
 
-            {/* Sender & Status Header Card */}
+            {/* Subtitle & Status Header Bar */}
             <div
               style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "12px",
-                padding: "14px",
-                borderRadius: "8px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "10px 14px",
                 background: "#F8FAFC",
+                borderRadius: "8px",
                 border: "1px solid #E2E8F0",
+                flexWrap: "wrap",
+                gap: 8,
               }}
             >
-              <div>
-                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>
-                  Sender Information
-                </div>
-                <div style={{ fontWeight: 800, fontSize: "14px", color: "#0F172A", marginTop: 2 }}>
-                  {selectedInquiry.name}
-                </div>
-                <div style={{ fontSize: "12.5px", color: "#475569" }}>
-                  📧 <a href={`mailto:${selectedInquiry.email}`} style={{ color: "#2563EB" }}>{selectedInquiry.email}</a>
-                </div>
-                {selectedInquiry.phone && (
-                  <div style={{ fontSize: "12.5px", color: "#475569" }}>
-                    📞 {selectedInquiry.phone}
+              <div style={{ fontSize: "12.5px", color: "#64748B" }}>
+                Received on:{" "}
+                <strong style={{ color: "#0F172A" }}>
+                  {formatDateTime(selectedInquiry.created_at)}
+                </strong>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>Status:</span>
+                <select
+                  value={selectedInquiry.status}
+                  disabled={updatingStatus}
+                  onChange={(e) => handleStatusChange(e.target.value as ContactInquiryStatus)}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 6,
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    border: "1px solid #CBD5E1",
+                    background: "#FFFFFF",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="new">New</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="waiting_for_user">Waiting for User</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="closed">Closed</option>
+                </select>
+                {updatingStatus && <FaSpinner className="spin" size={12} color="#2563EB" />}
+              </div>
+            </div>
+
+            {/* CUSTOMER / SENDER INFORMATION */}
+            <div
+              style={{
+                background: "#FFFFFF",
+                border: "1px solid #E2E8F0",
+                borderRadius: "8px",
+                padding: "14px",
+              }}
+            >
+              <div style={{ fontSize: "11px", fontWeight: 800, color: "#64748B", textTransform: "uppercase", marginBottom: 8, letterSpacing: "0.5px" }}>
+                Customer / Sender Information
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div>
+                  <div style={{ fontSize: "11px", color: "#64748B" }}>Name</div>
+                  <div style={{ fontWeight: 800, fontSize: "14px", color: "#0F172A", display: "flex", alignItems: "center", gap: 6 }}>
+                    <FaUser size={11} style={{ color: "#2563EB" }} />
+                    {selectedInquiry.name || "Anonymous Visitor"}
                   </div>
-                )}
-                <div style={{ fontSize: "11.5px", color: "#64748B", marginTop: 4 }}>
-                  Consent given:{" "}
-                  {(selectedInquiry.has_consent ?? selectedInquiry.consent) ? (
-                    <span style={{ color: "#059669", fontWeight: 700 }}>✓ Yes</span>
-                  ) : (
-                    <span style={{ color: "#DC2626", fontWeight: 700 }}>✗ No</span>
-                  )}
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "11px", color: "#64748B" }}>Category</div>
+                  <div>
+                    <span
+                      style={{
+                        padding: "3px 8px",
+                        borderRadius: 6,
+                        fontSize: "11.5px",
+                        fontWeight: 700,
+                        background: "#EFF6FF",
+                        color: "#1D4ED8",
+                        border: "1px solid #BFDBFE",
+                        textTransform: "capitalize",
+                        display: "inline-block",
+                      }}
+                    >
+                      {selectedInquiry.category ? selectedInquiry.category.replace(/_/g, " ") : "General"}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "11px", color: "#64748B" }}>Email Address</div>
+                  <div style={{ fontSize: "13px", fontWeight: 600 }}>
+                    <a
+                      href={`mailto:${selectedInquiry.email}`}
+                      style={{ color: "#2563EB", textDecoration: "none", display: "flex", alignItems: "center", gap: 5 }}
+                    >
+                      <FaEnvelope size={11} /> {selectedInquiry.email}
+                    </a>
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "11px", color: "#64748B" }}>Phone Number</div>
+                  <div style={{ fontSize: "13px", fontWeight: 600, color: selectedInquiry.phone ? "#0F172A" : "#94A3B8" }}>
+                    {selectedInquiry.phone ? (
+                      <a
+                        href={`tel:${selectedInquiry.phone}`}
+                        style={{ color: "#0F172A", textDecoration: "none", display: "flex", alignItems: "center", gap: 5 }}
+                      >
+                        <FaPhoneAlt size={11} style={{ color: "#10B981" }} /> {selectedInquiry.phone}
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>
-                  Metadata & Status
+              <div style={{ marginTop: 8, fontSize: "11.5px", color: "#64748B", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}>
+                Consent Status:{" "}
+                {(selectedInquiry.has_consent ?? selectedInquiry.consent) ? (
+                  <span style={{ color: "#059669", fontWeight: 700 }}>✓ Consent given for contact</span>
+                ) : (
+                  <span style={{ color: "#DC2626", fontWeight: 700 }}>✗ No consent given</span>
+                )}
+              </div>
+            </div>
+
+            {/* INQUIRY SECTION (Subject & Full Message) */}
+            <div>
+              <div style={{ fontSize: "11px", fontWeight: 800, color: "#64748B", textTransform: "uppercase", marginBottom: 6, letterSpacing: "0.5px" }}>
+                Inquiry
+              </div>
+              <div
+                style={{
+                  padding: "14px",
+                  borderRadius: "8px",
+                  background: "#F8FAFC",
+                  border: "1px solid #E2E8F0",
+                }}
+              >
+                <div style={{ fontSize: "11px", color: "#64748B", marginBottom: 2 }}>Subject</div>
+                <div style={{ fontWeight: 800, fontSize: "14.5px", color: "#0F172A", marginBottom: 10 }}>
+                  {selectedInquiry.subject}
                 </div>
-                <div style={{ fontSize: "12.5px", color: "#334155", marginTop: 4 }}>
-                  Category: <strong>{selectedInquiry.category ? selectedInquiry.category.replace(/_/g, " ") : "General"}</strong>
-                </div>
-                <div style={{ fontSize: "12.5px", color: "#334155" }}>
-                  Received: <strong>{new Date(selectedInquiry.created_at).toLocaleString()}</strong>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
-                  <span style={{ fontSize: "12px", color: "#64748B" }}>Status:</span>
-                  <select
-                    value={selectedInquiry.status}
-                    disabled={updatingStatus}
-                    onChange={(e) => handleStatusChange(e.target.value as ContactInquiryStatus)}
-                    style={{
-                      padding: "4px 8px",
-                      borderRadius: 6,
-                      fontSize: "12px",
-                      fontWeight: 700,
-                      border: "1px solid #CBD5E1",
-                      background: "#FFFFFF",
-                    }}
-                  >
-                    <option value="new">New</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="waiting_for_user">Waiting for User</option>
-                    <option value="resolved">Resolved</option>
-                    <option value="closed">Closed</option>
-                  </select>
-                  {updatingStatus && <FaSpinner className="spin" size={12} color="#2563EB" />}
+
+                <div style={{ fontSize: "11px", color: "#64748B", marginBottom: 2 }}>Message</div>
+                <div
+                  style={{
+                    fontSize: "13.5px",
+                    color: "#1E293B",
+                    lineHeight: 1.6,
+                    whiteSpace: "pre-wrap",
+                    background: "#FFFFFF",
+                    padding: "12px",
+                    borderRadius: "6px",
+                    border: "1px solid #E2E8F0",
+                  }}
+                >
+                  {selectedInquiry.message}
                 </div>
               </div>
             </div>
 
-            {/* Staff Assignment Bar */}
+            {/* WORKFLOW / ASSIGNMENT */}
             <div
               style={{
                 display: "flex",
@@ -835,13 +1084,13 @@ const CmsContactInquiriesView: React.FC = () => {
                   disabled={updatingAssign || loadingStaff}
                   onChange={(e) => handleAssignChange(e.target.value || null)}
                   style={{
-                    padding: "5px 10px",
+                    padding: "6px 12px",
                     borderRadius: 6,
                     fontSize: "12.5px",
                     fontWeight: 600,
                     border: "1px solid #CBD5E1",
                     background: "#F8FAFC",
-                    minWidth: 200,
+                    minWidth: 220,
                   }}
                 >
                   <option value="">— Unassigned —</option>
@@ -855,180 +1104,197 @@ const CmsContactInquiriesView: React.FC = () => {
               </div>
             </div>
 
-            {/* Full Inquiry Message */}
+            {/* RESPONSE HISTORY / PREVIOUS RESPONSE */}
             <div>
-              <div style={{ fontSize: "12px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", marginBottom: 6 }}>
-                Subject & Message
+              <div style={{ fontSize: "11px", fontWeight: 800, color: "#64748B", textTransform: "uppercase", marginBottom: 6, letterSpacing: "0.5px" }}>
+                Response History
               </div>
-              <div
-                style={{
-                  padding: "14px",
-                  borderRadius: "8px",
-                  background: "#F8FAFC",
-                  border: "1px solid #E2E8F0",
-                }}
-              >
-                <div style={{ fontWeight: 800, fontSize: "14px", color: "#0F172A", marginBottom: 6 }}>
-                  {selectedInquiry.subject}
-                </div>
+
+              {selectedInquiry.staff_response ? (
                 <div
                   style={{
-                    fontSize: "13px",
-                    color: "#1E293B",
-                    lineHeight: 1.6,
-                    whiteSpace: "pre-wrap",
+                    padding: "14px",
+                    borderRadius: "8px",
+                    background: "#F0FDF4",
+                    border: "1px solid #BBF7D0",
                   }}
                 >
-                  {selectedInquiry.message}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <div style={{ fontWeight: 800, fontSize: "13px", color: "#15803D", display: "flex", alignItems: "center", gap: 6 }}>
+                      <FaCheckCircle size={13} /> Staff Response (Sent to User)
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingResponse(!isEditingResponse)}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: 6,
+                        border: "1px solid #86EFAC",
+                        background: "#FFFFFF",
+                        color: "#166534",
+                        fontSize: "11.5px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                    >
+                      <FaEdit size={10} /> {isEditingResponse ? "Hide Reply Composer" : "Edit Response"}
+                    </button>
+                  </div>
+
+                  <div style={{ fontSize: "13.5px", color: "#14532D", whiteSpace: "pre-wrap", lineHeight: 1.6, background: "#FFFFFF", padding: "10px 12px", borderRadius: 6, border: "1px solid #DCFCE7" }}>
+                    {selectedInquiry.staff_response}
+                  </div>
+
+                  <div style={{ fontSize: "11.5px", color: "#15803D", marginTop: 8, display: "flex", gap: 12 }}>
+                    {selectedInquiry.responded_at && (
+                      <span>Responded: <strong>{formatDateTime(selectedInquiry.responded_at)}</strong></span>
+                    )}
+                    {selectedInquiry.responded_by_user_id && (
+                      <span>Responded by: <strong>{getStaffName(selectedInquiry.responded_by_user_id)}</strong></span>
+                    )}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div
+                  style={{
+                    padding: "12px 14px",
+                    borderRadius: "8px",
+                    background: "#F8FAFC",
+                    border: "1px solid #E2E8F0",
+                    color: "#64748B",
+                    fontSize: "13px",
+                    fontStyle: "italic",
+                  }}
+                >
+                  No response has been sent yet.
+                </div>
+              )}
             </div>
 
-            {/* Existing Response History if already responded */}
-            {selectedInquiry.staff_response && (
+            {/* INTERNAL NOTES (IF PREVIOUSLY RECORDED) */}
+            {selectedInquiry.internal_notes && !isEditingResponse && (
               <div
                 style={{
                   padding: "12px 14px",
                   borderRadius: "8px",
-                  background: "#ECFDF5",
-                  border: "1px solid #A7F3D0",
+                  background: "#FFFBEB",
+                  border: "1px solid #FDE68A",
                 }}
               >
-                <div style={{ fontWeight: 700, fontSize: "12.5px", color: "#065F46", display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                  <FaCheckCircle /> Existing Staff Response (Sent to User):
+                <div style={{ fontWeight: 800, fontSize: "12px", color: "#B45309", display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <FaLock size={11} /> INTERNAL NOTES (Private — Staff Only)
                 </div>
-                <div style={{ fontSize: "13px", color: "#064E3B", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
-                  {selectedInquiry.staff_response}
+                <div style={{ fontSize: "13px", color: "#78350F", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                  {selectedInquiry.internal_notes}
                 </div>
-                {selectedInquiry.responded_at && (
-                  <div style={{ fontSize: "11px", color: "#047857", marginTop: 6 }}>
-                    Responded: {new Date(selectedInquiry.responded_at).toLocaleString()}
-                    {selectedInquiry.responded_by_user_id && ` by staff ID: ${selectedInquiry.responded_by_user_id.slice(0, 8)}...`}
-                  </div>
-                )}
               </div>
             )}
 
-            {/* Response & Notes Form */}
-            <form onSubmit={handleSendResponse} style={{ display: "flex", flexDirection: "column", gap: "14px", borderTop: "1px solid #E2E8F0", paddingTop: 14 }}>
-              {/* 1. PUBLIC STAFF RESPONSE (User-Facing) */}
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                  <label style={{ fontSize: "12.5px", fontWeight: 700, color: "#1D4ED8", display: "flex", alignItems: "center", gap: 6 }}>
-                    <FaReply /> PUBLIC STAFF RESPONSE (Sent to User via Email/Notification)
-                  </label>
-                  <span style={{ fontSize: "11px", color: "#64748B" }}>
-                    {staffResponseText.length} / 10,000
-                  </span>
+            {/* REPLY COMPOSER FORM (RESPOND TO USER & INTERNAL NOTES) */}
+            {isEditingResponse && (
+              <form
+                onSubmit={handleSendResponse}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "14px",
+                  borderTop: "2px solid #E2E8F0",
+                  paddingTop: 16,
+                }}
+              >
+                {/* 1. PUBLIC STAFF RESPONSE */}
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <label style={{ fontSize: "13px", fontWeight: 800, color: "#1D4ED8", display: "flex", alignItems: "center", gap: 6 }}>
+                      <FaReply /> RESPOND TO USER
+                    </label>
+                    <span style={{ fontSize: "11px", color: "#64748B" }}>
+                      {staffResponseText.length} / 10,000
+                    </span>
+                  </div>
+                  <p style={{ margin: "0 0 6px", fontSize: "11.5px", color: "#64748B" }}>
+                    Staff Response — This message will be sent to the user via email / portal communication.
+                  </p>
+                  <textarea
+                    rows={4}
+                    maxLength={10000}
+                    value={staffResponseText}
+                    onChange={(e) => setStaffResponseText(e.target.value)}
+                    placeholder="Write your response to the user..."
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: 6,
+                      border: "1px solid #93C5FD",
+                      fontSize: 13,
+                      boxSizing: "border-box",
+                      outline: "none",
+                      lineHeight: 1.5,
+                    }}
+                  />
                 </div>
-                <textarea
-                  rows={4}
-                  maxLength={10000}
-                  value={staffResponseText}
-                  onChange={(e) => setStaffResponseText(e.target.value)}
-                  placeholder="Type your official reply to the inquiry sender..."
-                  style={{
-                    width: "100%",
-                    padding: "8px 10px",
-                    borderRadius: 6,
-                    border: "1px solid #CBD5E1",
-                    fontSize: 13,
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
 
-              {/* 2. INTERNAL NOTES (Admin & Staff Only) */}
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                  <label style={{ fontSize: "12.5px", fontWeight: 700, color: "#991B1B", display: "flex", alignItems: "center", gap: 6 }}>
-                    <FaLock /> 🔒 INTERNAL NOTES (Admin & Staff Only — NEVER sent to user)
-                  </label>
-                  <span style={{ fontSize: "11px", color: "#64748B" }}>
-                    {internalNotesText.length} / 10,000
-                  </span>
+                {/* 2. INTERNAL NOTES */}
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <label style={{ fontSize: "13px", fontWeight: 800, color: "#991B1B", display: "flex", alignItems: "center", gap: 6 }}>
+                      <FaLock /> INTERNAL NOTES (Optional / Private)
+                    </label>
+                    <span style={{ fontSize: "11px", color: "#64748B" }}>
+                      {internalNotesText.length} / 10,000
+                    </span>
+                  </div>
+                  <p style={{ margin: "0 0 6px", fontSize: "11.5px", color: "#64748B" }}>
+                    Visible only to PawGuard staff (never sent to user).
+                  </p>
+                  <textarea
+                    rows={3}
+                    maxLength={10000}
+                    value={internalNotesText}
+                    onChange={(e) => setInternalNotesText(e.target.value)}
+                    placeholder="Add internal notes for staff..."
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: 6,
+                      border: "1px solid #FCA5A5",
+                      background: "#FFFBFB",
+                      fontSize: 13,
+                      boxSizing: "border-box",
+                      outline: "none",
+                      lineHeight: 1.5,
+                    }}
+                  />
                 </div>
-                <textarea
-                  rows={3}
-                  maxLength={10000}
-                  value={internalNotesText}
-                  onChange={(e) => setInternalNotesText(e.target.value)}
-                  placeholder="Private internal notes, investigation details, staff handoff instructions..."
-                  style={{
-                    width: "100%",
-                    padding: "8px 10px",
-                    borderRadius: 6,
-                    border: "1px solid #FCA5A5",
-                    background: "#FFFBFB",
-                    fontSize: 13,
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
 
-              {/* New Status Selection */}
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <label style={{ fontSize: "12.5px", fontWeight: 700, color: "#334155" }}>
-                  Set Status on Reply:
-                </label>
-                <select
-                  value={responseNewStatus}
-                  onChange={(e) => setResponseNewStatus(e.target.value)}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: 6,
-                    border: "1px solid #CBD5E1",
-                    fontSize: 13,
-                    fontWeight: 600,
-                  }}
-                >
-                  <option value="in_progress">In Progress</option>
-                  <option value="waiting_for_user">Waiting for User</option>
-                  <option value="resolved">Resolved</option>
-                  <option value="closed">Closed</option>
-                </select>
-              </div>
-
-              {/* Form Actions */}
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
-                <button
-                  type="button"
-                  onClick={() => setDetailModalOpen(false)}
-                  style={{
-                    padding: "8px 16px",
-                    borderRadius: 6,
-                    border: "1px solid #CBD5E1",
-                    background: "#F8FAFC",
-                    color: "#334155",
-                    fontWeight: 600,
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
-                >
-                  Close
-                </button>
-                <button
-                  type="submit"
-                  disabled={sendingResponse}
-                  style={{
-                    padding: "8px 18px",
-                    borderRadius: 6,
-                    border: "none",
-                    background: "#2563EB",
-                    color: "#FFF",
-                    fontWeight: 700,
-                    fontSize: 13,
-                    cursor: sendingResponse ? "not-allowed" : "pointer",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                  }}
-                >
-                  {sendingResponse ? <FaSpinner className="spin" /> : <FaPaperPlane />}{" "}
-                  Submit Response & Notes
-                </button>
-              </div>
-            </form>
+                {/* Set Status on Reply */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <label style={{ fontSize: "12.5px", fontWeight: 700, color: "#334155" }}>
+                    Set Status on Reply:
+                  </label>
+                  <select
+                    value={responseNewStatus}
+                    onChange={(e) => setResponseNewStatus(e.target.value as ContactInquiryStatus)}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: 6,
+                      border: "1px solid #CBD5E1",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      background: "#FFFFFF",
+                    }}
+                  >
+                    <option value="in_progress">In Progress</option>
+                    <option value="waiting_for_user">Waiting for User</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="closed">Closed</option>
+                  </select>
+                </div>
+              </form>
+            )}
           </div>
         </Modal>
       )}
