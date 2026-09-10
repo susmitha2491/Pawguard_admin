@@ -5,6 +5,7 @@ import type { SuccessStoryRecord, ContentStatus } from "../../types/cms";
 import Modal from "../../components/common/Modal";
 import { useToast } from "../../context/ToastContext";
 import petService from "../../services/petService";
+import { userService } from "../../services/userService";
 import {
   FaPlus,
   FaSearch,
@@ -22,6 +23,9 @@ import {
   FaCheckCircle,
   FaTimesCircle,
   FaExclamationTriangle,
+  FaUser,
+  FaDog,
+  FaSync,
 } from "react-icons/fa";
 
 const getErrorMsg = (err: unknown, fallback: string): string => {
@@ -124,6 +128,27 @@ const CmsSuccessStoriesView = () => {
   const [viewingStory, setViewingStory] = useState<SuccessStoryRecord | null>(null);
   const [viewingDog, setViewingDog] = useState<any | null>(null);
   const [loadingDog, setLoadingDog] = useState<boolean>(false);
+  const [viewingAdopter, setViewingAdopter] = useState<any | null>(null);
+  const [loadingAdopter, setLoadingAdopter] = useState<boolean>(false);
+
+  // Cached Metadata for Table Rows
+  const [adopterMap, setAdopterMap] = useState<Record<string, { full_name?: string; email?: string; phone?: string }>>({});
+  const [dogMap, setDogMap] = useState<Record<string, { name?: string; breed?: string; status?: string }>>({});
+
+  // Real-time Status Counts for Filter Tabs
+  const [statusCounts, setStatusCounts] = useState<{
+    all: number;
+    pending_review: number;
+    published: number;
+    draft: number;
+    rejected: number;
+  }>({
+    all: 0,
+    pending_review: 0,
+    published: 0,
+    draft: 0,
+    rejected: 0,
+  });
 
   // Reject Story Modal State
   const [rejectModalOpen, setRejectModalOpen] = useState<boolean>(false);
@@ -155,6 +180,27 @@ const CmsSuccessStoriesView = () => {
   const [removingImage, setRemovingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const fetchCounts = useCallback(async () => {
+    try {
+      const [allRes, pendingRes, pubRes, draftRes, rejRes] = await Promise.all([
+        cmsService.getSuccessStories({ page: 1, page_size: 1 }),
+        cmsService.getSuccessStories({ status: "pending_review", page: 1, page_size: 1 }),
+        cmsService.getSuccessStories({ status: "published", page: 1, page_size: 1 }),
+        cmsService.getSuccessStories({ status: "draft", page: 1, page_size: 1 }),
+        cmsService.getSuccessStories({ status: "rejected", page: 1, page_size: 1 }),
+      ]);
+      setStatusCounts({
+        all: allRes?.total ?? 0,
+        pending_review: pendingRes?.total ?? 0,
+        published: pubRes?.total ?? 0,
+        draft: draftRes?.total ?? 0,
+        rejected: rejRes?.total ?? 0,
+      });
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const fetchStories = useCallback(async () => {
     try {
       setLoading(true);
@@ -176,24 +222,87 @@ const CmsSuccessStoriesView = () => {
         : Array.isArray((res as unknown as { data?: SuccessStoryRecord[] })?.data)
         ? (res as unknown as { data: SuccessStoryRecord[] }).data
         : [];
-      setStories(items);
+
+      // Sort newest first by created_at descending so new submissions appear at the top
+      const sorted = [...items].sort((a, b) => {
+        const dateA = new Date(a.created_at).getTime();
+        const dateB = new Date(b.created_at).getTime();
+        return dateB - dateA;
+      });
+      setStories(sorted);
+
       if (res && typeof res === "object" && typeof (res as unknown as { total?: number }).total === "number") {
         setTotal((res as unknown as { total: number }).total);
         setTotalPages((res as unknown as { pages: number }).pages || 1);
       } else {
-        setTotal(items.length);
+        setTotal(sorted.length);
         setTotalPages(1);
       }
+
+      // Pre-resolve missing adopters for rows
+      const uncachedAdopterIds = Array.from(
+        new Set(
+          sorted
+            .map((s) => s.adopter_id)
+            .filter((id): id is string => Boolean(id) && !adopterMap[id])
+        )
+      );
+      uncachedAdopterIds.forEach(async (id) => {
+        try {
+          const uRes = await userService.getUserById(id);
+          const uData = uRes?.data || uRes;
+          if (uData) {
+            setAdopterMap((prev) => ({
+              ...prev,
+              [id]: {
+                full_name: uData.full_name || uData.name,
+                email: uData.email,
+                phone: uData.phone,
+              },
+            }));
+          }
+        } catch {
+          // ignore
+        }
+      });
+
+      // Pre-resolve missing dogs for rows
+      const uncachedDogIds = Array.from(
+        new Set(
+          sorted
+            .map((s) => s.dog_id)
+            .filter((id): id is string => Boolean(id) && !dogMap[id])
+        )
+      );
+      uncachedDogIds.forEach(async (id) => {
+        try {
+          const dRes = await petService.getPetById(id);
+          const dData = dRes?.data || dRes;
+          if (dData) {
+            setDogMap((prev) => ({
+              ...prev,
+              [id]: {
+                name: dData.name,
+                breed: dData.breed,
+                status: dData.status,
+              },
+            }));
+          }
+        } catch {
+          // ignore
+        }
+      });
     } catch (err: unknown) {
       setError(getErrorMsg(err, "Failed to load success stories from backend API."));
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, featuredFilter, search, page, pageSize]);
+  }, [statusFilter, featuredFilter, search, page, pageSize, adopterMap, dogMap]);
 
   useEffect(() => {
     fetchStories();
-  }, [fetchStories]);
+    fetchCounts();
+  }, [fetchStories, fetchCounts]);
 
   const openCreateModal = () => {
     setModalMode("create");
@@ -244,6 +353,21 @@ const CmsSuccessStoriesView = () => {
   const openViewModal = async (story: SuccessStoryRecord) => {
     setViewingStory(story);
     setViewingDog(null);
+    setViewingAdopter(null);
+
+    if (story.adopter_id) {
+      setLoadingAdopter(true);
+      try {
+        const uRes = await userService.getUserById(story.adopter_id);
+        const uData = uRes?.data || uRes;
+        setViewingAdopter(uData);
+      } catch {
+        setViewingAdopter(null);
+      } finally {
+        setLoadingAdopter(false);
+      }
+    }
+
     if (story.dog_id) {
       setLoadingDog(true);
       try {
@@ -289,6 +413,7 @@ const CmsSuccessStoriesView = () => {
         );
       }
       await fetchStories();
+      await fetchCounts();
     } catch (err: unknown) {
       addToast(getErrorMsg(err, "Failed to reject success story."), "error");
     } finally {
@@ -299,19 +424,20 @@ const CmsSuccessStoriesView = () => {
   const handleDiscard = async (story: SuccessStoryRecord) => {
     if (
       !window.confirm(
-        `Unpublish story "${story.title}"? This will return the story to draft status.`
+        `Unpublish story "${story.title}"? This will remove it from the public platform and return it to draft status.`
       )
     )
       return;
     try {
       await cmsService.discardSuccessStory(story.id);
-      addToast(`Story "${story.title}" unpinned/returned to draft status.`, "success");
+      addToast(`Story "${story.title}" returned to draft status.`, "success");
       if (viewingStory && viewingStory.id === story.id) {
         setViewingStory((prev) => (prev ? { ...prev, status: "draft" } : null));
       }
       await fetchStories();
+      await fetchCounts();
     } catch (err: unknown) {
-      addToast(getErrorMsg(err, "Failed to unpublish story."), "error");
+      addToast(getErrorMsg(err, "Failed to discard/unpublish story."), "error");
     }
   };
 
@@ -463,6 +589,7 @@ const CmsSuccessStoriesView = () => {
       }
       setModalOpen(false);
       await fetchStories();
+      await fetchCounts();
     } catch (err: unknown) {
       addToast(getErrorMsg(err, "Failed to save success story."), "error");
     } finally {
@@ -472,13 +599,14 @@ const CmsSuccessStoriesView = () => {
 
   const handlePublish = async (story: SuccessStoryRecord) => {
     if (story.has_consent === false) {
-      if (
-        !window.confirm(
-          `Consent is not confirmed for this story. The backend enforces that consent is required before publishing. Attempt to publish anyway?`
-        )
-      ) {
-        return;
-      }
+      addToast(
+        "Adopter consent is missing. Backend policy requires confirmed consent to publish success stories.",
+        "error"
+      );
+      return;
+    }
+    if (!window.confirm(`Publish success story "${story.title}" to the public platform?`)) {
+      return;
     }
     try {
       await cmsService.publishSuccessStory(story.id);
@@ -487,6 +615,7 @@ const CmsSuccessStoriesView = () => {
         setViewingStory((prev) => (prev ? { ...prev, status: "published" } : null));
       }
       await fetchStories();
+      await fetchCounts();
     } catch (err: unknown) {
       addToast(getErrorMsg(err, "Failed to publish story."), "error");
     }
@@ -498,6 +627,7 @@ const CmsSuccessStoriesView = () => {
       await cmsService.deleteSuccessStory(story.id);
       addToast(`Deleted story "${story.title}".`, "success");
       await fetchStories();
+      await fetchCounts();
     } catch (err: unknown) {
       addToast(getErrorMsg(err, "Failed to delete story."), "error");
     }
@@ -532,24 +662,109 @@ const CmsSuccessStoriesView = () => {
           </p>
         </div>
 
-        <button
-          onClick={openCreateModal}
-          style={{
-            padding: "10px 18px",
-            borderRadius: "8px",
-            border: "none",
-            background: "#2563EB",
-            color: "#FFFFFF",
-            fontWeight: 700,
-            fontSize: "13px",
-            cursor: "pointer",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <FaPlus /> New Story
-        </button>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <button
+            onClick={() => {
+              fetchStories();
+              fetchCounts();
+            }}
+            disabled={loading}
+            title="Refresh story list & counters"
+            style={{
+              padding: "9px 14px",
+              borderRadius: "8px",
+              border: "1px solid #CBD5E1",
+              background: "#FFFFFF",
+              color: "#334155",
+              fontWeight: 600,
+              fontSize: "13px",
+              cursor: loading ? "not-allowed" : "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <FaSync className={loading ? "spin" : ""} size={12} /> Refresh
+          </button>
+
+          <button
+            onClick={openCreateModal}
+            style={{
+              padding: "10px 18px",
+              borderRadius: "8px",
+              border: "none",
+              background: "#2563EB",
+              color: "#FFFFFF",
+              fontWeight: 700,
+              fontSize: "13px",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <FaPlus /> New Story
+          </button>
+        </div>
+      </div>
+
+      {/* Moderation Status Tabs */}
+      <div
+        style={{
+          display: "flex",
+          gap: "8px",
+          marginBottom: "16px",
+          borderBottom: "1px solid #E2E8F0",
+          paddingBottom: "12px",
+          flexWrap: "wrap",
+        }}
+      >
+        {[
+          { key: "all", label: "All Stories", count: statusCounts.all, color: "#2563EB", bg: "#EFF6FF" },
+          { key: "pending_review", label: "Pending Review", count: statusCounts.pending_review, color: "#D97706", bg: "#FEF3C7", alert: statusCounts.pending_review > 0 },
+          { key: "published", label: "Published", count: statusCounts.published, color: "#059669", bg: "#ECFDF5" },
+          { key: "draft", label: "Drafts", count: statusCounts.draft, color: "#475569", bg: "#F1F5F9" },
+          { key: "rejected", label: "Rejected", count: statusCounts.rejected, color: "#DC2626", bg: "#FEF2F2" },
+        ].map((tab) => {
+          const isActive = statusFilter === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => {
+                setStatusFilter(tab.key);
+                setPage(1);
+              }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: isActive ? `1.5px solid ${tab.color}` : "1px solid #E2E8F0",
+                background: isActive ? tab.bg : "#FFFFFF",
+                color: isActive ? tab.color : "#475569",
+                fontWeight: isActive ? 700 : 500,
+                fontSize: "13px",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <span>{tab.label}</span>
+              <span
+                style={{
+                  padding: "1px 7px",
+                  borderRadius: "999px",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  background: tab.alert ? "#DC2626" : isActive ? tab.color : "#E2E8F0",
+                  color: tab.alert || isActive ? "#FFFFFF" : "#475569",
+                }}
+              >
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Filter Toolbar */}
@@ -649,6 +864,8 @@ const CmsSuccessStoriesView = () => {
           <thead>
             <tr style={{ background: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
               <th style={{ padding: "12px", textAlign: "left", color: "#475569", fontWeight: 700 }}>Story Title</th>
+              <th style={{ padding: "12px", textAlign: "left", color: "#475569", fontWeight: 700 }}>Adopter</th>
+              <th style={{ padding: "12px", textAlign: "left", color: "#475569", fontWeight: 700 }}>Companion Pet</th>
               <th style={{ padding: "12px", textAlign: "left", color: "#475569", fontWeight: 700 }}>Featured</th>
               <th style={{ padding: "12px", textAlign: "left", color: "#475569", fontWeight: 700 }}>Status</th>
               <th style={{ padding: "12px", textAlign: "left", color: "#475569", fontWeight: 700 }}>Consent</th>
@@ -659,128 +876,159 @@ const CmsSuccessStoriesView = () => {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} style={{ padding: "30px", textAlign: "center", color: "#2563EB" }}>
+                <td colSpan={8} style={{ padding: "30px", textAlign: "center", color: "#2563EB" }}>
                   <FaSpinner className="spin" size={18} /> Loading stories...
                 </td>
               </tr>
             ) : stories.length === 0 ? (
               <tr>
-                <td colSpan={6} style={{ padding: "30px", textAlign: "center", color: "#64748B" }}>
+                <td colSpan={8} style={{ padding: "30px", textAlign: "center", color: "#64748B" }}>
                   No success stories found matching your filter criteria.
                 </td>
               </tr>
             ) : (
-              stories.map((story) => (
-                <tr key={story.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
-                  <td style={{ padding: "12px", color: "#0F172A", fontWeight: 600 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      {story.hero_image_url ? (
-                        <img
-                          src={story.hero_image_url}
-                          alt=""
-                          style={{ width: 36, height: 36, borderRadius: 6, objectFit: "cover" }}
-                        />
-                      ) : (
-                        <div
-                          style={{
-                            width: 36,
-                            height: 36,
-                            borderRadius: 6,
-                            background: "#F1F5F9",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            color: "#94A3B8",
-                          }}
-                        >
-                          <FaImage />
-                        </div>
-                      )}
-                      <div>
-                        <div>{story.title}</div>
-                        <div style={{ fontSize: "11px", color: "#64748B", fontWeight: 400 }}>
-                          {story.summary.slice(0, 60)}...
+              stories.map((story) => {
+                const adopter = story.adopter_id ? adopterMap[story.adopter_id] : null;
+                const pet = story.dog_id ? dogMap[story.dog_id] : null;
+
+                return (
+                  <tr key={story.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                    <td style={{ padding: "12px", color: "#0F172A", fontWeight: 600 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        {story.hero_image_url ? (
+                          <img
+                            src={story.hero_image_url}
+                            alt=""
+                            style={{ width: 38, height: 38, borderRadius: 6, objectFit: "cover" }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: 38,
+                              height: 38,
+                              borderRadius: 6,
+                              background: "#F1F5F9",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "#94A3B8",
+                            }}
+                          >
+                            <FaImage />
+                          </div>
+                        )}
+                        <div>
+                          <div>{story.title}</div>
+                          <div style={{ fontSize: "11px", color: "#64748B", fontWeight: 400 }}>
+                            {story.summary.slice(0, 50)}...
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </td>
-                  <td style={{ padding: "12px" }}>
-                    {story.is_featured ? (
-                      <span style={{ color: "#F59E0B", display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 700, fontSize: 12 }}>
-                        <FaStar /> Featured
-                      </span>
-                    ) : (
-                      <span style={{ color: "#94A3B8", fontSize: 12 }}>Standard</span>
-                    )}
-                  </td>
-                  <td style={{ padding: "12px" }}>
-                    {story.status === "published" ? (
-                      <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                        <FaCheckCircle size={10} /> Published
-                      </span>
-                    ) : story.status === "pending_review" ? (
-                      <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "#FEF3C7", color: "#B45309", border: "1px solid #FDE68A", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                        <FaClock size={10} /> Pending Review
-                      </span>
-                    ) : story.status === "rejected" ? (
-                      <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "#FEF2F2", color: "#DC2626", border: "1px solid #FCA5A5", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                        <FaTimesCircle size={10} /> Rejected
-                      </span>
-                    ) : story.status === "archived" ? (
-                      <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "#F8FAFC", color: "#64748B", border: "1px solid #CBD5E1" }}>
-                        Archived
-                      </span>
-                    ) : (
-                      <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "#F1F5F9", color: "#475569", border: "1px solid #E2E8F0" }}>
-                        Draft
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: "12px" }}>
-                    {story.has_consent === true ? (
-                      <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                        <FaCheckCircle size={10} /> Consent Confirmed
-                      </span>
-                    ) : (
-                      <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: "#FFFBEB", color: "#B45309", border: "1px solid #FDE68A", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                        <FaExclamationTriangle size={10} /> Consent Missing
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: "12px", color: "#64748B", fontSize: 12 }}>
-                    {new Date(story.created_at).toLocaleDateString()}
-                  </td>
-                  <td style={{ padding: "12px", textAlign: "right" }}>
-                    <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
-                      <button
-                        onClick={() => openViewModal(story)}
-                        title="View details & moderation"
-                        style={{
-                          padding: "5px 9px",
-                          borderRadius: 6,
-                          border: "1px solid #CBD5E1",
-                          background: "#F8FAFC",
-                          color: "#1E293B",
-                          fontSize: 11.5,
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 4,
-                        }}
-                      >
-                        <FaEye /> View
-                      </button>
-                      {story.status !== "published" && (
+                    </td>
+
+                    {/* Adopter Column */}
+                    <td style={{ padding: "12px", color: "#334155" }}>
+                      {story.adopter_id ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <FaUser size={12} style={{ color: "#2563EB" }} />
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: "12.5px" }}>
+                              {adopter?.full_name || adopter?.email || `Adopter (${story.adopter_id.slice(0, 8)}...)`}
+                            </div>
+                            {adopter?.email && adopter?.full_name && (
+                              <div style={{ fontSize: "11px", color: "#64748B" }}>
+                                {adopter.email}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <span style={{ color: "#94A3B8", fontStyle: "italic", fontSize: "12px" }}>
+                          Staff Submission
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Companion Pet Column */}
+                    <td style={{ padding: "12px", color: "#334155" }}>
+                      {story.dog_id ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <FaDog size={13} style={{ color: "#059669" }} />
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: "12.5px" }}>
+                              {pet?.name || `Pet (${story.dog_id.slice(0, 8)}...)`}
+                            </div>
+                            {pet?.breed && (
+                              <div style={{ fontSize: "11px", color: "#64748B" }}>
+                                {pet.breed}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <span style={{ color: "#94A3B8", fontStyle: "italic", fontSize: "12px" }}>
+                          General Adoption
+                        </span>
+                      )}
+                    </td>
+
+                    <td style={{ padding: "12px" }}>
+                      {story.is_featured ? (
+                        <span style={{ color: "#F59E0B", display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 700, fontSize: 12 }}>
+                          <FaStar /> Featured
+                        </span>
+                      ) : (
+                        <span style={{ color: "#94A3B8", fontSize: 12 }}>Standard</span>
+                      )}
+                    </td>
+                    <td style={{ padding: "12px" }}>
+                      {story.status === "published" ? (
+                        <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          <FaCheckCircle size={10} /> Published
+                        </span>
+                      ) : story.status === "pending_review" ? (
+                        <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "#FEF3C7", color: "#B45309", border: "1px solid #FDE68A", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          <FaClock size={10} /> Pending Review
+                        </span>
+                      ) : story.status === "rejected" ? (
+                        <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "#FEF2F2", color: "#DC2626", border: "1px solid #FCA5A5", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          <FaTimesCircle size={10} /> Rejected
+                        </span>
+                      ) : story.status === "archived" ? (
+                        <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "#F8FAFC", color: "#64748B", border: "1px solid #CBD5E1" }}>
+                          Archived
+                        </span>
+                      ) : (
+                        <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "#F1F5F9", color: "#475569", border: "1px solid #E2E8F0" }}>
+                          Draft
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: "12px" }}>
+                      {story.has_consent === true ? (
+                        <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          <FaCheckCircle size={10} /> Confirmed
+                        </span>
+                      ) : (
+                        <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: "#FFFBEB", color: "#B45309", border: "1px solid #FDE68A", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          <FaExclamationTriangle size={10} /> Missing
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: "12px", color: "#64748B", fontSize: 12 }}>
+                      {new Date(story.created_at).toLocaleDateString()}
+                    </td>
+                    <td style={{ padding: "12px", textAlign: "right" }}>
+                      <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
                         <button
-                          onClick={() => handlePublish(story)}
-                          title="Publish story"
+                          onClick={() => openViewModal(story)}
+                          title="View details & moderation"
                           style={{
                             padding: "5px 9px",
                             borderRadius: 6,
-                            border: "none",
-                            background: "#10B981",
-                            color: "#FFF",
+                            border: "1px solid #CBD5E1",
+                            background: "#F8FAFC",
+                            color: "#1E293B",
                             fontSize: 11.5,
                             fontWeight: 700,
                             cursor: "pointer",
@@ -789,87 +1037,108 @@ const CmsSuccessStoriesView = () => {
                             gap: 4,
                           }}
                         >
-                          <FaPaperPlane /> Publish
+                          <FaEye /> View
                         </button>
-                      )}
-                      {(story.status === "pending_review" || story.status === "draft") && (
+                        {story.status !== "published" && (
+                          <button
+                            onClick={() => handlePublish(story)}
+                            title="Publish story"
+                            style={{
+                              padding: "5px 9px",
+                              borderRadius: 6,
+                              border: "none",
+                              background: "#10B981",
+                              color: "#FFF",
+                              fontSize: 11.5,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                          >
+                            <FaPaperPlane /> Publish
+                          </button>
+                        )}
+                        {(story.status === "pending_review" || story.status === "draft") && (
+                          <button
+                            onClick={() => openRejectModal(story)}
+                            title="Reject story"
+                            style={{
+                              padding: "5px 9px",
+                              borderRadius: 6,
+                              border: "1px solid #FCA5A5",
+                              background: "#FEF2F2",
+                              color: "#DC2626",
+                              fontSize: 11.5,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                          >
+                            <FaBan /> Reject
+                          </button>
+                        )}
+                        {story.status === "published" && (
+                          <button
+                            onClick={() => handleDiscard(story)}
+                            title="Unpublish (return to draft)"
+                            style={{
+                              padding: "5px 9px",
+                              borderRadius: 6,
+                              border: "1px solid #FDE68A",
+                              background: "#FFFBEB",
+                              color: "#D97706",
+                              fontSize: 11.5,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                          >
+                            <FaUndo /> Discard
+                          </button>
+                        )}
                         <button
-                          onClick={() => openRejectModal(story)}
-                          title="Reject story"
+                          onClick={() => openEditModal(story)}
+                          title="Edit story"
+                          style={{
+                            padding: "5px 9px",
+                            borderRadius: 6,
+                            border: "1px solid #CBD5E1",
+                            background: "#F8FAFC",
+                            color: "#334155",
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <FaEdit />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(story)}
+                          title="Delete story"
                           style={{
                             padding: "5px 9px",
                             borderRadius: 6,
                             border: "1px solid #FCA5A5",
                             background: "#FEF2F2",
-                            color: "#DC2626",
+                            color: "#991B1B",
                             fontSize: 11.5,
                             fontWeight: 700,
                             cursor: "pointer",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 4,
                           }}
                         >
-                          <FaBan /> Reject
+                          <FaTrash />
                         </button>
-                      )}
-                      {story.status === "published" && (
-                        <button
-                          onClick={() => handleDiscard(story)}
-                          title="Unpublish (return to draft)"
-                          style={{
-                            padding: "5px 9px",
-                            borderRadius: 6,
-                            border: "1px solid #FDE68A",
-                            background: "#FFFBEB",
-                            color: "#D97706",
-                            fontSize: 11.5,
-                            fontWeight: 700,
-                            cursor: "pointer",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 4,
-                          }}
-                        >
-                          <FaUndo /> Discard
-                        </button>
-                      )}
-                      <button
-                        onClick={() => openEditModal(story)}
-                        title="Edit story"
-                        style={{
-                          padding: "5px 9px",
-                          borderRadius: 6,
-                          border: "1px solid #CBD5E1",
-                          background: "#F8FAFC",
-                          color: "#334155",
-                          fontSize: 11.5,
-                          fontWeight: 700,
-                          cursor: "pointer",
-                        }}
-                      >
-                        <FaEdit />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(story)}
-                        title="Delete story"
-                        style={{
-                          padding: "5px 9px",
-                          borderRadius: 6,
-                          border: "1px solid #FCA5A5",
-                          background: "#FEF2F2",
-                          color: "#991B1B",
-                          fontSize: 11.5,
-                          fontWeight: 700,
-                          cursor: "pointer",
-                        }}
-                      >
-                        <FaTrash />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -1113,7 +1382,7 @@ const CmsSuccessStoriesView = () => {
             )}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div>
               <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 4 }}>
                 Dog ID (Optional)
@@ -1122,7 +1391,7 @@ const CmsSuccessStoriesView = () => {
                 type="text"
                 value={form.dog_id}
                 onChange={(e) => setForm({ ...form, dog_id: e.target.value })}
-                placeholder="e.g. UUID of the pet"
+                placeholder="UUID of rescued dog..."
                 style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 13, boxSizing: "border-box" }}
               />
             </div>
@@ -1134,13 +1403,13 @@ const CmsSuccessStoriesView = () => {
                 type="text"
                 value={form.adopter_id}
                 onChange={(e) => setForm({ ...form, adopter_id: e.target.value })}
-                placeholder="e.g. UUID of adopter"
+                placeholder="UUID of adopter user..."
                 style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 13, boxSizing: "border-box" }}
               />
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
             <div>
               <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 4 }}>
                 Status
@@ -1148,49 +1417,74 @@ const CmsSuccessStoriesView = () => {
               <select
                 value={form.status}
                 onChange={(e) => setForm({ ...form, status: e.target.value as ContentStatus })}
-                style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 13 }}
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 13, boxSizing: "border-box" }}
               >
                 <option value="draft">Draft</option>
                 <option value="pending_review">Pending Review</option>
                 <option value="published">Published</option>
-                <option value="rejected">Rejected</option>
                 <option value="archived">Archived</option>
               </select>
             </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "#334155", cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={form.is_featured}
-                  onChange={(e) => setForm({ ...form, is_featured: e.target.checked })}
-                />
-                Feature on Homepage
+            <div>
+              <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 4 }}>
+                Sort Order
               </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: form.has_consent ? "#059669" : "#B45309", cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={form.has_consent}
-                  onChange={(e) => setForm({ ...form, has_consent: e.target.checked })}
-                />
-                Adopter Consent Confirmed (Required for publishing)
+              <input
+                type="number"
+                value={form.sort_order}
+                onChange={(e) => setForm({ ...form, sort_order: parseInt(e.target.value) || 0 })}
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 13, boxSizing: "border-box" }}
+              />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 4 }}>
+                Slug (Optional)
               </label>
+              <input
+                type="text"
+                value={form.slug}
+                onChange={(e) => setForm({ ...form, slug: e.target.value })}
+                placeholder="auto-generated-if-empty"
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 13, boxSizing: "border-box" }}
+              />
             </div>
           </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+          <div style={{ display: "flex", gap: "20px", marginTop: "4px" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: 13, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={form.is_featured}
+                onChange={(e) => setForm({ ...form, is_featured: e.target.checked })}
+              />
+              <span style={{ fontWeight: 600, color: "#1E293B" }}>Feature on Homepage</span>
+            </label>
+
+            <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: 13, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={form.has_consent}
+                onChange={(e) => setForm({ ...form, has_consent: e.target.checked })}
+              />
+              <span style={{ fontWeight: 600, color: "#1E293B" }}>Adopter Consent Confirmed</span>
+            </label>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "16px" }}>
             <button
+              type="button"
               onClick={() => setModalOpen(false)}
-              style={{ padding: "9px 16px", borderRadius: 6, border: "1px solid #CBD5E1", background: "#F8FAFC", color: "#334155", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+              style={{ padding: "8px 16px", borderRadius: 6, border: "1px solid #CBD5E1", background: "#FFFFFF", color: "#334155", fontWeight: 600, cursor: "pointer" }}
             >
               Cancel
             </button>
             <button
-              onClick={handleSave}
+              type="button"
               disabled={submitting}
-              style={{ padding: "9px 18px", borderRadius: 6, border: "none", background: "#2563EB", color: "#FFF", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+              onClick={handleSave}
+              style={{ padding: "8px 18px", borderRadius: 6, border: "none", background: "#2563EB", color: "#FFFFFF", fontWeight: 700, cursor: submitting ? "not-allowed" : "pointer" }}
             >
-              {submitting ? "Saving..." : "Save Story"}
+              {submitting ? "Saving..." : modalMode === "create" ? "Create Story" : "Save Changes"}
             </button>
           </div>
         </div>
@@ -1201,7 +1495,7 @@ const CmsSuccessStoriesView = () => {
         <Modal
           isOpen={true}
           onClose={() => setViewingStory(null)}
-          title={`Success Story Details: ${viewingStory.title}`}
+          title={`Success Story Moderation: ${viewingStory.title}`}
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxHeight: "75vh", overflowY: "auto" }}>
             {/* Status & Consent Header Banner */}
@@ -1244,14 +1538,14 @@ const CmsSuccessStoriesView = () => {
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>Consent:</span>
+                <span style={{ fontSize: "12px", color: "#64748B", fontWeight: 600 }}>Adopter Consent:</span>
                 {viewingStory.has_consent === true ? (
                   <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 12, fontWeight: 700, background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: 5 }}>
-                    <FaCheckCircle size={12} /> Consent Confirmed
+                    <FaCheckCircle size={12} /> Consent Confirmed (Eligible to Publish)
                   </span>
                 ) : (
                   <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 12, fontWeight: 700, background: "#FFFBEB", color: "#B45309", border: "1px solid #FDE68A", display: "inline-flex", alignItems: "center", gap: 5 }}>
-                    <FaExclamationTriangle size={12} /> Consent Not Confirmed
+                    <FaExclamationTriangle size={12} /> Consent Missing (Cannot Publish)
                   </span>
                 )}
               </div>
@@ -1301,7 +1595,7 @@ const CmsSuccessStoriesView = () => {
             {/* Story Body */}
             <div>
               <div style={{ fontSize: "12px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", marginBottom: 6 }}>
-                Story Narrative
+                Story Narrative / Body
               </div>
               <div
                 style={{
@@ -1319,58 +1613,109 @@ const CmsSuccessStoriesView = () => {
               </div>
             </div>
 
-            {/* Metadata Grid */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", fontSize: "12.5px" }}>
-              <div style={{ padding: "10px", background: "#F8FAFC", borderRadius: 6, border: "1px solid #E2E8F0" }}>
-                <span style={{ color: "#64748B", display: "block" }}>Adopter ID:</span>
-                <span style={{ fontWeight: 600, color: "#1E293B" }}>
-                  {viewingStory.adopter_id || "None specified"}
-                </span>
+            {/* Adopter Information Card */}
+            <div style={{ padding: "14px", background: "#F8FAFC", borderRadius: 8, border: "1px solid #E2E8F0" }}>
+              <div style={{ fontSize: "12px", fontWeight: 700, color: "#2563EB", textTransform: "uppercase", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                <FaUser /> Adopter / Submitter Information
               </div>
-              <div style={{ padding: "10px", background: "#F8FAFC", borderRadius: 6, border: "1px solid #E2E8F0" }}>
-                <span style={{ color: "#64748B", display: "block" }}>Created Date:</span>
-                <span style={{ fontWeight: 600, color: "#1E293B" }}>
-                  {new Date(viewingStory.created_at).toLocaleString()}
-                </span>
-              </div>
+              {loadingAdopter ? (
+                <div style={{ fontSize: "12.5px", color: "#64748B", display: "flex", alignItems: "center", gap: 6 }}>
+                  <FaSpinner className="spin" /> Looking up adopter account profile...
+                </div>
+              ) : viewingAdopter ? (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: "12.5px" }}>
+                  <div>
+                    <span style={{ color: "#64748B", display: "block" }}>Full Name:</span>
+                    <strong style={{ color: "#0F172A" }}>{viewingAdopter.full_name || "N/A"}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B", display: "block" }}>Email Address:</span>
+                    <strong style={{ color: "#0F172A" }}>{viewingAdopter.email || "N/A"}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B", display: "block" }}>Phone Number:</span>
+                    <strong style={{ color: "#0F172A" }}>{viewingAdopter.phone || "N/A"}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B", display: "block" }}>Role / Status:</span>
+                    <strong style={{ color: "#0F172A" }}>
+                      {viewingAdopter.role} • {viewingAdopter.status || (viewingAdopter.is_active ? "Active" : "Inactive")}
+                    </strong>
+                  </div>
+                  <div style={{ gridColumn: "1 / -1", borderTop: "1px dashed #E2E8F0", paddingTop: 6, marginTop: 4 }}>
+                    <span style={{ color: "#94A3B8", fontSize: "11px" }}>
+                      Adopter User UUID: <code>{viewingStory.adopter_id}</code>
+                    </span>
+                  </div>
+                </div>
+              ) : viewingStory.adopter_id ? (
+                <div style={{ fontSize: "12.5px", color: "#475569" }}>
+                  Adopter ID: <code>{viewingStory.adopter_id}</code>
+                </div>
+              ) : (
+                <div style={{ fontSize: "12.5px", color: "#94A3B8", fontStyle: "italic" }}>
+                  Staff Submission (No external adopter linked)
+                </div>
+              )}
             </div>
 
-            {/* Dog Information Section (from real petService or dog_id) */}
-            <div style={{ padding: "12px", background: "#F8FAFC", borderRadius: 8, border: "1px solid #E2E8F0" }}>
-              <div style={{ fontSize: "12px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", marginBottom: 6 }}>
-                Associated Dog / Companion Pet
+            {/* Dog Information Card */}
+            <div style={{ padding: "14px", background: "#F8FAFC", borderRadius: 8, border: "1px solid #E2E8F0" }}>
+              <div style={{ fontSize: "12px", fontWeight: 700, color: "#059669", textTransform: "uppercase", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                <FaDog /> Associated Dog / Companion Pet
               </div>
               {loadingDog ? (
                 <div style={{ fontSize: "12.5px", color: "#64748B", display: "flex", alignItems: "center", gap: 6 }}>
                   <FaSpinner className="spin" /> Looking up pet details...
                 </div>
               ) : viewingDog ? (
-                <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                <div style={{ display: "flex", gap: "14px", alignItems: "center" }}>
                   {viewingDog.primary_photo_url || viewingDog.photos?.[0] ? (
                     <img
                       src={viewingDog.primary_photo_url || viewingDog.photos?.[0]}
                       alt={viewingDog.name}
-                      style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover" }}
+                      style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", border: "1px solid #CBD5E1" }}
                     />
-                  ) : null}
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: "13.5px", color: "#0F172A" }}>
+                  ) : (
+                    <div style={{ width: 56, height: 56, borderRadius: 8, background: "#E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", color: "#94A3B8" }}>
+                      <FaDog size={24} />
+                    </div>
+                  )}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: "14px", color: "#0F172A" }}>
                       {viewingDog.name} {viewingDog.breed ? `(${viewingDog.breed})` : ""}
                     </div>
-                    <div style={{ fontSize: "12px", color: "#64748B" }}>
-                      Status: <strong>{viewingDog.status}</strong> • ID: <code>{viewingStory.dog_id}</code>
+                    <div style={{ fontSize: "12px", color: "#64748B", marginTop: 2 }}>
+                      Status: <strong style={{ color: "#0F172A" }}>{viewingDog.status}</strong> • Gender: <strong>{viewingDog.gender || "N/A"}</strong>
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#94A3B8", marginTop: 4 }}>
+                      Pet UUID: <code>{viewingStory.dog_id}</code>
                     </div>
                   </div>
                 </div>
               ) : viewingStory.dog_id ? (
                 <div style={{ fontSize: "12.5px", color: "#475569" }}>
-                  Pet ID: <code>{viewingStory.dog_id}</code> (No additional details available)
+                  Pet ID: <code>{viewingStory.dog_id}</code>
                 </div>
               ) : (
-                <div style={{ fontSize: "12.5px", color: "#94A3B8" }}>
-                  No associated dog linked to this story.
+                <div style={{ fontSize: "12.5px", color: "#94A3B8", fontStyle: "italic" }}>
+                  General Adoption (No specific rescued dog profile linked)
                 </div>
               )}
+            </div>
+
+            {/* Timeline Metadata Grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", fontSize: "12px" }}>
+              <div style={{ padding: "8px 12px", background: "#F8FAFC", borderRadius: 6, border: "1px solid #E2E8F0" }}>
+                <span style={{ color: "#64748B" }}>Submitted At: </span>
+                <strong style={{ color: "#1E293B" }}>{new Date(viewingStory.created_at).toLocaleString()}</strong>
+              </div>
+              <div style={{ padding: "8px 12px", background: "#F8FAFC", borderRadius: 6, border: "1px solid #E2E8F0" }}>
+                <span style={{ color: "#64748B" }}>Featured Status: </span>
+                <strong style={{ color: viewingStory.is_featured ? "#D97706" : "#64748B" }}>
+                  {viewingStory.is_featured ? "Featured on Home" : "Standard"}
+                </strong>
+              </div>
             </div>
 
             {/* Modal Moderation Actions */}

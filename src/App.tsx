@@ -396,7 +396,7 @@ function App() {
               element={
                 <ProtectedRoute
                   permission="view_cms"
-                  allowedRoles={["super_admin"]}
+                  allowedRoles={["super_admin", "rescue_centre_admin"]}
                 />
               }
             >

@@ -528,6 +528,7 @@ export const getMenusForRole = (role?: string | UserRole | null): RoleMenuItem[]
     case "rescue_centre_admin":
       return [
         { name: "Dashboard", path: dashboardPath, iconType: "dashboard" },
+        { name: "Website Management (CMS)", path: "/cms", iconType: "cms" },
         { name: "Rescue Management", path: "/rescues", iconType: "rescues" },
         { name: "Rescue Requests", path: "/rescue-requests", iconType: "ambulance" },
         { name: "Dispatch Management", path: "/rescue-dispatch", iconType: "vehicles" },
