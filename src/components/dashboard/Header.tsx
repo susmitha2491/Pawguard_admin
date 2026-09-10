@@ -95,9 +95,9 @@ const getPageTitle = (pathname: string): string => {
   if (path.includes("/adoptions")) return "Adoption Management";
   if (path.includes("/fosters")) return "Foster Care";
   if (path.includes("/volunteers")) return "Volunteer Management";
-  if (path.includes("/medical-records")) return "Medical Suite";
-  if (path.includes("/vet-directory")) return "Vet Directory & Appointments";
-  if (path.includes("/medical-reminders")) return "Vaccine & Med Reminders";
+  if (path.includes("/medical-records")) return "Medical Examinations";
+  if (path.includes("/vet-directory")) return "Veterinary Appointments";
+  if (path.includes("/medical-reminders")) return "Vaccinations & Medications";
   if (path.includes("/inventory")) return "Inventory Management";
   if (path.includes("/finance")) return "Donations & Financials";
   if (path.includes("/vehicles")) return "Vehicle Fleet";
@@ -106,7 +106,7 @@ const getPageTitle = (pathname: string): string => {
   if (path.includes("/roles-permissions")) return "Roles & Permissions";
   if (path.includes("/cms")) return "Website Management (CMS)";
   if (path.includes("/audit-logs")) return "Audit Trail Logs";
-  if (path.includes("/certificates")) return "Vaccines & Certificates";
+  if (path.includes("/certificates")) return "Health Certificates";
   if (path.includes("/notifications")) return "System Notifications";
 
   return "PawGuard Platform";

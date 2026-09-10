@@ -595,7 +595,7 @@ const renderStatusBadge = (val: string) => {
 
   let bg = "#F1F5F9";
   let color = "#475569";
-  let label = s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const label = s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
   if (
     lower.includes("clear") ||
@@ -690,10 +690,10 @@ const renderStatusBadge = (val: string) => {
         }}
       >
         <h1 style={{ margin: 0, fontSize: "28px", fontWeight: 800 }}>
-          Smart Vaccination & Medication Reminders
+          Vaccinations, Medications & Reminders
         </h1>
         <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-          Shelter-wide medical registry tracking vaccination schedules, medication plans and reminders for all registered dogs.
+          Shelter-wide veterinary registry tracking vaccination schedules, active prescriptions, and clinical reminders.
         </p>
       </div>
 

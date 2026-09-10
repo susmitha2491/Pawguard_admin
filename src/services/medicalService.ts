@@ -69,6 +69,83 @@ export interface MedicalClearancePayload {
   expires_at?: string;
 }
 
+export const CRITICAL_MEDICAL_KEYWORDS = [
+  "critical",
+  "emergency",
+  "urgent",
+  "high priority",
+  "icu",
+  "post-op",
+  "surgery",
+  "bleeding",
+  "broken",
+  "fracture",
+  "trauma",
+  "severe",
+  "wound",
+  "laceration",
+  "parvo",
+  "distemper",
+  "poisoning",
+  "poison",
+  "quarantine",
+];
+
+export const isCriticalMedicalRecord = (r: Record<string, unknown>): boolean => {
+  if (!r) return false;
+  if (r.is_critical === true || r.is_urgent === true) return true;
+
+  const raw = (r.raw as Record<string, unknown>) || {};
+  const prio = String(
+    r.priority ||
+    r.severity ||
+    raw.priority ||
+    raw.severity ||
+    raw.is_urgent ||
+    raw.is_critical ||
+    ""
+  ).toLowerCase();
+
+  if (prio.includes("critical") || prio.includes("high") || prio.includes("urgent")) return true;
+
+  const diagnosis = String(r.diagnosis || raw.triage_diagnosis || "").toLowerCase();
+  const injuries = String(raw.visible_injuries || "").toLowerCase();
+  const treatment = String(r.treatment || r.treatmentType || raw.treatment_type || "").toLowerCase();
+  const anesthesia = String(r.anesthesiaLog || raw.anesthesia_log || "").toLowerCase();
+  const postOp = String(r.postOpNotes || raw.post_op_notes || "").toLowerCase();
+  const status = String(r.status || "").toLowerCase();
+
+  if (injuries && injuries !== "none" && !injuries.includes("no visible injuries")) {
+    if (CRITICAL_MEDICAL_KEYWORDS.some((k) => injuries.includes(k))) return true;
+  }
+
+  if (diagnosis && !diagnosis.includes("no acute distress") && !diagnosis.includes("routine")) {
+    if (CRITICAL_MEDICAL_KEYWORDS.some((k) => diagnosis.includes(k))) return true;
+  }
+
+  if (
+    treatment.includes("surgery") ||
+    treatment.includes("wound") ||
+    treatment.includes("operation") ||
+    treatment.includes("emergency")
+  ) {
+    return true;
+  }
+  if (anesthesia && anesthesia.length > 0) return true;
+  if (postOp && postOp.length > 0) return true;
+
+  if (
+    status.includes("critical") ||
+    status.includes("emergency") ||
+    status.includes("icu") ||
+    status.includes("urgent")
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
 const pick = (data: Record<string, unknown>, ...keys: string[]): unknown => {
   for (const k of keys) {
     const v = data[k];

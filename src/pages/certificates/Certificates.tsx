@@ -576,9 +576,9 @@ const Certificates = () => {
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: "28px", fontWeight: 800 }}>Certificates & Legal Agreements</h1>
+            <h1 style={{ margin: 0, fontSize: "28px", fontWeight: 800 }}>Health Certificates Registry</h1>
             <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-              Official Veterinary Health Clearance certifications & digital clearance records confirming pets are medically assessed and ready for adoption.
+              Official Veterinary Health Clearance certifications &amp; digital clearance records confirming dogs are medically assessed and ready for adoption.
             </p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "rgba(255,255,255,0.08)", padding: "8px 14px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.15)" }}>
@@ -799,7 +799,7 @@ const Certificates = () => {
                     <div style={{ fontSize: "12.5px", color: "#991B1B", lineHeight: 1.5 }}>
                       <strong>No Completed Medical Assessment Found:</strong>
                       <br />
-                      This dog has not undergone a clinical medical assessment yet. In accordance with PawGuard PRD clinical protocol, you must complete a Clinical Exam in the Medical Suite before issuing a Health Clearance Certificate.
+                      This dog has not undergone a clinical medical assessment yet. In accordance with PawGuard PRD clinical protocol, you must complete a Clinical Exam under Medical Examinations before issuing a Health Clearance Certificate.
                     </div>
                   </div>
                 )}

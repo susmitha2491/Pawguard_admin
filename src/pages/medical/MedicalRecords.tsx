@@ -22,6 +22,7 @@ import {
   FaSearch,
 } from "react-icons/fa";
 import medicalService, {
+  isCriticalMedicalRecord,
   type ClinicalExamPayload,
   type MedicalTreatmentPayload,
   type VaccinationRecordPayload,
@@ -46,17 +47,6 @@ const inputStyle: React.CSSProperties = {
 const MedicalRecords = () => {
   const isRescueCentreAdmin = getCurrentUserRole() === "rescue_centre_admin";
   const [medicalRecords, setMedicalRecords] = useState<Record<string, unknown>[]>([]);
-
-  if (isRescueCentreAdmin) {
-    return (
-      <div style={{ padding: "40px 20px", textAlign: "center" }}>
-        <h2 style={{ color: "#DC2626", fontWeight: 800 }}>Access Restricted</h2>
-        <p style={{ color: "#64748B", maxWidth: "600px", margin: "12px auto" }}>
-          Medical Records &amp; Clinical Management is reserved for Veterinarians, Shelter Managers, and Super Administrators. Rescue Centre Admin access is restricted to centre rescue operations, dispatch, vehicle fleet, and dog master management.
-        </p>
-      </div>
-    );
-  }
   const [dogs, setDogs] = useState<Record<string, unknown>[]>([]);
   const [certificatesIssued, setCertificatesIssued] = useState(0);
   const [loading, setLoading] = useState<boolean>(true);
@@ -65,11 +55,20 @@ const MedicalRecords = () => {
   // Search & Pagination & Filter state
   const [searchParams] = useSearchParams();
   const dogIdParam = searchParams.get("dogId");
+  const categoryParam = searchParams.get("category") || searchParams.get("filter") || searchParams.get("priority");
   const [dogIdFilter, setDogIdFilter] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState(() => {
+    if (categoryParam) {
+      const cp = categoryParam.toLowerCase();
+      if (["critical", "exams", "vaccinations", "treatments", "prescriptions"].includes(cp)) {
+        return cp;
+      }
+    }
+    return "all";
+  });
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
@@ -80,6 +79,16 @@ const MedicalRecords = () => {
       setDogIdFilter(null);
     }
   }, [dogIdParam]);
+
+  useEffect(() => {
+    if (categoryParam) {
+      const cp = categoryParam.toLowerCase();
+      if (["critical", "exams", "vaccinations", "treatments", "prescriptions", "all"].includes(cp)) {
+        setCategoryFilter(cp);
+        setPage(1);
+      }
+    }
+  }, [categoryParam]);
 
   // Debounce search input (300ms)
   useEffect(() => {
@@ -150,9 +159,9 @@ const MedicalRecords = () => {
   });
 
   const [certForm, setCertForm] = useState<MedicalClearancePayload>({
-    clearance_type: "adoption_surgery",
+    clearance_type: "health_clearance",
     status: "approved",
-    decision_notes: "Healthy, cleared for adoption.",
+    decision_notes: "Medically assessed and confirmed healthy. Approved and ready for adoption.",
     expires_at: "",
   });
   const [certDogId, setCertDogId] = useState("");
@@ -243,6 +252,7 @@ const MedicalRecords = () => {
 
   const categoryOptions = useMemo(() => [
     { value: "all", label: "All Medical Categories" },
+    { value: "critical", label: "Critical & High Priority Cases" },
     { value: "exams", label: "Clinical Exams" },
     { value: "vaccinations", label: "Vaccinations" },
     { value: "treatments", label: "Treatments & Surgeries" },
@@ -258,9 +268,9 @@ const MedicalRecords = () => {
   ], []);
 
   const clearanceTypeOptions = useMemo(() => [
-    { value: "adoption_surgery", label: "Adoption & Surgery Clearance" },
-    { value: "health_clearance", label: "Health & Quarantine Clearance" },
-    { value: "travel_clearance", label: "Travel / Export Clearance" },
+    { value: "health_clearance", label: "Health / Medical Clearance (Ready for Adoption)" },
+    { value: "adoption_surgery", label: "Surgery / Post-Op Medical Clearance" },
+    { value: "travel_clearance", label: "Travel / Transfer Clearance" },
   ], []);
 
   const getContextField = (key: string): string => {
@@ -298,7 +308,10 @@ const MedicalRecords = () => {
   // Filtered & Paginated records
   const filteredRecords = useMemo(() => {
     return medicalRecords.filter((r) => {
-      const matchesCategory = categoryFilter === "all" || r.type === categoryFilter;
+      let matchesCategory = categoryFilter === "all" || r.type === categoryFilter;
+      if (categoryFilter === "critical") {
+        matchesCategory = isCriticalMedicalRecord(r);
+      }
       if (!matchesCategory) return false;
 
       // Filter by dogId query param if present
@@ -477,7 +490,7 @@ const MedicalRecords = () => {
       await medicalService.issueCertificate({ ...certForm, dog_id: certDogId });
       addToast("Clearance certificate issued!", "success");
       setIsCertModalOpen(false);
-      setCertForm({ clearance_type: "adoption_surgery", status: "approved", decision_notes: "Healthy, cleared for adoption.", expires_at: "" });
+      setCertForm({ clearance_type: "health_clearance", status: "approved", decision_notes: "Medically assessed and confirmed healthy. Approved and ready for adoption.", expires_at: "" });
       setCertDogId("");
       loadAllData();
       notifyDataChanged();
@@ -564,17 +577,57 @@ const MedicalRecords = () => {
     { key: "recordId", title: "Record ID", render: (_v, row) => <span style={{ fontFamily: "monospace", fontWeight: 700 }}>{String(row.recordId || row.id || "-").slice(0, 8)}</span> },
     { key: "petName", title: "Pet Name & ID", render: (_v, row) => <div><strong>{String(row.petName || "-")}</strong><div style={{ fontSize: "11px", color: "#64748B" }}>ID: {String(row.petId || "-")}</div></div> },
     { key: "vetName", title: "Attending Vet", render: (_v, row) => <span>{String(row.vetName || "-")}</span> },
-    { key: "diagnosis", title: "Diagnosis / Type", render: (_v, row) => <span>{String(row.diagnosis && row.diagnosis !== "-" ? row.diagnosis : row.categoryName || row.type || "-")}</span> },
+    {
+      key: "diagnosis",
+      title: "Diagnosis / Type",
+      render: (_v, row) => {
+        const isCritical = isCriticalMedicalRecord(row);
+        const text = String(row.diagnosis && row.diagnosis !== "-" ? row.diagnosis : row.categoryName || row.type || "-");
+        return (
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+            {isCritical && (
+              <span
+                style={{
+                  background: "#FEE2E2",
+                  color: "#DC2626",
+                  padding: "2px 8px",
+                  borderRadius: "999px",
+                  fontSize: "11px",
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  display: "inline-flex",
+                  alignItems: "center",
+                }}
+              >
+                Critical
+              </span>
+            )}
+            <span>{text}</span>
+          </div>
+        );
+      },
+    },
     { key: "treatment", title: "Treatment / Notes", render: (_v, row) => <span style={{ maxWidth: "240px", display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{String(row.treatment || "-")}</span> },
     { key: "date", title: "Date Recorded", render: (_v, row) => <span>{row.date ? formatDateTime(row.date as string) : "-"}</span> },
   ];
 
+  if (isRescueCentreAdmin) {
+    return (
+      <div style={{ padding: "40px 20px", textAlign: "center" }}>
+        <h2 style={{ color: "#DC2626", fontWeight: 800 }}>Access Restricted</h2>
+        <p style={{ color: "#64748B", maxWidth: "600px", margin: "12px auto" }}>
+          Medical Records &amp; Clinical Management is reserved for Veterinarians, Shelter Managers, and Super Administrators. Rescue Centre Admin access is restricted to centre rescue operations, dispatch, vehicle fleet, and dog master management.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
-        <h1 style={{ margin: 0, fontSize: "28px", fontWeight: 800 }}>Medical Records &amp; Clinical Care</h1>
+        <h1 style={{ margin: 0, fontSize: "28px", fontWeight: 800 }}>Medical Examinations &amp; Clinical Care</h1>
         <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-          Centralized veterinary management system: patient histories, clinical exams, surgical logs, prescriptions, medication administration, and medical clearance certificates.
+          Centralized veterinary management system: patient histories, clinical exams, surgical logs, prescriptions, medication administration, and health clearance certificates.
         </p>
       </div>
 
@@ -595,7 +648,7 @@ const MedicalRecords = () => {
           <QuickActionCard icon={<FaClipboardList />} title="Log Administration" subtitle="Record dose given" color="#0D9488" onClick={() => setIsAdministrationModalOpen(true)} />
         </Can>
         <Can permission="create_medical">
-          <QuickActionCard icon={<FaFileMedical />} title="Issue Clearance" subtitle="Adoption certificate" color="#6366F1" onClick={() => setIsCertModalOpen(true)} />
+          <QuickActionCard icon={<FaFileMedical />} title="Issue Health Clearance" subtitle="Health clearance cert" color="#6366F1" onClick={() => setIsCertModalOpen(true)} />
         </Can>
       </div>
 

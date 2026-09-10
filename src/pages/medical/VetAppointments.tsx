@@ -51,6 +51,9 @@ const badgeStyle = (bg: string, color: string): React.CSSProperties => ({
   textTransform: "capitalize",
 });
 
+const isUuid = (v: unknown): boolean =>
+  typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
+
 const VetAppointments = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"directory" | "appointments">("appointments");
@@ -232,9 +235,6 @@ const VetAppointments = () => {
     }, 350);
     return () => window.clearTimeout(timer);
   }, [clinicSearch, fetchClinics]);
-
-  const isUuid = (v: unknown): boolean =>
-    typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
 
   const formatApptId = (v: unknown, r?: Row): string => {
     const code = pick(r || {}, "reference_code", "appointment_number", "code");
@@ -677,10 +677,10 @@ const VetAppointments = () => {
         }}
       >
         <h1 style={{ margin: 0, fontSize: "28px", fontWeight: 800 }}>
-          Veterinary Appointments & Directory
+          Veterinary Appointments
         </h1>
         <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-          Received veterinary appointments submitted by PawGuard users through supported web and mobile channels.
+          Manage received veterinary appointments, clinical consultations, and provider directory.
         </p>
       </div>
 

@@ -562,11 +562,11 @@ export const getMenusForRole = (role?: string | UserRole | null): RoleMenuItem[]
     case "veterinarian":
       return [
         { name: "Dashboard", path: dashboardPath, iconType: "dashboard" },
-        { name: "Medical Suite", path: "/medical-records", iconType: "medical" },
-        { name: "Vet Directory & Appointments", path: "/vet-directory", iconType: "medical" },
-        { name: "Vaccination & Medication Reminders", path: "/medical-reminders", iconType: "medical" },
+        { name: "Medical Examinations", path: "/medical-records", iconType: "medical" },
+        { name: "Veterinary Appointments", path: "/vet-directory", iconType: "medical" },
+        { name: "Vaccinations & Medications", path: "/medical-reminders", iconType: "medical" },
         { name: "Dog Profiles", path: "/pets", iconType: "pets" },
-        { name: "Vaccines & Certs", path: "/certificates", iconType: "certificates" },
+        { name: "Health Certificates", path: "/certificates", iconType: "certificates" },
         { name: "Reports & Analytics", path: "/reports", iconType: "reports" },
       ];
 

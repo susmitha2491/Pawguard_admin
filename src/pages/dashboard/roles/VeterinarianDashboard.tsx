@@ -17,7 +17,6 @@ import {
   FaCheck,
   FaBan,
   FaSearch,
-  FaUserMd,
   FaHeartbeat,
   FaEye,
   FaCheckCircle,
@@ -26,7 +25,7 @@ import {
   FaCertificate,
 } from "react-icons/fa";
 import vetService from "../../../services/vetService";
-import medicalService from "../../../services/medicalService";
+import medicalService, { isCriticalMedicalRecord } from "../../../services/medicalService";
 import petService from "../../../services/petService";
 import userService from "../../../services/userService";
 import dashboardService from "../../../services/dashboardService";
@@ -61,6 +60,9 @@ const badgeStyle = (bg: string, color: string): React.CSSProperties => ({
   display: "inline-block",
   textTransform: "uppercase",
 });
+
+const isUuid = (v: unknown): boolean =>
+  typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
 
 const emptyConsultationForm = {
   chiefComplaint: "",
@@ -213,9 +215,9 @@ const VeterinarianDashboard = () => {
       // 3. Issue Medical Clearance via POST /api/v1/medical/clearance/{dog_id}
       await medicalService.issueCertificate({
         dog_id: id,
-        clearance_type: "adoption_surgery",
+        clearance_type: "health_clearance",
         status: "approved",
-        decision_notes: "Healthy, cleared for adoption.",
+        decision_notes: "Medically assessed and confirmed healthy. Approved and ready for adoption.",
       });
 
       // 4. Verify clearance from backend GET /api/v1/medical/clearances/dogs/{dog_id}
@@ -467,9 +469,6 @@ const VeterinarianDashboard = () => {
   useEffect(() => {
     fetchDashboardData();
   }, [fetchDashboardData]);
-
-  const isUuid = (v: unknown): boolean =>
-    typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
 
   const formatApptId = (v: unknown, r?: Row): string => {
     const code = pick(r || {}, "reference_code", "appointment_number", "code");
@@ -888,27 +887,19 @@ const VeterinarianDashboard = () => {
     return matchesStatus && matchesSearch;
   });
 
-  const todayStr = new Date().toISOString().split("T")[0];
-  const apptsTodayList = appointments.filter((a) => {
-    const dStr = str(pick(a, "starts_at", "date", "appointment_date", "created_at")).split("T")[0];
-    return dStr === todayStr;
-  });
-  const todayApptsCount = vetSummary?.today_appointments ?? (apptsTodayList.length > 0 ? apptsTodayList.length : appointments.length);
+  const totalApptsCount = vetSummary?.total_appointments ?? appointments.length;
 
-  const pendingTodayCount = (apptsTodayList.length > 0 ? apptsTodayList : appointments).filter((a) => {
+  const pendingApptsCount = appointments.filter((a) => {
     const s = str(pick(a, "status")).toLowerCase();
     return s === "requested" || s === "pending";
   }).length;
 
-  const confirmedTodayCount = (apptsTodayList.length > 0 ? apptsTodayList : appointments).filter((a) => {
+  const confirmedApptsCount = appointments.filter((a) => {
     const s = str(pick(a, "status")).toLowerCase();
     return s === "confirmed";
   }).length;
 
-  const criticalCasesCount = vetSummary?.critical_cases ?? medicalRecords.filter((r) => {
-    const st = str(r.status || r.diagnosis || r.treatment).toLowerCase();
-    return st.includes("critical") || st.includes("emergency") || st.includes("post-op") || st.includes("icu");
-  }).length;
+  const criticalCasesCount = medicalRecords.filter(isCriticalMedicalRecord).length;
 
   const loggedVaccinesCount = vetSummary?.total_vaccinations ?? medicalRecords.filter((r) =>
     str(r.entityType || r.categoryName || r.type).toLowerCase().includes("vaccin")
@@ -920,16 +911,12 @@ const VeterinarianDashboard = () => {
 
   const stats = [
     {
-      title: "Appointments Today",
-      value: loading ? "..." : String(todayApptsCount),
-      trend: `${pendingTodayCount} Pending / ${confirmedTodayCount} Confirmed`,
+      title: "Total Appointments",
+      value: loading ? "..." : String(totalApptsCount),
+      trend: `${pendingApptsCount} Pending / ${confirmedApptsCount} Confirmed`,
       color: "#1E3A8A",
       icon: <FaCalendarAlt />,
-      onClick: () => {
-        setStatusFilter("all");
-        const el = document.getElementById("appointments-queue");
-        if (el) el.scrollIntoView({ behavior: "smooth" });
-      },
+      onClick: () => navigate("/vet-directory"),
     },
     {
       title: "Critical Medical Cases",
@@ -937,10 +924,7 @@ const VeterinarianDashboard = () => {
       trend: "High Priority Medical Watch",
       color: "#DC2626",
       icon: <FaExclamationCircle />,
-      onClick: () => {
-        const el = document.getElementById("icu-queue");
-        if (el) el.scrollIntoView({ behavior: "smooth" });
-      },
+      onClick: () => navigate("/medical-records?category=critical"),
     },
     {
       title: "Vaccinations Logged",
@@ -1132,10 +1116,10 @@ const VeterinarianDashboard = () => {
 
       {/* Quick Action Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", marginBottom: "20px" }}>
-        <QuickActionCard icon={<FaStethoscope />} title="Medical Records" subtitle="Exams & Diagnoses" color="#1E3A8A" onClick={() => navigate("/medical-records")} />
-        <QuickActionCard icon={<FaSyringe />} title="Vaccination Suite" subtitle="Booster Reminders" color="#16A34A" onClick={() => navigate("/medical-reminders")} />
-        <QuickActionCard icon={<FaFileMedical />} title="Issue Certificate" subtitle="Medical clearance" color="#1E3A8A" onClick={() => navigate("/certificates")} />
-        <QuickActionCard icon={<FaUserMd />} title="Vet Directory" subtitle="Browse Partner Clinics" color="#1E3A8A" onClick={() => navigate("/vet-directory")} />
+        <QuickActionCard icon={<FaStethoscope />} title="Medical Examinations" subtitle="Exams & Diagnoses" color="#1E3A8A" onClick={() => navigate("/medical-records")} />
+        <QuickActionCard icon={<FaSyringe />} title="Vaccinations & Medications" subtitle="Booster Reminders" color="#16A34A" onClick={() => navigate("/medical-reminders")} />
+        <QuickActionCard icon={<FaFileMedical />} title="Health Certificates" subtitle="Medical clearance" color="#1E3A8A" onClick={() => navigate("/certificates")} />
+        <QuickActionCard icon={<FaCalendarAlt />} title="Veterinary Appointments" subtitle="Schedule & Consultations" color="#1E3A8A" onClick={() => navigate("/vet-directory")} />
         <QuickActionCard icon={<FaChartBar />} title="Reports & Analytics" subtitle="Clinical performance metrics" color="#7C3AED" onClick={() => navigate("/reports")} />
       </div>
 
