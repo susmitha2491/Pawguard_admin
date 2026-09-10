@@ -83,7 +83,7 @@ export interface FosterBackgroundCheckInitiatePayload {
 }
 
 export interface FosterBackgroundCheckOutcomePayload {
-  outcome: "cleared" | "flagged" | "rejected";
+  outcome: "cleared" | "flagged" | "rejected" | string;
   notes: string;
   references_checked?: boolean;
   reference_notes?: string;
@@ -93,7 +93,7 @@ export interface FosterHomeInspectionSchedulePayload {
   scheduled_at: string;
   inspector_id?: string;
   inspector_name?: string;
-  inspection_type: "in_person" | "virtual" | "shelter_visit" | string;
+  inspection_type: "in_person" | "virtual" | "shelter_visit" | "physical" | string;
   address?: string;
   notes?: string;
 }
@@ -110,7 +110,7 @@ export interface FosterHomeInspectionAuditPayload {
 }
 
 export interface FosterHomeInspectionOutcomePayload {
-  outcome: "approved" | "rejected";
+  outcome: "approved" | "rejected" | string;
   notes: string;
   address?: string;
 }
@@ -119,6 +119,14 @@ export interface FosterSupplyDispatchPayload {
   item_type: "food" | "crate" | "medication" | "bedding" | "toys" | "other" | string;
   description?: string;
   quantity?: number;
+}
+
+export interface FosterRejectPayload {
+  reason?: string;
+  rejection_reason?: string;
+  notes?: string;
+  vetting_notes?: string;
+  status?: string;
 }
 
 export const fosterService = {
@@ -140,9 +148,26 @@ export const fosterService = {
     return response.data;
   },
 
-  // Backwards-compatible alias
+  // GET /fosters/{profile_id} - get single foster profile
+  getFosterProfile: async (profileId: string) => {
+    const response = await api.get(`/fosters/${profileId}`);
+    return response.data;
+  },
+
+  // Alias for getFosterProfile
+  getProfile: async (profileId: string) => {
+    return fosterService.getFosterProfile(profileId);
+  },
+
+  // GET /fosters/placements - list all foster placements
+  getPlacements: async (params?: Record<string, unknown>) => {
+    const response = await api.get("/fosters/placements", { params });
+    return response.data;
+  },
+
+  // Backwards-compatible alias for getPlacements
   getFosterPlacements: async (params?: Record<string, unknown>) => {
-    const response = await api.get("/fosters", { params });
+    const response = await api.get("/fosters/placements", { params });
     return response.data;
   },
 
@@ -172,7 +197,7 @@ export const fosterService = {
   },
 
   // PUT /fosters/{profile_id} - FosterProfileUpdate
-  updateProfile: async (profileId: string, data: Record<string, unknown> | FosterProfileUpdatePayload) => {
+  updateFosterProfile: async (profileId: string, data: Record<string, unknown> | FosterProfileUpdatePayload) => {
     const response = await api.put(`/fosters/${profileId}`, data);
     await publishActionEvent({
       module: "foster",
@@ -184,13 +209,66 @@ export const fosterService = {
     return response.data;
   },
 
+  // Alias for updateFosterProfile
+  updateProfile: async (profileId: string, data: Record<string, unknown> | FosterProfileUpdatePayload) => {
+    return fosterService.updateFosterProfile(profileId, data);
+  },
+
+  // POST /fosters/{profile_id}/approve - Approve foster profile (Direct Dedicated Endpoint)
+  approveProfile: async (profileId: string, data?: Record<string, unknown> | FosterProfileUpdatePayload) => {
+    const response = await api.post(`/fosters/${profileId}/approve`, data || {});
+    await publishActionEvent({
+      module: "foster",
+      action: "approve",
+      title: "Foster Caregiver Application Approved",
+      message: `Foster profile ${profileId} was approved and is now eligible for placements.`,
+      targetRoles: ["super_admin", "foster_coordinator"],
+    });
+    return response.data;
+  },
+
+  // POST /fosters/{profile_id}/reject - Reject foster application (Direct Dedicated Endpoint)
+  rejectProfile: async (profileId: string, payload?: FosterRejectPayload | string) => {
+    const data: FosterRejectPayload =
+      typeof payload === "string"
+        ? { reason: payload, rejection_reason: payload, notes: payload, status: "rejected" }
+        : {
+            reason: payload?.reason || payload?.rejection_reason || "Application rejected by coordinator",
+            rejection_reason: payload?.rejection_reason || payload?.reason || "Application rejected by coordinator",
+            notes: payload?.notes || payload?.vetting_notes || "",
+            vetting_notes: payload?.vetting_notes || payload?.notes || "",
+            status: "rejected",
+          };
+
+    const response = await api.post(`/fosters/${profileId}/reject`, data);
+    await publishActionEvent({
+      module: "foster",
+      action: "update",
+      title: "Foster Application Rejected",
+      message: `Foster application ${profileId} was rejected.`,
+      targetRoles: ["super_admin", "foster_coordinator"],
+    });
+    return response.data;
+  },
+
+  // POST /fosters/{profile_id}/status - Update Foster Status (Direct Dedicated Endpoint)
+  updateProfileStatus: async (profileId: string, status: string, notes?: string) => {
+    const data: FosterRejectPayload = {
+      status,
+      reason: notes || `Status changed to ${status}`,
+      notes: notes || "",
+    };
+    const response = await api.post(`/fosters/${profileId}/status`, data);
+    return response.data;
+  },
+
   // DELETE /fosters/{profile_id}
   deleteProfile: async (profileId: string) => {
     const response = await api.delete(`/fosters/${profileId}`);
     return response.data;
   },
 
-  // POST /fosters/{profile_id}/placements - Place dog with foster parent
+  // POST /fosters/{profile_id}/placements - Place dog with foster parent (Direct Dedicated Endpoint)
   placeDog: async (profileId: string, data: FosterPlacementPayload) => {
     const response = await api.post(`/fosters/${profileId}/placements`, data);
     await publishActionEvent({
@@ -203,28 +281,22 @@ export const fosterService = {
     return response.data;
   },
 
+  // Alias for placeDog
+  createFosterPlacement: async (profileId: string, data: FosterPlacementPayload) => {
+    return fosterService.placeDog(profileId, data);
+  },
+
   // GET /fosters/{profile_id}/placements
   getProfilePlacements: async (profileId: string) => {
     const response = await api.get(`/fosters/${profileId}/placements`);
     return response.data;
   },
 
-  // POST /fosters/placements/{placement_id}/return - Return dog from foster
+  // POST /fosters/placements/{placement_id}/return - Return dog from foster (Direct Dedicated Endpoint)
   returnDog: async (placementId: string, data?: string | FosterReturnPayload) => {
     const payload: FosterReturnPayload =
       typeof data === "string" ? { notes: data, reason: "Normal Placement Conclusion" } : (data || {});
-    let resData: any = null;
-    try {
-      const response = await api.post(`/fosters/placements/${placementId}/return`, payload);
-      resData = response.data;
-    } catch (err: any) {
-      if (err?.response?.status === 404 || err?.response?.status === 405) {
-        const fallbackRes = await api.post(`/fosters/placements/${placementId}/return-to-shelter`, payload);
-        resData = fallbackRes.data;
-      } else {
-        throw err;
-      }
-    }
+    const response = await api.post(`/fosters/placements/${placementId}/return`, payload);
     await publishActionEvent({
       module: "foster",
       action: "update",
@@ -232,23 +304,17 @@ export const fosterService = {
       message: `Foster placement ${placementId} concluded and animal returned to shelter.`,
       targetRoles: ["super_admin", "foster_coordinator", "shelter_manager"],
     });
-    return resData;
+    return response.data;
   },
 
-  // POST /fosters/placements/{placement_id}/vet-check - Request Vet Check
+  // Alias for returnDog
+  returnPlacement: async (placementId: string, data?: string | FosterReturnPayload) => {
+    return fosterService.returnDog(placementId, data);
+  },
+
+  // POST /fosters/placements/{placement_id}/vet-check - Request Vet Check (Direct Dedicated Endpoint)
   requestVetCheck: async (placementId: string, payload: FosterVetCheckPayload) => {
-    let resData: any = null;
-    try {
-      const response = await api.post(`/fosters/placements/${placementId}/vet-check`, payload);
-      resData = response.data;
-    } catch (err: any) {
-      if (err?.response?.status === 404 || err?.response?.status === 405) {
-        const fallbackRes = await api.post(`/fosters/placements/${placementId}/request-vet-check`, payload);
-        resData = fallbackRes.data;
-      } else {
-        throw err;
-      }
-    }
+    const response = await api.post(`/fosters/placements/${placementId}/vet-check`, payload);
     await publishActionEvent({
       module: "foster",
       action: "create",
@@ -256,79 +322,42 @@ export const fosterService = {
       message: `Veterinary examination requested (${payload.urgency}): ${payload.reason}`,
       targetRoles: ["super_admin", "foster_coordinator", "veterinarian"],
     });
-    return resData;
+    return response.data;
   },
 
-  // POST /fosters/placements/{placement_id}/progress - Log foster progress report
+  // POST /fosters/placements/{placement_id}/progress - Log foster progress report (Direct Dedicated Endpoint)
   logProgress: async (placementId: string, data: Record<string, unknown> | FosterProgressLogPayload) => {
     const response = await api.post(`/fosters/placements/${placementId}/progress`, data);
     return response.data;
   },
 
+  // Alias for logProgress
+  addProgress: async (placementId: string, data: Record<string, unknown> | FosterProgressLogPayload) => {
+    return fosterService.logProgress(placementId, data);
+  },
+
   // POST /fosters/placements/{placement_id}/progress/weight - Log Weight
   logWeight: async (placementId: string, payload: FosterWeightLogPayload) => {
-    try {
-      const response = await api.post(`/fosters/placements/${placementId}/progress/weight`, payload);
-      return response.data;
-    } catch (err: any) {
-      if (err?.response?.status === 404 || err?.response?.status === 405) {
-        return fosterService.logProgress(placementId, {
-          weight_kg: payload.weight_kg,
-          notes: payload.notes,
-        });
-      }
-      throw err;
-    }
+    const response = await api.post(`/fosters/placements/${placementId}/progress/weight`, payload);
+    return response.data;
   },
 
   // POST /fosters/placements/{placement_id}/progress/behavior - Log Behavior
   logBehavior: async (placementId: string, payload: FosterBehaviorLogPayload) => {
-    try {
-      const response = await api.post(`/fosters/placements/${placementId}/progress/behavior`, payload);
-      return response.data;
-    } catch (err: any) {
-      if (err?.response?.status === 404 || err?.response?.status === 405) {
-        return fosterService.logProgress(placementId, {
-          behavior_notes: payload.behavior_notes,
-          mood_rating: payload.mood_rating,
-          exercise_minutes: payload.exercise_minutes,
-          notes: payload.notes,
-        });
-      }
-      throw err;
-    }
+    const response = await api.post(`/fosters/placements/${placementId}/progress/behavior`, payload);
+    return response.data;
   },
 
   // POST /fosters/placements/{placement_id}/progress/medication - Log Medication Check-in
   logMedication: async (placementId: string, payload: FosterMedicationLogPayload) => {
-    try {
-      const response = await api.post(`/fosters/placements/${placementId}/progress/medication`, payload);
-      return response.data;
-    } catch (err: any) {
-      if (err?.response?.status === 404 || err?.response?.status === 405) {
-        return fosterService.logProgress(placementId, {
-          medication_notes: `${payload.medication_notes} (Verified: ${payload.verified ? "Yes" : "No"})`,
-          notes: payload.notes,
-        });
-      }
-      throw err;
-    }
+    const response = await api.post(`/fosters/placements/${placementId}/progress/medication`, payload);
+    return response.data;
   },
 
   // POST /fosters/placements/{placement_id}/progress/media - Log Media
   logMedia: async (placementId: string, payload: FosterMediaLogPayload) => {
-    try {
-      const response = await api.post(`/fosters/placements/${placementId}/progress/media`, payload);
-      return response.data;
-    } catch (err: any) {
-      if (err?.response?.status === 404 || err?.response?.status === 405) {
-        return fosterService.logProgress(placementId, {
-          photo_urls: payload.photo_urls,
-          notes: payload.caption || payload.notes,
-        });
-      }
-      throw err;
-    }
+    const response = await api.post(`/fosters/placements/${placementId}/progress/media`, payload);
+    return response.data;
   },
 
   // GET /fosters/placements/{placement_id}/progress
@@ -337,94 +366,63 @@ export const fosterService = {
     return response.data;
   },
 
-  // Background Check Methods
-  initiateBackgroundCheck: async (profileId: string, payload: FosterBackgroundCheckInitiatePayload) => {
-    try {
-      const response = await api.post(`/fosters/${profileId}/background-check/initiate`, payload);
-      return response.data;
-    } catch (err: any) {
-      if (err?.response?.status === 404 || err?.response?.status === 405) {
-        return fosterService.updateProfile(profileId, {
-          vetting_notes: `Background check initiated with ${payload.provider || "PawGuard Registry"}. ${payload.notes || ""}`.trim(),
-        });
-      }
-      throw err;
-    }
+  // POST /fosters/{profile_id}/background-check/initiate - Initiate Background Check (Direct Dedicated Endpoint)
+  initiateBackgroundCheck: async (profileId: string, payload?: FosterBackgroundCheckInitiatePayload) => {
+    const response = await api.post(`/fosters/${profileId}/background-check/initiate`, payload || {});
+    return response.data;
+  },
+
+  // POST /fosters/{profile_id}/background-check/outcome - Record Outcome (Direct Dedicated Endpoint)
+  submitBackgroundCheckOutcome: async (profileId: string, payload: FosterBackgroundCheckOutcomePayload) => {
+    const response = await api.post(`/fosters/${profileId}/background-check/outcome`, payload);
+    return response.data;
   },
 
   recordBackgroundCheckOutcome: async (profileId: string, payload: FosterBackgroundCheckOutcomePayload) => {
-    try {
-      const response = await api.post(`/fosters/${profileId}/background-check/outcome`, payload);
-      return response.data;
-    } catch (err: any) {
-      if (err?.response?.status === 404 || err?.response?.status === 405) {
-        const isPassed = payload.outcome === "cleared";
-        return fosterService.updateProfile(profileId, {
-          background_check_passed: isPassed,
-          background_check_notes: `[${payload.outcome.toUpperCase()}] ${payload.notes}`,
-          references_checked: payload.references_checked,
-          reference_notes: payload.reference_notes,
-        });
-      }
-      throw err;
-    }
+    return fosterService.submitBackgroundCheckOutcome(profileId, payload);
   },
 
-  // Home Inspection Methods
+  updateBackgroundCheck: async (profileId: string, payload: FosterBackgroundCheckOutcomePayload) => {
+    return fosterService.submitBackgroundCheckOutcome(profileId, payload);
+  },
+
+  // POST /fosters/{profile_id}/home-inspection/schedule - Schedule Inspection (Direct Dedicated Endpoint)
   scheduleHomeInspection: async (profileId: string, payload: FosterHomeInspectionSchedulePayload) => {
-    try {
-      const response = await api.post(`/fosters/${profileId}/home-inspection/schedule`, payload);
-      return response.data;
-    } catch (err: any) {
-      if (err?.response?.status === 404 || err?.response?.status === 405) {
-        return fosterService.updateProfile(profileId, {
-          home_inspection_address: payload.address,
-          home_inspection_notes: `Inspection scheduled for ${payload.scheduled_at} (${payload.inspection_type}). ${payload.notes || ""}`.trim(),
-        });
-      }
-      throw err;
-    }
+    const response = await api.post(`/fosters/${profileId}/home-inspection/schedule`, payload);
+    return response.data;
   },
 
   logHomeInspectionAudit: async (profileId: string, payload: FosterHomeInspectionAuditPayload) => {
-    try {
-      const response = await api.post(`/fosters/${profileId}/home-inspection/log`, payload);
-      return response.data;
-    } catch (err: any) {
-      if (err?.response?.status === 404 || err?.response?.status === 405) {
-        try {
-          const altRes = await api.post(`/fosters/${profileId}/home-inspection/audit`, payload);
-          return altRes.data;
-        } catch {
-          return fosterService.updateProfile(profileId, {
-            home_inspection_notes: `Inspection Audit: Yard: ${payload.yard_condition || "N/A"}, Fence: ${payload.fencing_condition || "N/A"}, Hazards: ${payload.hazards || "None"}, Rating: ${payload.rating || 5}/5. ${payload.notes || ""}`.trim(),
-          });
-        }
-      }
-      throw err;
-    }
+    const response = await api.post(`/fosters/${profileId}/home-inspection/log`, payload);
+    return response.data;
+  },
+
+  // POST /fosters/{profile_id}/home-inspection/outcome - Record Home Inspection Outcome (Direct Dedicated Endpoint)
+  submitHomeInspectionOutcome: async (profileId: string, payload: FosterHomeInspectionOutcomePayload) => {
+    const response = await api.post(`/fosters/${profileId}/home-inspection/outcome`, payload);
+    return response.data;
   },
 
   recordHomeInspectionOutcome: async (profileId: string, payload: FosterHomeInspectionOutcomePayload) => {
-    try {
-      const response = await api.post(`/fosters/${profileId}/home-inspection/outcome`, payload);
-      return response.data;
-    } catch (err: any) {
-      if (err?.response?.status === 404 || err?.response?.status === 405) {
-        return fosterService.updateProfile(profileId, {
-          home_inspection_passed: payload.outcome === "approved",
-          home_inspection_notes: `[${payload.outcome.toUpperCase()}] ${payload.notes}`,
-          home_inspection_address: payload.address,
-        });
-      }
-      throw err;
-    }
+    return fosterService.submitHomeInspectionOutcome(profileId, payload);
   },
 
-  // POST /fosters/placements/{placement_id}/supplies - Log supply dispatch
+  updateHomeInspection: async (profileId: string, payload: FosterHomeInspectionSchedulePayload | FosterHomeInspectionOutcomePayload) => {
+    if ("outcome" in payload) {
+      return fosterService.submitHomeInspectionOutcome(profileId, payload);
+    }
+    return fosterService.scheduleHomeInspection(profileId, payload);
+  },
+
+  // POST /fosters/placements/{placement_id}/supplies - Log supply dispatch (Direct Dedicated Endpoint)
   logSupplyDispatch: async (placementId: string, data: FosterSupplyDispatchPayload) => {
     const response = await api.post(`/fosters/placements/${placementId}/supplies`, data);
     return response.data;
+  },
+
+  // Alias for logSupplyDispatch
+  dispatchSupplies: async (placementId: string, data: FosterSupplyDispatchPayload) => {
+    return fosterService.logSupplyDispatch(placementId, data);
   },
 
   // GET /fosters/placements/{placement_id}/supplies
@@ -439,51 +437,23 @@ export const fosterService = {
     return response.data;
   },
 
-  // POST /fosters/placements/{placement_id}/convert-to-adopt - Foster to Adopt conversion
+  // POST /fosters/placements/{placement_id}/convert-to-adopt - Foster to Adopt conversion (Direct Dedicated Endpoint)
   convertToAdopt: async (placementId: string, notes?: string) => {
     const payload = notes ? { notes } : {};
-    try {
-      const response = await api.post(`/fosters/placements/${placementId}/convert-to-adopt`, payload);
-      await publishActionEvent({
-        module: "foster",
-        action: "approve",
-        title: "Foster Placement Converted to Adoption",
-        message: `Placement ${placementId} converted into permanent adoption!`,
-        targetRoles: ["super_admin", "foster_coordinator", "adoption_coordinator"],
-      });
-      return response.data;
-    } catch (err: any) {
-      const status = err?.response?.status;
-      // If 404/405, fallback to alternate registered route aliases
-      if (status === 404 || status === 405) {
-        try {
-          const altRes = await api.post(`/fosters/placements/${placementId}/convert`, payload);
-          await publishActionEvent({
-            module: "foster",
-            action: "approve",
-            title: "Foster Placement Converted to Adoption",
-            message: `Placement ${placementId} converted into permanent adoption!`,
-            targetRoles: ["super_admin", "foster_coordinator", "adoption_coordinator"],
-          });
-          return altRes.data;
-        } catch (altErr: any) {
-          if (altErr?.response?.status === 404 || altErr?.response?.status === 405) {
-            const singularRes = await api.post(`/foster/placements/${placementId}/convert-to-adopt`, payload);
-            await publishActionEvent({
-              module: "foster",
-              action: "approve",
-              title: "Foster Placement Converted to Adoption",
-              message: `Placement ${placementId} converted into permanent adoption!`,
-              targetRoles: ["super_admin", "foster_coordinator", "adoption_coordinator"],
-            });
-            return singularRes.data;
-          }
-          throw altErr;
-        }
-      }
-      // Re-throw genuine errors (including 409 Conflict, 400, 403, 500) directly to caller
-      throw err;
-    }
+    const response = await api.post(`/fosters/placements/${placementId}/convert-to-adopt`, payload);
+    await publishActionEvent({
+      module: "foster",
+      action: "approve",
+      title: "Foster Placement Converted to Adoption",
+      message: `Placement ${placementId} converted into permanent adoption!`,
+      targetRoles: ["super_admin", "foster_coordinator", "adoption_coordinator"],
+    });
+    return response.data;
+  },
+
+  // Alias for convertToAdopt
+  convertToAdoption: async (placementId: string, notes?: string) => {
+    return fosterService.convertToAdopt(placementId, notes);
   },
 
   // POST /fosters/bulk/delete

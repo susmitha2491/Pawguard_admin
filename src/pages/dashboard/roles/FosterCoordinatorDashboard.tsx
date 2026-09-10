@@ -128,7 +128,7 @@ const FosterCoordinatorDashboard = () => {
     if (!id) { addToast("Invalid profile ID.", "error"); return; }
     try {
       setIsSubmitting(true);
-      await fosterService.updateProfile(id, {
+      await fosterService.approveProfile(id, {
         status: "approved",
         is_available: true,
         background_check_passed: true,
@@ -137,7 +137,7 @@ const FosterCoordinatorDashboard = () => {
       addToast("Foster caregiver application approved successfully!", "success");
       setIsAppModalOpen(false);
       setSelectedApplication(null);
-      fetchDashboard();
+      await fetchDashboard();
       notifyDataChanged();
     } catch (err: any) {
       addToast(err?.response?.data?.detail || err?.message || "Failed to approve application.", "error");
@@ -151,14 +151,14 @@ const FosterCoordinatorDashboard = () => {
     if (!id) { addToast("Invalid profile ID.", "error"); return; }
     try {
       setIsSubmitting(true);
-      await fosterService.updateProfile(id, {
+      await fosterService.rejectProfile(id, {
+        reason: "Application rejected by coordinator",
         status: "rejected",
-        is_available: false,
       });
       addToast("Foster caregiver application rejected.", "info");
       setIsAppModalOpen(false);
       setSelectedApplication(null);
-      fetchDashboard();
+      await fetchDashboard();
       notifyDataChanged();
     } catch (err: any) {
       addToast(err?.response?.data?.detail || err?.message || "Failed to reject application.", "error");

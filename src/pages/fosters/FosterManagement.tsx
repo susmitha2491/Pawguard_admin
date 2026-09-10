@@ -230,17 +230,6 @@ const FosterManagement = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { addToast } = useToast();
-
-  if (isRescueCentreAdmin) {
-    return (
-      <div style={{ padding: "40px 20px", textAlign: "center" }}>
-        <h2 style={{ color: "#DC2626", fontWeight: 800 }}>Access Restricted</h2>
-        <p style={{ color: "#64748B", maxWidth: "600px", margin: "12px auto" }}>
-          Foster Management is reserved for Foster Coordinators and Super Administrators. Rescue Centre Admin access is restricted to centre rescue operations, dispatch, vehicle fleet, and dog master management.
-        </p>
-      </div>
-    );
-  }
   const [searchParams] = useSearchParams();
 
   // Search & Pagination & Filtering
@@ -338,15 +327,39 @@ const FosterManagement = () => {
     rejection_reason: "",
   });
 
-  const handleOpenReview = (foster: FosterProfileRow) => {
-    const raw = foster.raw || {};
-    setSelectedFoster(foster);
+  const handleOpenReview = async (foster: FosterProfileRow) => {
+    setIsDetailModalOpen(false);
+    let freshData = foster.raw || {};
+    try {
+      const res = await fosterService.getFosterProfile(foster.id);
+      if (res) {
+        freshData = res.data || res;
+      }
+    } catch {
+      // fallback to row data if single fetch fails
+    }
+    const raw = freshData;
+    const user = raw.user || foster.user || {};
     const bgPassed = Boolean(raw.background_check_passed ?? foster.background_check_passed);
     const homePassed = Boolean(raw.home_inspection_passed ?? foster.home_inspection_passed);
+    const updatedFoster: FosterProfileRow = {
+      ...foster,
+      status: String(raw.status || foster.status || "applied"),
+      active_count: Number(raw.active_count ?? raw.placements_count ?? foster.active_count ?? 0),
+      max_capacity: Number(raw.max_capacity ?? foster.max_capacity ?? 1),
+      is_available: raw.is_available !== undefined ? Boolean(raw.is_available) : foster.is_available,
+      background_check_passed: bgPassed,
+      home_inspection_passed: homePassed,
+      preferences: raw.preferences || foster.preferences || "",
+      notes: raw.notes || foster.notes || "",
+      user,
+      raw,
+    };
+    setSelectedFoster(updatedFoster);
     setReviewForm({
-      max_capacity: Number(foster.max_capacity || 1),
-      preferences: foster.preferences || "",
-      notes: foster.notes || "",
+      max_capacity: Number(raw.max_capacity || foster.max_capacity || 1),
+      preferences: raw.preferences || foster.preferences || "",
+      notes: raw.notes || foster.notes || "",
       background_check_passed: bgPassed,
       background_check_notes: raw.background_check_notes || "",
       references_checked: Boolean(raw.references_checked),
@@ -392,7 +405,7 @@ const FosterManagement = () => {
         ...prev,
         background_check_notes: `Initiated with ${bgCheckProvider} on ${new Date().toLocaleDateString()}: ${bgCheckInitiateNotes}`.trim(),
       }));
-      fetchFosters();
+      await fetchFosters();
       notifyDataChanged();
     } catch (err: any) {
       const msg = extractBackendErrorMessage(err, "Failed to initiate background check.");
@@ -422,8 +435,12 @@ const FosterManagement = () => {
         background_check_passed: isPassed,
         background_check_notes: `[${bgCheckOutcome.toUpperCase()}] ${bgCheckOutcomeNotes.trim()}`,
       }));
+      setSelectedFoster((prev) => prev ? {
+        ...prev,
+        background_check_passed: isPassed,
+      } : null);
       addToast(`Background check outcome recorded as: ${bgCheckOutcome.toUpperCase()}`, "success");
-      fetchFosters();
+      await fetchFosters();
       notifyDataChanged();
     } catch (err: any) {
       const msg = extractBackendErrorMessage(err, "Failed to record background check outcome.");
@@ -455,7 +472,7 @@ const FosterManagement = () => {
         home_inspection_notes: `Scheduled for ${inspectionScheduleForm.scheduled_at} by ${inspectionScheduleForm.inspector_name} (${inspectionScheduleForm.inspection_type})`,
       }));
       setInspectionActiveTab("audit");
-      fetchFosters();
+      await fetchFosters();
       notifyDataChanged();
     } catch (err: any) {
       const msg = extractBackendErrorMessage(err, "Failed to schedule home inspection.");
@@ -485,7 +502,7 @@ const FosterManagement = () => {
         home_inspection_notes: `Audit: Yard: ${inspectionAuditForm.yard_condition}, Fence: ${inspectionAuditForm.fencing_condition}, Rating: ${inspectionAuditForm.rating}/5. ${inspectionAuditForm.notes || ""}`.trim(),
       }));
       setInspectionActiveTab("outcome");
-      fetchFosters();
+      await fetchFosters();
       notifyDataChanged();
     } catch (err: any) {
       const msg = extractBackendErrorMessage(err, "Failed to save inspection audit.");
@@ -544,8 +561,12 @@ const FosterManagement = () => {
         home_inspection_passed: isApproved,
         home_inspection_notes: `[${inspectionOutcomeForm.outcome.toUpperCase()}] ${inspectionOutcomeForm.notes.trim()}`,
       }));
+      setSelectedFoster((prev) => prev ? {
+        ...prev,
+        home_inspection_passed: isApproved,
+      } : null);
       addToast(`Home inspection outcome recorded: ${inspectionOutcomeForm.outcome.toUpperCase()}!`, "success");
-      fetchFosters();
+      await fetchFosters();
       notifyDataChanged();
     } catch (err: any) {
       const msg = extractBackendErrorMessage(err, "Failed to save inspection outcome.");
@@ -594,7 +615,7 @@ const FosterManagement = () => {
       addToast("Veterinary check request registered and dispatched to Veterinary Clinic!", "success");
       setIsVetCheckModalOpen(false);
       setSelectedPlacementForVetCheck(null);
-      fetchFosters();
+      await fetchFosters();
       notifyDataChanged();
     } catch (err: any) {
       const msg = extractBackendErrorMessage(err, "Failed to register veterinary check request.");
@@ -629,10 +650,10 @@ const FosterManagement = () => {
         vetting_notes: reviewForm.vetting_notes,
       });
       addToast("Vetting progress saved successfully!", "success");
-      fetchFosters();
+      await fetchFosters();
       notifyDataChanged();
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || err?.response?.data?.message || "Failed to save vetting progress.";
+      const msg = extractBackendErrorMessage(err, "Failed to save vetting progress.");
       addToast(msg, "error");
     } finally {
       setIsSubmitting(false);
@@ -651,7 +672,7 @@ const FosterManagement = () => {
     }
     try {
       setIsSubmitting(true);
-      await fosterService.updateProfile(selectedFoster.id, {
+      await fosterService.approveProfile(selectedFoster.id, {
         status: "approved",
         is_available: true,
         max_capacity: Number(reviewForm.max_capacity),
@@ -669,10 +690,10 @@ const FosterManagement = () => {
       addToast(`Approved ${selectedFoster.foster_family} as an active Foster Caregiver!`, "success");
       setIsReviewModalOpen(false);
       setSelectedFoster(null);
-      fetchFosters();
+      await fetchFosters();
       notifyDataChanged();
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || err?.response?.data?.message || "Failed to approve foster profile.";
+      const msg = extractBackendErrorMessage(err, "Failed to approve foster profile.");
       addToast(msg, "error");
     } finally {
       setIsSubmitting(false);
@@ -683,21 +704,21 @@ const FosterManagement = () => {
     if (!selectedFoster) return;
     try {
       setIsSubmitting(true);
-      const notesPayload = reviewForm.rejection_reason || reviewForm.vetting_notes || reviewForm.notes;
-      await fosterService.updateProfile(selectedFoster.id, {
+      const reasonText = reviewForm.rejection_reason || reviewForm.vetting_notes || reviewForm.notes || "Application rejected by coordinator";
+      await fosterService.rejectProfile(selectedFoster.id, {
+        reason: reasonText,
+        rejection_reason: reasonText,
+        notes: reviewForm.notes || reviewForm.vetting_notes,
+        vetting_notes: reviewForm.vetting_notes,
         status: "rejected",
-        is_available: false,
-        vetting_notes: notesPayload,
-        background_check_notes: reviewForm.background_check_notes,
-        home_inspection_notes: reviewForm.home_inspection_notes,
       });
       addToast(`Rejected application for ${selectedFoster.foster_family}.`, "info");
       setIsReviewModalOpen(false);
       setSelectedFoster(null);
-      fetchFosters();
+      await fetchFosters();
       notifyDataChanged();
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || err?.response?.data?.message || "Failed to reject foster application.";
+      const msg = extractBackendErrorMessage(err, "Failed to reject foster application.");
       addToast(msg, "error");
     } finally {
       setIsSubmitting(false);
@@ -760,6 +781,66 @@ const FosterManagement = () => {
     quantity: 1,
   });
 
+  const [dogsMap, setDogsMap] = useState<Map<string, any>>(new Map());
+  const [activePlacements, setActivePlacements] = useState<any[]>([]);
+  const [placementsLoading, setPlacementsLoading] = useState(false);
+  const [placementsError, setPlacementsError] = useState<string | null>(null);
+  const [placementSearchQuery, setPlacementSearchQuery] = useState("");
+
+  const [isPlacementDetailModalOpen, setIsPlacementDetailModalOpen] = useState(false);
+  const [selectedPlacementDetail, setSelectedPlacementDetail] = useState<any | null>(null);
+  const [placementProgressLogs, setPlacementProgressLogs] = useState<any[]>([]);
+  const [placementSuppliesList, setPlacementSuppliesList] = useState<any[]>([]);
+  const [placementDetailLoading, setPlacementDetailLoading] = useState(false);
+
+  const fetchPlacements = useCallback(async (fosterProfiles?: FosterProfileRow[]) => {
+    try {
+      setPlacementsLoading(true);
+      setPlacementsError(null);
+      const res = await fosterService.getFosterPlacements({ page_size: 100 });
+      const list = unwrapList(res);
+      const currentProfiles = fosterProfiles && fosterProfiles.length > 0 ? fosterProfiles : fosters;
+      const profilesMap = new Map<string, FosterProfileRow>();
+      currentProfiles.forEach((f) => profilesMap.set(f.id, f));
+
+      const allPlacements: any[] = [];
+      list.forEach((p: any) => {
+        if (p.is_active || p.status === "active" || (!p.returned_at && p.status !== "converted_to_adopt" && p.status !== "returned")) {
+          const fosterObj = p.foster || {};
+          const fId = String(p.foster_id || p.profile_id || fosterObj.id || "");
+          const matchingProfile = profilesMap.get(fId);
+          const fosterUser = matchingProfile?.user || fosterObj.user || {};
+          const familyName =
+            matchingProfile?.foster_family ||
+            p.foster_name ||
+            fosterUser.full_name ||
+            fosterUser.name ||
+            fosterUser.email ||
+            "Foster Caregiver";
+
+          allPlacements.push({
+            ...p,
+            foster_family: familyName,
+            profile_id: fId,
+            background_check_passed: matchingProfile ? matchingProfile.background_check_passed : Boolean(fosterObj.background_check_passed),
+            home_inspection_passed: matchingProfile ? matchingProfile.home_inspection_passed : Boolean(fosterObj.home_inspection_passed),
+            caregiver_email: fosterUser.email || "",
+            caregiver_phone: fosterUser.phone || "",
+            caregiver_raw: matchingProfile?.raw || fosterObj,
+          });
+        }
+      });
+      setActivePlacements(allPlacements);
+    } catch (err: any) {
+      setPlacementsError(
+        err?.response?.data?.detail || err?.response?.data?.message || "Failed to load active foster placements."
+      );
+      setActivePlacements([]);
+    } finally {
+      setPlacementsLoading(false);
+    }
+  }, [fosters]);
+
   const fetchFosters = useCallback(async () => {
     try {
       setLoading(true);
@@ -800,19 +881,7 @@ const FosterManagement = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
-
-  const [dogsMap, setDogsMap] = useState<Map<string, any>>(new Map());
-  const [activePlacements, setActivePlacements] = useState<any[]>([]);
-  const [placementsLoading, setPlacementsLoading] = useState(false);
-  const [placementsError, setPlacementsError] = useState<string | null>(null);
-  const [placementSearchQuery, setPlacementSearchQuery] = useState("");
-
-  const [isPlacementDetailModalOpen, setIsPlacementDetailModalOpen] = useState(false);
-  const [selectedPlacementDetail, setSelectedPlacementDetail] = useState<any | null>(null);
-  const [placementProgressLogs, setPlacementProgressLogs] = useState<any[]>([]);
-  const [placementSuppliesList, setPlacementSuppliesList] = useState<any[]>([]);
-  const [placementDetailLoading, setPlacementDetailLoading] = useState(false);
+  }, [fetchPlacements]);
 
   const openPlacementDetailModal = async (placement: any) => {
     setSelectedPlacementDetail(placement);
@@ -852,53 +921,6 @@ const FosterManagement = () => {
       setPlacementDetailLoading(false);
     }
   };
-
-  const fetchPlacements = useCallback(async (fosterProfiles: FosterProfileRow[]) => {
-    try {
-      setPlacementsLoading(true);
-      setPlacementsError(null);
-      const activeProfiles = fosterProfiles.filter(
-        (f) => f.status === "approved" || Number(f.active_count || 0) > 0
-      );
-      if (activeProfiles.length === 0) {
-        setActivePlacements([]);
-        setPlacementsLoading(false);
-        return;
-      }
-      const results = await Promise.allSettled(
-        activeProfiles.map((f) => fosterService.getProfilePlacements(f.id))
-      );
-      const allPlacements: any[] = [];
-      results.forEach((res, idx) => {
-        if (res.status === "fulfilled" && res.value) {
-          const list = unwrapList(res.value);
-          const f = activeProfiles[idx];
-          list.forEach((p: any) => {
-            if (p.is_active || p.status === "active" || (!p.returned_at && p.status !== "converted_to_adopt")) {
-              allPlacements.push({
-                ...p,
-                foster_family: f.foster_family,
-                profile_id: f.id,
-                background_check_passed: f.background_check_passed,
-                home_inspection_passed: f.home_inspection_passed,
-                caregiver_email: f.user?.email || f.raw?.user?.email || "",
-                caregiver_phone: f.user?.phone || f.raw?.user?.phone || "",
-                caregiver_raw: f.raw,
-              });
-            }
-          });
-        }
-      });
-      setActivePlacements(allPlacements);
-    } catch (err: any) {
-      setPlacementsError(
-        err?.response?.data?.detail || err?.response?.data?.message || "Failed to load active foster placements."
-      );
-      setActivePlacements([]);
-    } finally {
-      setPlacementsLoading(false);
-    }
-  }, []);
 
   const fetchDogs = useCallback(async () => {
     try {
@@ -1391,6 +1413,17 @@ const FosterManagement = () => {
     },
   ];
 
+  if (isRescueCentreAdmin) {
+    return (
+      <div style={{ padding: "40px 20px", textAlign: "center" }}>
+        <h2 style={{ color: "#DC2626", fontWeight: 800 }}>Access Restricted</h2>
+        <p style={{ color: "#64748B", maxWidth: "600px", margin: "12px auto" }}>
+          Foster Management is reserved for Foster Coordinators and Super Administrators. Rescue Centre Admin access is restricted to centre rescue operations, dispatch, vehicle fleet, and dog master management.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* Header Banner */}
@@ -1504,30 +1537,65 @@ const FosterManagement = () => {
               </select>
             }
             onRowClick={(row) => openFosterDetail(row)}
-            renderRowActions={(row: FosterProfileRow) => (
-              <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
-                {(row.status === "applied" || row.status === "pending") ? (
+            renderRowActions={(row: FosterProfileRow) => {
+              const isPending =
+                row.status === "applied" ||
+                row.status === "pending" ||
+                row.status === "under_review" ||
+                row.status === "submitted";
+              const isApproved = row.status === "approved";
+              const hasCapacity = (row.active_count || 0) < (row.max_capacity || 1);
+
+              return (
+                <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", alignItems: "center" }}>
+                  {isPending && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenReview(row)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        padding: "6px 14px",
+                        borderRadius: "6px",
+                        border: "none",
+                        background: "#2563EB",
+                        color: "#FFF",
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        boxShadow: "0 1px 2px rgba(37,99,235,0.2)",
+                      }}
+                    >
+                      <FaClipboardList /> Review Application
+                    </button>
+                  )}
+                  {isApproved && hasCapacity && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlaceTargetProfileId(row.id);
+                        setIsPlaceModalOpen(true);
+                      }}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        padding: "6px 12px",
+                        borderRadius: "6px",
+                        border: "1px solid #A7F3D0",
+                        background: "#ECFDF5",
+                        color: "#047857",
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <FaHandHoldingHeart /> Place Dog
+                    </button>
+                  )}
                   <button
-                    onClick={() => handleOpenReview(row)}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "4px",
-                      padding: "6px 14px",
-                      borderRadius: "6px",
-                      border: "none",
-                      background: "#2563EB",
-                      color: "#FFF",
-                      fontSize: "12px",
-                      fontWeight: 700,
-                      cursor: "pointer",
-                      boxShadow: "0 1px 2px rgba(37,99,235,0.2)",
-                    }}
-                  >
-                    <FaClipboardList /> Review Application
-                  </button>
-                ) : (
-                  <button
+                    type="button"
                     onClick={() => void openFosterDetail(row)}
                     style={{
                       display: "inline-flex",
@@ -1535,9 +1603,9 @@ const FosterManagement = () => {
                       gap: "4px",
                       padding: "6px 12px",
                       borderRadius: "6px",
-                      border: "1px solid #93C5FD",
-                      background: "#EFF6FF",
-                      color: "#1D4ED8",
+                      border: "1px solid #CBD5E1",
+                      background: "#F8FAFC",
+                      color: "#334155",
                       fontSize: "12px",
                       fontWeight: 600,
                       cursor: "pointer",
@@ -1545,32 +1613,9 @@ const FosterManagement = () => {
                   >
                     Inspect Profile
                   </button>
-                )}
-                {row.status === "approved" && (
-                  <button
-                    onClick={() => {
-                      setPlaceTargetProfileId(row.id);
-                      setIsPlaceModalOpen(true);
-                    }}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "4px",
-                      padding: "6px 12px",
-                      borderRadius: "6px",
-                      border: "1px solid #A7F3D0",
-                      background: "#ECFDF5",
-                      color: "#047857",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Place Dog
-                  </button>
-                )}
-              </div>
-            )}
+                </div>
+              );
+            }}
           />
         </div>
       ) : (
@@ -2424,7 +2469,7 @@ const FosterManagement = () => {
 
             {/* Modal Footer Actions */}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-              {(selectedFoster.status === "applied" || selectedFoster.status === "pending") && (
+              {(selectedFoster.status === "applied" || selectedFoster.status === "pending" || selectedFoster.status === "under_review" || selectedFoster.status === "submitted") && (
                 <button
                   type="button"
                   onClick={() => {
@@ -2434,6 +2479,19 @@ const FosterManagement = () => {
                   style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                 >
                   <FaClipboardList /> Start Full Application Review
+                </button>
+              )}
+              {selectedFoster.status === "approved" && (selectedFoster.active_count || 0) < (selectedFoster.max_capacity || 1) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDetailModalOpen(false);
+                    setPlaceTargetProfileId(selectedFoster.id);
+                    setIsPlaceModalOpen(true);
+                  }}
+                  style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "#059669", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                >
+                  <FaHandHoldingHeart /> Place Dog
                 </button>
               )}
               <button type="button" onClick={() => setIsDetailModalOpen(false)} style={{ padding: "10px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}>Close</button>

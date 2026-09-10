@@ -39,6 +39,7 @@ import { publishActionEvent } from "../../utils/eventSystem";
 import { generateQrDataUrl, generateQrBlob } from "../../utils/qrGenerator";
 import DogLifecycleTimelineModal from "../../components/pets/DogLifecycleTimelineModal";
 import ImageUploader from "../../components/common/ImageUploader";
+import FosterDogs from "../fosters/FosterDogs";
 
 const DOG_STATUSES = ["rescued", "clinic", "shelter", "fostered", "adopted"];
 const GENDERS = ["male", "female", "unknown"];
@@ -199,7 +200,7 @@ const triggerDownload = (url: string, filename: string) => {
   link.remove();
 };
 
-const Pets = () => {
+const GeneralDogManagement = () => {
   const [dogs, setDogs] = useState<any[]>([]);
   const [dogPhotoMap, setDogPhotoMap] = useState<Record<string, string>>({});
   const [allDogs, setAllDogs] = useState<any[]>([]);
@@ -3849,6 +3850,14 @@ const extractTagData = (res: any) => {
       />
     </div>
   );
+};
+
+const Pets = () => {
+  const currentRole = getCurrentUserRole();
+  if (currentRole === "foster_coordinator") {
+    return <FosterDogs />;
+  }
+  return <GeneralDogManagement />;
 };
 
 export default Pets;
