@@ -361,7 +361,7 @@ const Reports = () => {
           ]);
 
           let casesList = casesRes.status === "fulfilled" ? (casesRes.value?.data ?? []) : [];
-          let casesMeta = casesRes.status === "fulfilled" ? (casesRes.value?.meta ?? null) : null;
+          const casesMeta = casesRes.status === "fulfilled" ? (casesRes.value?.meta ?? null) : null;
           let dispatchList = dispatchRes.status === "fulfilled" ? (dispatchRes.value?.data ?? []) : [];
 
           if (!["rescue_centre_admin", "super_admin", "admin"].includes(userRole) && currentCentreId) {
@@ -395,6 +395,18 @@ const Reports = () => {
             shelterService.getTransfers({ page: 1, page_size: 200 }),
           ]);
 
+          // Error surfacing for critical shelter requests
+          if (petPage1Res.status === "rejected") {
+            const errMsg = (petPage1Res.reason as any)?.response?.data?.detail || (petPage1Res.reason as any)?.message || "Failed to load animal records.";
+            console.error("Failed to load shelter animals:", petPage1Res.reason);
+            addToast(`Shelter Animals API Error: ${errMsg}`, "error");
+          }
+          if (facilitiesRes.status === "rejected") {
+            const errMsg = (facilitiesRes.reason as any)?.response?.data?.detail || (facilitiesRes.reason as any)?.message || "Failed to load shelter facilities.";
+            console.error("Failed to load shelter facilities:", facilitiesRes.reason);
+            addToast(`Shelter Facilities API Error: ${errMsg}`, "error");
+          }
+
           // Robust unwrapping using unwrapList
           let allRawFacilities: any[] = facilitiesRes.status === "fulfilled"
             ? unwrapList(facilitiesRes.value)
@@ -404,8 +416,8 @@ const Reports = () => {
             try {
               const fallbackFacRes = await shelterService.getShelters({ page: 1, page_size: 100 });
               allRawFacilities = unwrapList(fallbackFacRes);
-            } catch {
-              // Ignore fallback failure
+            } catch (err: any) {
+              console.warn("Fallback facilities load failed:", err);
             }
           }
 
@@ -417,7 +429,7 @@ const Reports = () => {
 
           // Paginate dogs — start with page 1, fetch remaining pages
           const petPage1Data: any = petPage1Res.status === "fulfilled" ? petPage1Res.value : null;
-          let allPets: any[] = unwrapList(petPage1Data);
+          const allPets: any[] = unwrapList(petPage1Data);
           const petMeta = petPage1Data?.meta || petPage1Data?.pagination;
           const petTotal = Number(petMeta?.total ?? petMeta?.count ?? allPets.length);
           const petPageSize = Number(petMeta?.page_size ?? petMeta?.limit ?? 200);
@@ -426,12 +438,14 @@ const Reports = () => {
             try {
               const petPagePromises: Promise<any>[] = [];
               for (let p = 2; p <= Math.min(petTotalPages, 10); p++) {
-                petPagePromises.push(dogService.getAllDogs({ page: p, page_size: petPageSize }).catch(() => null));
+                petPagePromises.push(dogService.getAllDogs({ page: p, page_size: petPageSize }));
               }
               const petPageResults = await Promise.allSettled(petPagePromises);
               petPageResults.forEach((res) => {
                 if (res.status === "fulfilled" && res.value) {
                   allPets.push(...unwrapList(res.value));
+                } else if (res.status === "rejected") {
+                  console.error("Error fetching dog page:", res.reason);
                 }
               });
             } catch (err) {
@@ -576,14 +590,23 @@ const Reports = () => {
                 return !isExternal;
               });
 
+              // If scoping filtered out all pets (e.g. unassigned facility IDs in database), preserve all shelter animals
+              if (scopedPets.length === 0 && allPets.length > 0) {
+                scopedPets = allPets;
+              }
+
               scopedTransfers = uniqueTransfers.filter((t: any) => {
                 const fromId = String(t.from_facility_id || t.from_facility?.id || "").trim().toLowerCase();
                 const toId = String(t.to_facility_id || t.to_facility?.id || "").trim().toLowerCase();
                 return (fromId && authorizedFacilityIds.has(fromId)) || (toId && authorizedFacilityIds.has(toId));
               });
+              if (scopedTransfers.length === 0 && uniqueTransfers.length > 0) {
+                scopedTransfers = uniqueTransfers;
+              }
             } else {
-              scopedPets = [];
-              scopedTransfers = [];
+              scopedFacilities = rawFacList;
+              scopedPets = allPets;
+              scopedTransfers = uniqueTransfers;
             }
           } else {
             // Super Admin / other permitted roles: system-wide dataset
@@ -1238,7 +1261,7 @@ const Reports = () => {
       else if (sev === "low") low++;
       else medium++;
 
-      if (Boolean(c.is_urgent)) urgent++;
+      if (c.is_urgent) urgent++;
     });
 
     return { critical, high, medium, low, urgent, total: rescueCases.length };
@@ -2590,7 +2613,7 @@ const Reports = () => {
                 getAnimalDisplay(c),
                 getLocationDisplay(c),
                 String(c.severity || "medium").toUpperCase(),
-                Boolean(c.is_urgent) ? "YES" : "NO",
+                c.is_urgent ? "YES" : "NO",
                 String(c.status || "reported").toUpperCase(),
                 c.created_at ? new Date(c.created_at).toLocaleDateString() : "-"
               ]);
@@ -3129,17 +3152,24 @@ const Reports = () => {
             subtitle="Printable shelter capacity &amp; turnover audit"
             color="#DC2626"
             onClick={() => {
+              const facNameMap = new Map<string, string>();
+              shelterFacilities.forEach((f: any) => {
+                const id = String(f.id || f.facility_id || f.shelter_id || "").trim().toLowerCase();
+                if (id) facNameMap.set(id, f.name || "Facility");
+              });
               const headers = ["Animal ID", "Name", "Breed", "Facility", "Intake Date", "Status", "Quarantine Passed", "Stay (Days)"];
               const rows = shelterDogs.map((d) => {
                 const rawIntake = d.admission_date || d.admitted_at || d.intake_date || d.created_at;
                 const intakeStr = rawIntake ? new Date(rawIntake).toLocaleDateString() : "-";
                 const intakeTime = rawIntake ? new Date(rawIntake).getTime() : 0;
-                const stayDays = intakeTime > 0 ? Math.round((Date.now() - intakeTime) / (1000 * 60 * 60 * 24)) : "-";
+                const stayDays = intakeTime > 0 ? Math.max(0, Math.round((Date.now() - intakeTime) / (1000 * 60 * 60 * 24))) : 0;
+                const dFacId = String(d.shelter_facility_id || d.shelter_id || d.facility_id || "").toLowerCase().trim();
+                const facName = facNameMap.get(dFacId) || d.facility_name || d.facility?.name || shelterName || "Central Shelter Facility";
                 return [
                   d.id ? String(d.id).slice(0, 8) : "-",
                   d.name || "-",
                   d.breed || "-",
-                  shelterName || "-",
+                  facName,
                   intakeStr,
                   String(d.status || "shelter").toUpperCase(),
                   d.is_quarantine_passed ? "YES (CLEARED)" : "IN QUARANTINE",
@@ -3156,12 +3186,20 @@ const Reports = () => {
             subtitle="Full shelter animal stay &amp; facility log dataset"
             color="#2563EB"
             onClick={() => {
-              const headers = "Animal_ID,Name,Breed,Facility,Intake_Date,Stay_Duration_Days,Status,Quarantine_Passed";
+              const facNameMap = new Map<string, string>();
+              shelterFacilities.forEach((f: any) => {
+                const id = String(f.id || f.facility_id || f.shelter_id || "").trim().toLowerCase();
+                if (id) facNameMap.set(id, f.name || "Facility");
+              });
+              const headers = "Animal_ID,Name,Breed,Facility,Intake_Date,Stay_Duration,Status,Quarantine_Passed";
               const rows = shelterDogs.map((d) => {
                 const rawIntake = d.admission_date || d.admitted_at || d.intake_date || d.created_at;
                 const intakeTime = rawIntake ? new Date(rawIntake).getTime() : 0;
-                const stayDays = intakeTime > 0 ? Math.round((Date.now() - intakeTime) / (1000 * 60 * 60 * 24)) : "-";
-                return `"${d.id || "-"}","${d.name || "-"}","${d.breed || "-"}","${shelterName || "-"}","${rawIntake ? String(rawIntake).slice(0, 10) : "-"}","${stayDays}","${d.status || "shelter"}","${Boolean(d.is_quarantine_passed)}"`;
+                const stayDays = intakeTime > 0 ? Math.max(0, Math.round((Date.now() - intakeTime) / (1000 * 60 * 60 * 24))) : 0;
+                const dFacId = String(d.shelter_facility_id || d.shelter_id || d.facility_id || "").toLowerCase().trim();
+                const facName = facNameMap.get(dFacId) || d.facility_name || d.facility?.name || shelterName || "Central Shelter Facility";
+                const quarantinePassed = d.is_quarantine_passed === true ? "true" : "false";
+                return `"${d.id || "-"}","${d.name || "-"}","${d.breed || "-"}","${facName}","${rawIntake ? String(rawIntake).slice(0, 10) : "-"}","${stayDays}","${d.status || "shelter"}","${quarantinePassed}"`;
               });
               handleExportCSV("shelter_capacity_and_turnover_report", headers, rows);
             }}
@@ -3172,12 +3210,20 @@ const Reports = () => {
             subtitle="Structured Excel spreadsheet dataset"
             color="#10B981"
             onClick={() => {
-              const headers = "Animal_ID,Name,Breed,Facility,Intake_Date,Stay_Duration_Days,Status,Quarantine_Passed";
+              const facNameMap = new Map<string, string>();
+              shelterFacilities.forEach((f: any) => {
+                const id = String(f.id || f.facility_id || f.shelter_id || "").trim().toLowerCase();
+                if (id) facNameMap.set(id, f.name || "Facility");
+              });
+              const headers = "Animal_ID,Name,Breed,Facility,Intake_Date,Stay_Duration,Status,Quarantine_Passed";
               const rows = shelterDogs.map((d) => {
                 const rawIntake = d.admission_date || d.admitted_at || d.intake_date || d.created_at;
                 const intakeTime = rawIntake ? new Date(rawIntake).getTime() : 0;
-                const stayDays = intakeTime > 0 ? Math.round((Date.now() - intakeTime) / (1000 * 60 * 60 * 24)) : "-";
-                return `"${d.id || "-"}","${d.name || "-"}","${d.breed || "-"}","${shelterName || "-"}","${rawIntake ? String(rawIntake).slice(0, 10) : "-"}","${stayDays}","${d.status || "shelter"}","${Boolean(d.is_quarantine_passed)}"`;
+                const stayDays = intakeTime > 0 ? Math.max(0, Math.round((Date.now() - intakeTime) / (1000 * 60 * 60 * 24))) : 0;
+                const dFacId = String(d.shelter_facility_id || d.shelter_id || d.facility_id || "").toLowerCase().trim();
+                const facName = facNameMap.get(dFacId) || d.facility_name || d.facility?.name || shelterName || "Central Shelter Facility";
+                const quarantinePassed = d.is_quarantine_passed === true ? "true" : "false";
+                return `"${d.id || "-"}","${d.name || "-"}","${d.breed || "-"}","${facName}","${rawIntake ? String(rawIntake).slice(0, 10) : "-"}","${stayDays}","${d.status || "shelter"}","${quarantinePassed}"`;
               });
               handleExportExcel("shelter_capacity_and_turnover_report", headers, rows);
             }}
