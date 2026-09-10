@@ -50,6 +50,18 @@ export interface CareLogPayload {
   notes: string;
 }
 
+export interface KennelAssignmentRequest {
+  emergency_override?: boolean;
+  override_notes?: string;
+}
+
+export interface ShelterVetCheckRequest {
+  vet_id: string;
+  reason: string;
+  notes?: string;
+  urgency?: "routine" | "urgent" | "emergency";
+}
+
 export const shelterService = {
   // GET /dashboards/shelter - Aggregate Dashboard Data
   getShelterDashboard: async () => {
@@ -122,13 +134,20 @@ export const shelterService = {
 
   // POST /shelter/facilities/bulk/delete
   bulkDeleteFacilities: async (facilityIds: string[]) => {
-    const response = await api.post("/shelter/facilities/bulk/delete", { facility_ids: facilityIds });
+    const response = await api.post("/shelter/facilities/bulk/delete", {
+      ids: facilityIds,
+      facility_ids: facilityIds,
+    });
     return response.data;
   },
 
   // POST /shelter/facilities/bulk/status
   bulkUpdateFacilityStatus: async (facilityIds: string[], status: FacilityStatus) => {
-    const response = await api.post("/shelter/facilities/bulk/status", { facility_ids: facilityIds, status });
+    const response = await api.post("/shelter/facilities/bulk/status", {
+      ids: facilityIds,
+      facility_ids: facilityIds,
+      status,
+    });
     return response.data;
   },
 
@@ -171,9 +190,17 @@ export const shelterService = {
   },
 
   // PATCH /shelter/kennels/{kennel_id}/assign/{dog_id} (primary) with POST fallback
-  assignDogToKennel: async (kennelId: string, dogId: string) => {
+  assignDogToKennel: async (
+    kennelId: string,
+    dogId: string,
+    payload?: KennelAssignmentRequest
+  ) => {
+    const body = payload && Object.keys(payload).length > 0 ? payload : {};
     try {
-      const response = await api.patch(`/shelter/kennels/${kennelId}/assign/${dogId}`);
+      const response = await api.patch(
+        `/shelter/kennels/${kennelId}/assign/${dogId}`,
+        body
+      );
       await publishActionEvent({
         module: "shelter",
         action: "update",
@@ -182,9 +209,19 @@ export const shelterService = {
         targetRoles: ["super_admin", "shelter_manager", "rescue_centre_admin"],
       });
       return response.data;
-    } catch {
-      const fallback = await api.post(`/shelter/kennels/${kennelId}/assign/${dogId}`);
-      return fallback.data;
+    } catch (patchErr: any) {
+      if (patchErr?.response?.status === 403 || patchErr?.response?.status === 422) {
+        throw patchErr;
+      }
+      try {
+        const fallback = await api.post(
+          `/shelter/kennels/${kennelId}/assign/${dogId}`,
+          body
+        );
+        return fallback.data;
+      } catch {
+        throw patchErr;
+      }
     }
   },
 
@@ -278,6 +315,12 @@ export const shelterService = {
   // GET /shelter/dogs/{dog_id}/care-logs
   getCareLogs: async (dogId: string) => {
     const response = await api.get(`/shelter/dogs/${dogId}/care-logs`);
+    return response.data;
+  },
+
+  // POST /shelter/dogs/{dog_id}/request-vet-check
+  requestVetCheck: async (dogId: string, data: ShelterVetCheckRequest) => {
+    const response = await api.post(`/shelter/dogs/${dogId}/request-vet-check`, data);
     return response.data;
   },
 };

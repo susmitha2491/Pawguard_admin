@@ -248,7 +248,7 @@ const Adoptions = () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await adoptionService.getAdoptions();
+      const res = await adoptionService.getAdoptions({ page_size: 200 });
       const list = Array.isArray(res.data) ? res.data : Array.isArray(res) ? res : [];
       setAdoptions(list);
     } catch (err: any) {
@@ -260,7 +260,7 @@ const Adoptions = () => {
 
   const fetchDogs = useCallback(async () => {
     try {
-      const dogsRes = await petService.getPets();
+      const dogsRes = await petService.getPets({ page_size: 200 });
       const list = Array.isArray(dogsRes.data) ? dogsRes.data : Array.isArray(dogsRes) ? dogsRes : [];
       setDogs(
         list.map((d: any) => ({
@@ -497,20 +497,49 @@ const Adoptions = () => {
     }
 
     if (newStatus === "approved") {
-      const targetDogId = String(targetApp?.dog_id || targetApp?.petId || "");
+      const targetDogId = String(targetApp?.dog_id || targetApp?.petId || selectedAdoption?.dog_id || selectedAdoption?.petId || "");
       if (targetDogId) {
-        const existingClaimed = adoptions.find(
+        let existingClaimed = adoptions.find(
           (a) =>
             String(a.dog_id || a.petId) === targetDogId &&
             String(a.id) !== appId &&
             ["approved", "completed"].includes(String(a.status).toLowerCase())
         );
+
+        if (!existingClaimed) {
+          try {
+            const dogAppsRes = await adoptionService.getAdoptions({ dog_id: targetDogId, page_size: 50 });
+            const dogApps = Array.isArray(dogAppsRes?.data) ? dogAppsRes.data : Array.isArray(dogAppsRes) ? dogAppsRes : [];
+            existingClaimed = dogApps.find(
+              (a: any) =>
+                String(a.id) !== appId &&
+                ["approved", "completed"].includes(String(a.status).toLowerCase())
+            );
+          } catch {
+            // continue with loaded state
+          }
+        }
+
         if (existingClaimed) {
           addToast(
             `Cannot approve: Dog is already claimed by approved application (App ID: ${String(existingClaimed.id).slice(0, 8)}).`,
             "error"
           );
           return;
+        }
+
+        try {
+          const dogRecord = await petService.getPetById(targetDogId);
+          const dogData = dogRecord?.data || dogRecord;
+          if (dogData && (dogData.status === "adopted" || dogData.is_adoptable === false)) {
+            addToast(
+              `Cannot approve: Dog "${dogData.name || "selected dog"}" is already adopted or unavailable in master registry.`,
+              "error"
+            );
+            return;
+          }
+        } catch {
+          // continue
         }
       }
     }
@@ -931,17 +960,39 @@ const Adoptions = () => {
 
                         {statusStr === "home_check" && (
                           <>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveMenuId(null);
-                                void handleStatusChange(rowId, "approved");
-                              }}
-                              style={{ ...menuItemStyle, color: "#059669" }}
-                            >
-                              <FaCheckDouble style={{ marginRight: "8px", color: "#059669" }} /> Approve
-                            </button>
+                            {(() => {
+                              const rowDogId = String(row.dog_id || row.petId || "");
+                              const isClaimed = Boolean(
+                                rowDogId &&
+                                adoptions.some(
+                                  (a) =>
+                                    String(a.dog_id || a.petId) === rowDogId &&
+                                    String(a.id) !== String(rowId) &&
+                                    ["approved", "completed"].includes(String(a.status).toLowerCase())
+                                )
+                              );
+                              return (
+                                <button
+                                  type="button"
+                                  disabled={isClaimed}
+                                  title={isClaimed ? "Dog is already claimed by an approved/completed application" : "Approve"}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (isClaimed) return;
+                                    setActiveMenuId(null);
+                                    void handleStatusChange(rowId, "approved");
+                                  }}
+                                  style={{
+                                    ...menuItemStyle,
+                                    color: isClaimed ? "#94A3B8" : "#059669",
+                                    cursor: isClaimed ? "not-allowed" : "pointer",
+                                  }}
+                                >
+                                  <FaCheckDouble style={{ marginRight: "8px", color: isClaimed ? "#94A3B8" : "#059669" }} />
+                                  {isClaimed ? "Already Claimed" : "Approve"}
+                                </button>
+                              );
+                            })()}
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1313,14 +1364,37 @@ const Adoptions = () => {
                   )}
                   {currentStatus === "home_check" && (
                     <Can permission={["approve_adoptions", "manage_adoptions"]}>
-                      <button
-                        type="button"
-                        disabled={isSubmitting}
-                        onClick={() => void handleStatusChange(String(selectedAdoption.id), "approved")}
-                        style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 600, cursor: "pointer" }}
-                      >
-                        {isSubmitting ? "Approving..." : "Approve Application"}
-                      </button>
+                      {(() => {
+                        const targetDogId = String(selectedAdoption.dog_id || selectedAdoption.petId || "");
+                        const isClaimed = Boolean(
+                          targetDogId &&
+                          adoptions.some(
+                            (a) =>
+                              String(a.dog_id || a.petId) === targetDogId &&
+                              String(a.id) !== String(selectedAdoption.id) &&
+                              ["approved", "completed"].includes(String(a.status).toLowerCase())
+                          )
+                        );
+                        return (
+                          <button
+                            type="button"
+                            disabled={isSubmitting || isClaimed}
+                            title={isClaimed ? "Dog is already claimed by an approved/completed application" : "Approve Application"}
+                            onClick={() => void handleStatusChange(String(selectedAdoption.id), "approved")}
+                            style={{
+                              padding: "10px 18px",
+                              borderRadius: "8px",
+                              border: "none",
+                              background: isClaimed ? "#9CA3AF" : "#10B981",
+                              color: "#FFF",
+                              fontWeight: 600,
+                              cursor: isClaimed ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            {isSubmitting ? "Approving..." : isClaimed ? "Dog Already Claimed" : "Approve Application"}
+                          </button>
+                        );
+                      })()}
                     </Can>
                   )}
                   {currentStatus !== "approved" && currentStatus !== "completed" && (

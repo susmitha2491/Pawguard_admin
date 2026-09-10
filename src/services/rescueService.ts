@@ -103,17 +103,14 @@ export const rescueService = {
     return response.data;
   },
 
-  acceptRescueRequest: async (requestId: string, agentId: string, agentName?: string) => {
-    // Instead of calling verify with status: "accepted" (which fails validation),
-    // we assign the coordinator. The frontend maps verified + assigned coordinator to accepted.
-    const response = await api.post(`/rescue/${requestId}/assign-coordinator`, {
-      coordinator_id: agentId,
-    });
+  // POST /rescue/{request_id}/accept - Accept Dispatch (Field Agent)
+  acceptRescueRequest: async (requestId: string, _agentId?: string, agentName?: string) => {
+    const response = await api.post(`/rescue/${requestId}/accept`);
     await publishActionEvent({
       module: "rescue",
       action: "approve",
       title: "Rescue Request Accepted",
-      message: `Rescue request ${requestId} accepted by coordinator/agent ${agentName || agentId}.`,
+      message: `Rescue dispatch ${requestId} accepted by field responder ${agentName || ""}.`,
       targetRoles: ["super_admin", "rescue_centre_admin", "rescue_coordinator", "rescue_agent"],
     });
     return response.data;

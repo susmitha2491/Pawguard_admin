@@ -321,6 +321,7 @@ export const adoptionService = {
   // POST /adoptions/bulk/status-update
   bulkUpdateStatus: async (applicationIds: string[], status: string) => {
     const response = await api.post("/adoptions/bulk/status-update", {
+      ids: applicationIds,
       application_ids: applicationIds,
       status: toAdoptionStatus(status),
     });
@@ -329,7 +330,10 @@ export const adoptionService = {
 
   // POST /adoptions/bulk/delete
   bulkDeleteAdoptions: async (applicationIds: string[]) => {
-    const response = await api.post("/adoptions/bulk/delete", { application_ids: applicationIds });
+    const response = await api.post("/adoptions/bulk/delete", {
+      ids: applicationIds,
+      application_ids: applicationIds,
+    });
     return response.data;
   },
 

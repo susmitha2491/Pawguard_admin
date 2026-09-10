@@ -773,7 +773,7 @@ const FosterManagement = () => {
         return {
           id: String(item.id || item.profile_id || ""),
           foster_family: String(name),
-          status: String(item.status || (item.is_available ? "approved" : "applied")),
+          status: String(item.status || "applied"),
           active_count: Number(item.active_count ?? item.placements_count ?? 0),
           max_capacity: Number(item.max_capacity ?? 1),
           is_available: item.is_available !== undefined ? Boolean(item.is_available) : true,
@@ -1019,6 +1019,10 @@ const FosterManagement = () => {
     }
 
     if (targetFoster) {
+      if (targetFoster.status !== "approved") {
+        addToast(`Cannot place dog: Foster family "${targetFoster.foster_family}" is not approved (Current status: ${targetFoster.status}).`, "error");
+        return;
+      }
       if (!targetFoster.background_check_passed) {
         addToast(`Cannot place dog: Foster family "${targetFoster.foster_family}" background check is not Cleared.`, "error");
         return;
@@ -1867,14 +1871,27 @@ const FosterManagement = () => {
             <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Foster Caregiver Family *</label>
             <select required value={placeTargetProfileId} onChange={(e) => setPlaceTargetProfileId(e.target.value)} style={inputStyle}>
               <option value="">Select foster caregiver...</option>
-              {fosters.filter((f) => f.is_available).map((f) => {
-                const isEligible = Boolean(f.background_check_passed && f.home_inspection_passed);
-                return (
-                  <option key={f.id} value={f.id} disabled={!isEligible}>
-                    {f.foster_family} (Capacity: {f.active_count}/{f.max_capacity}) {!isEligible ? "⚠️ [INELIGIBLE — Vetting Incomplete]" : "✓ [Eligible]"}
-                  </option>
-                );
-              })}
+              {fosters
+                .filter((f) => f.is_available)
+                .map((f) => {
+                  const isApproved = f.status === "approved";
+                  const isVetted = Boolean(f.background_check_passed && f.home_inspection_passed);
+                  const hasCapacity = f.active_count < f.max_capacity;
+                  const isEligible = isApproved && isVetted && hasCapacity;
+                  let badge = "✓ [Eligible - Approved]";
+                  if (!isApproved) {
+                    badge = `⚠️ [INELIGIBLE — Status: ${(f.status || "applied").toUpperCase()}]`;
+                  } else if (!isVetted) {
+                    badge = "⚠️ [INELIGIBLE — Vetting Incomplete]";
+                  } else if (!hasCapacity) {
+                    badge = "⚠️ [INELIGIBLE — At Capacity]";
+                  }
+                  return (
+                    <option key={f.id} value={f.id} disabled={!isEligible}>
+                      {f.foster_family} (Capacity: {f.active_count}/{f.max_capacity}) {badge}
+                    </option>
+                  );
+                })}
             </select>
           </div>
           <div>

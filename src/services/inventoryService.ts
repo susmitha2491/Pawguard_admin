@@ -194,7 +194,10 @@ export const inventoryService = {
 
   // POST /inventory/items/bulk/delete
   bulkDeleteItems: async (itemIds: string[]) => {
-    const response = await api.post("/inventory/items/bulk/delete", { item_ids: itemIds });
+    const response = await api.post("/inventory/items/bulk/delete", {
+      ids: itemIds,
+      item_ids: itemIds,
+    });
     return response.data;
   },
 
@@ -278,6 +281,7 @@ export const inventoryService = {
   // POST /inventory/requisitions/bulk/status
   bulkUpdateRequisitions: async (requisitionIds: string[], status: RequisitionStatus) => {
     const response = await api.post("/inventory/requisitions/bulk/status", {
+      ids: requisitionIds,
       requisition_ids: requisitionIds,
       status,
     });

@@ -18,6 +18,7 @@ import {
   FaPlus,
   FaCheckCircle,
   FaUserMd,
+  FaShieldAlt,
 } from "react-icons/fa";
 import petService from "../../services/petService";
 import rescueService from "../../services/rescueService";
@@ -311,6 +312,8 @@ const ShelterDogs = () => {
   const [cageKennels, setCageKennels] = useState<any[]>([]);
   const [cageSel, setCageSel] = useState({ facilityId: "", sectionId: "", kennelId: "", dogId: "" });
   const [cageLoading, setCageLoading] = useState(false);
+  const [emergencyOverride, setEmergencyOverride] = useState(false);
+  const [overrideNotes, setOverrideNotes] = useState("");
 
   // Medical Check Request & Vet Assignment State
   const [isMedicalModalOpen, setIsMedicalModalOpen] = useState(false);
@@ -407,32 +410,29 @@ const ShelterDogs = () => {
       return;
     }
 
+    if (!medicalReason.trim()) {
+      addToast("Please provide a reason for the examination.", "error");
+      return;
+    }
+
+    if (!selectedVetId) {
+      addToast("Please select a veterinarian to assign.", "error");
+      return;
+    }
+
     try {
       setIsSubmittingMedical(true);
 
       const assignedVet = vetsList.find((v) => String(v.id) === String(selectedVetId)) || vetsList[0];
       const vetName = assignedVet ? assignedVet.name : "On-Duty Veterinarian";
 
-      await vetService.bookAppointment({
-        pet_id: id,
-        dog_id: id,
+      // Call dedicated shelter medical triage request endpoint
+      await shelterService.requestVetCheck(id, {
         vet_id: selectedVetId,
-        vet_name: vetName,
-        reason: medicalReason,
-        notes: medicalNotes,
-        urgency: urgencyLevel,
-        status: "requested",
-      }).catch(() => null);
-
-      await medicalService.createMedicalExam({
-        dog_id: id,
-        triage_diagnosis: medicalReason,
-        treatment: medicalNotes ? `Notes: ${medicalNotes} (Assigned to ${vetName})` : `Assigned to ${vetName}`,
-      }).catch(() => null);
-
-      await petService.updatePet(id, {
-        medical_status: "Assigned to Vet",
-      }).catch(() => null);
+        reason: medicalReason.trim(),
+        notes: medicalNotes.trim() || undefined,
+        urgency: (urgencyLevel as "routine" | "urgent" | "emergency") || "routine",
+      });
 
       await publishActionEvent({
         module: "medical",
@@ -441,14 +441,38 @@ const ShelterDogs = () => {
         message: `Medical check requested for ${medicalDog.name} (${id}) at ${medicalDog.shelter_name}. Assigned to ${vetName}. Reason: ${medicalReason}`,
         targetRoles: ["veterinarian", "shelter_manager", "super_admin", "rescue_centre_admin"],
         actionUrl: `/veterinarian-dashboard?dog_id=${id}&tab=shelter_requests`,
-      }).catch(() => null);
+      });
 
       addToast(`Medical check requested and assigned to ${vetName}!`, "success");
       notifyDataChanged();
       setIsMedicalModalOpen(false);
       fetchShelterDogsData();
     } catch (err: any) {
-      addToast(err?.message || "Failed to submit medical check request.", "error");
+      const status = err?.response?.status;
+      const data = err?.response?.data;
+      let errMsg = "Failed to submit medical check request.";
+
+      if (status === 404) {
+        errMsg = `Backend endpoint not found: POST /api/v1/shelter/dogs/${id}/request-vet-check is not yet implemented on the server. Cannot persist medical check request.`;
+      } else if (status === 403) {
+        errMsg = data?.error?.message || data?.message || data?.detail || "Authorization failed: You do not have permission to request veterinary checks.";
+      } else if (status === 422) {
+        if (Array.isArray(data?.detail)) {
+          errMsg = `Validation failed: ${data.detail.map((d: any) => `${d.loc ? d.loc.slice(1).join(".") + ": " : ""}${d.msg}`).join("; ")}`;
+        } else {
+          errMsg = data?.error?.message || data?.message || data?.detail || "Invalid request parameters.";
+        }
+      } else if (data?.error?.message) {
+        errMsg = data.error.message;
+      } else if (data?.message) {
+        errMsg = data.message;
+      } else if (data?.detail) {
+        errMsg = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+      } else if (err?.message) {
+        errMsg = err.message;
+      }
+
+      addToast(errMsg, "error");
     } finally {
       setIsSubmittingMedical(false);
     }
@@ -477,7 +501,6 @@ const ShelterDogs = () => {
 
       const updateResult = await petService.updatePet(id, {
         ...dog,
-        medical_status: "Medically Cleared",
         is_fit_for_adoption: true,
         is_adoptable: true,
       });
@@ -957,6 +980,8 @@ const ShelterDogs = () => {
       kennelId: "",
       dogId: dog ? dogId(dog) : "",
     });
+    setEmergencyOverride(false);
+    setOverrideNotes("");
     setCageSections([]);
     setCageKennels([]);
     setIsCageModalOpen(true);
@@ -968,6 +993,8 @@ const ShelterDogs = () => {
 
   const onFacilityChange = async (facilityId: string) => {
     setCageSel((s) => ({ ...s, facilityId, sectionId: "", kennelId: "" }));
+    setEmergencyOverride(false);
+    setOverrideNotes("");
     setCageKennels([]);
     if (!facilityId) {
       setCageSections([]);
@@ -983,6 +1010,8 @@ const ShelterDogs = () => {
 
   const onSectionChange = async (sectionId: string) => {
     setCageSel((s) => ({ ...s, sectionId, kennelId: "" }));
+    setEmergencyOverride(false);
+    setOverrideNotes("");
     if (!sectionId) {
       setCageKennels([]);
       return;
@@ -995,21 +1024,68 @@ const ShelterDogs = () => {
     }
   };
 
+  const selectedCageSection = cageSections.find((s) => s.id === cageSel.sectionId);
+  const isClinicalSection = Boolean(
+    selectedCageSection &&
+      ["quarantine", "isolation", "surgical", "medical"].some((k) =>
+        (selectedCageSection.section_type || selectedCageSection.type || selectedCageSection.name || "")
+          .toLowerCase()
+          .includes(k)
+      )
+  );
+  const currentUserRole = getCurrentUserRole();
+  const canEmergencyOverride = ["super_admin", "shelter_manager", "rescue_centre_admin"].includes(
+    currentUserRole || ""
+  );
+
   const handleAssignCageSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cageSel.kennelId || !cageSel.dogId) {
       addToast("Please select both a kennel and a dog.", "error");
       return;
     }
+
+    if (isClinicalSection && emergencyOverride) {
+      if (!overrideNotes.trim()) {
+        addToast("Please provide a justification for the emergency placement.", "error");
+        return;
+      }
+    }
+
+    const payload =
+      isClinicalSection && emergencyOverride
+        ? {
+            emergency_override: true,
+            override_notes: overrideNotes.trim(),
+          }
+        : undefined;
+
     try {
       setCageLoading(true);
-      await shelterService.assignDogToKennel(cageSel.kennelId, cageSel.dogId);
+      await shelterService.assignDogToKennel(cageSel.kennelId, cageSel.dogId, payload);
       addToast("Dog successfully assigned to cage/kennel!", "success");
       setIsCageModalOpen(false);
+      setEmergencyOverride(false);
+      setOverrideNotes("");
       fetchShelterDogsData();
       notifyDataChanged();
     } catch (err: any) {
-      addToast(err?.response?.data?.message || "Failed to assign dog to kennel.", "error");
+      const status = err?.response?.status;
+      const backendMsg =
+        err?.response?.data?.error?.message ||
+        err?.response?.data?.message ||
+        err?.response?.data?.detail;
+
+      if (status === 403 && String(backendMsg).toLowerCase().includes("veterinary sign-off")) {
+        addToast(
+          "Veterinary sign-off is required for this section. Use Emergency Placement Override only for urgent placement, if authorized.",
+          "error"
+        );
+      } else if (status === 422) {
+        addToast(backendMsg || "Validation failed for emergency override notes.", "error");
+      } else {
+        addToast(backendMsg || "Failed to assign dog to kennel.", "error");
+      }
     } finally {
       setCageLoading(false);
     }
@@ -1730,9 +1806,113 @@ const ShelterDogs = () => {
             </select>
           </div>
 
+          {/* Clinical Section / Veterinary Sign-Off & Emergency Override Banner */}
+          {isClinicalSection && (
+            <div
+              style={{
+                padding: "14px 16px",
+                background: "#FFFBEB",
+                border: "1px solid #FDE68A",
+                borderRadius: "8px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#92400E", fontWeight: 700, fontSize: "13px" }}>
+                <FaShieldAlt /> Clinical Section / Veterinary Sign-Off Required
+              </div>
+              <div style={{ fontSize: "12px", color: "#B45309", lineHeight: 1.4 }}>
+                This kennel belongs to a restricted section ({selectedCageSection?.name || "Clinical"}). Veterinary sign-off is normally required prior to placement.
+              </div>
+
+              {canEmergencyOverride ? (
+                <div style={{ marginTop: "4px" }}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      color: "#1E293B",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={emergencyOverride}
+                      onChange={(e) => setEmergencyOverride(e.target.checked)}
+                      style={{ width: "16px", height: "16px", accentColor: "#D97706", cursor: "pointer" }}
+                    />
+                    Emergency Placement Override
+                  </label>
+                  <p style={{ margin: "2px 0 0 24px", fontSize: "11px", color: "#64748B" }}>
+                    Use emergency placement only when urgent placement is required.
+                  </p>
+
+                  {emergencyOverride && (
+                    <div style={{ marginTop: "10px" }}>
+                      <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#1E293B", marginBottom: "4px" }}>
+                        Justification / Override Notes *
+                      </label>
+                      <textarea
+                        value={overrideNotes}
+                        onChange={(e) => setOverrideNotes(e.target.value)}
+                        rows={3}
+                        placeholder="Provide detailed justification for emergency placement (required for vet review)..."
+                        style={{
+                          width: "100%",
+                          padding: "8px 12px",
+                          borderRadius: "6px",
+                          border: "1px solid #CBD5E1",
+                          fontSize: "12px",
+                          boxSizing: "border-box",
+                          resize: "vertical",
+                        }}
+                      />
+                      {!overrideNotes.trim() && (
+                        <span style={{ fontSize: "11px", color: "#DC2626", marginTop: "2px", display: "block" }}>
+                          * Justification notes are required for emergency overrides.
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ fontSize: "12px", color: "#DC2626", fontWeight: 500 }}>
+                  Only authorized Shelter Managers and Admins can perform emergency placement overrides.
+                </div>
+              )}
+            </div>
+          )}
+
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px", borderTop: "1px solid #E2E8F0", paddingTop: "12px" }}>
             <button type="button" onClick={() => setIsCageModalOpen(false)} style={{ padding: "9px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}>Cancel</button>
-            <button type="submit" disabled={cageLoading || !cageSel.kennelId || !cageSel.dogId} style={{ padding: "9px 18px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#FFF", fontWeight: 700 }}>
+            <button
+              type="submit"
+              disabled={
+                cageLoading ||
+                !cageSel.kennelId ||
+                !cageSel.dogId ||
+                (isClinicalSection && emergencyOverride && !overrideNotes.trim())
+              }
+              style={{
+                padding: "9px 18px",
+                borderRadius: "8px",
+                border: "none",
+                background:
+                  cageLoading || !cageSel.kennelId || !cageSel.dogId || (isClinicalSection && emergencyOverride && !overrideNotes.trim())
+                    ? "#94A3B8"
+                    : "#2563EB",
+                color: "#FFF",
+                fontWeight: 700,
+                cursor:
+                  cageLoading || !cageSel.kennelId || !cageSel.dogId || (isClinicalSection && emergencyOverride && !overrideNotes.trim())
+                    ? "not-allowed"
+                    : "pointer",
+              }}
+            >
               {cageLoading ? "Assigning..." : "Confirm Kennel Assignment"}
             </button>
           </div>

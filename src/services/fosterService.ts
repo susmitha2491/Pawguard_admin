@@ -488,7 +488,10 @@ export const fosterService = {
 
   // POST /fosters/bulk/delete
   bulkDeleteProfiles: async (profileIds: string[]) => {
-    const response = await api.post("/fosters/bulk/delete", { profile_ids: profileIds });
+    const response = await api.post("/fosters/bulk/delete", {
+      ids: profileIds,
+      profile_ids: profileIds,
+    });
     return response.data;
   },
 };

@@ -65,6 +65,24 @@ export interface RescueRequestTableRow {
   [key: string]: unknown;
 }
 
+const extractErrorMessage = (err: any, fallback: string): string => {
+  const detail =
+    err?.response?.data?.error?.message ||
+    err?.response?.data?.error ||
+    err?.response?.data?.detail ||
+    err?.response?.data?.message ||
+    err?.message;
+  if (!detail) return fallback;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((item) => (typeof item === "string" ? item : item?.msg || JSON.stringify(item))).join("; ");
+  }
+  if (typeof detail === "object") {
+    return (detail as any).msg || (detail as any).message || JSON.stringify(detail);
+  }
+  return String(detail);
+};
+
 const RescueRequests = () => {
   const currentUser = getCurrentUser();
   const currentUserRole = getCurrentUserRole();
@@ -84,7 +102,7 @@ const RescueRequests = () => {
   const [error, setError] = useState<string | null>(null);
   const { addToast } = useToast();
 
-  // 3 Dropdown Filters
+  // 3 Unified Table Filters
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [severityFilter, setSeverityFilter] = useState<string>("all");
   const [urgencyFilter, setUrgencyFilter] = useState<string>("all");
@@ -100,7 +118,7 @@ const RescueRequests = () => {
   const [selectedRequest, setSelectedRequest] = useState<RescueRequestTableRow | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // New Rescue Request Form State
+  // Form State
   const [formData, setFormData] = useState({
     reporter_name: "",
     reporter_phone: "",
@@ -111,33 +129,47 @@ const RescueRequests = () => {
     reporter_notes: "",
   });
 
-  // Image Upload State (for the Log Emergency Rescue Call form)
+  // Photo Upload State
   const [rescueImageFile, setRescueImageFile] = useState<File | null>(null);
   const [rescueImagePreview, setRescueImagePreview] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const rescueImageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // GPS Coordinates State
+  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [isGettingGps, setIsGettingGps] = useState(false);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+
+  // Image Upload Handlers
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      addToast("Please select a valid image file (JPG, PNG, WebP).", "error");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      addToast("Image size must be under 10MB.", "error");
+      return;
+    }
+    setRescueImageFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setRescueImagePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const clearRescueImage = () => {
     setRescueImageFile(null);
-    if (rescueImagePreview) URL.revokeObjectURL(rescueImagePreview);
     setRescueImagePreview(null);
-    if (rescueImageInputRef.current) rescueImageInputRef.current.value = "";
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
-  const handleRescueImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (rescueImagePreview) URL.revokeObjectURL(rescueImagePreview);
-    setRescueImageFile(file);
-    setRescueImagePreview(URL.createObjectURL(file));
-  };
-
-  // GPS / Current Location State
-  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [gpsError, setGpsError] = useState<string | null>(null);
-  const [isGettingGps, setIsGettingGps] = useState(false);
-
-  const handleUseCurrentLocation = () => {
+  // GPS Coordinate Capture Handler
+  const handleGetLocation = () => {
     if (!navigator.geolocation) {
       setGpsError("Geolocation is not supported by your browser.");
       return;
@@ -150,7 +182,6 @@ const RescueRequests = () => {
         const lng = parseFloat(position.coords.longitude.toFixed(6));
         setGpsCoords({ lat, lng });
         setIsGettingGps(false);
-        // Pre-fill address with readable coords if the field is empty
         if (!formData.location_address) {
           setFormData((prev) => ({
             ...prev,
@@ -160,13 +191,7 @@ const RescueRequests = () => {
       },
       (err) => {
         setIsGettingGps(false);
-        if (err.code === err.PERMISSION_DENIED) {
-          setGpsError("Location permission denied. Please enter the address manually.");
-        } else if (err.code === err.POSITION_UNAVAILABLE) {
-          setGpsError("Location unavailable. Please enter the address manually.");
-        } else {
-          setGpsError("Could not get your location. Please enter the address manually.");
-        }
+        setGpsError(err.code === err.PERMISSION_DENIED ? "Location permission denied." : "Could not get your location.");
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
@@ -192,8 +217,7 @@ const RescueRequests = () => {
         const assignedVehicleNumber = String(item.assigned_vehicle_number || item.assigned_vehicle || dispatchObj?.assigned_vehicle_number || dispatchObj?.vehicle_number || (assignedVehicleId ? `Vehicle (${assignedVehicleId.slice(0, 8)})` : ""));
 
         const rawStatus = String(item.status || "reported").toLowerCase();
-        const hasAssignment = !!(item.coordinator_id || assignedAgentId || dispatchObj);
-        const displayStatus = (rawStatus === "verified" && hasAssignment) ? "accepted" : rawStatus;
+        const displayStatus = rawStatus;
 
         const stage = dispatchStage({ status: displayStatus, dispatch: dispatchObj });
 
@@ -271,26 +295,35 @@ const RescueRequests = () => {
     vehicleService.getVehicles().then((res: any) => {
       const list = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
       setVehicles(list);
-    }).catch(() => setVehicles([]));
+    }).catch((err) => {
+      console.warn("Could not load fleet vehicles:", err);
+      setVehicles([]);
+    });
   }, []);
 
   // Fetch available users / staff via authorized rescue agent availability API
   useEffect(() => {
     const loadStaffUsers = async () => {
       try {
-        // 1. Fetch authorized rescue agent availability (authorized for rescue_coordinator)
-        const agentAvailRes = await rescueService.getAgentAvailability().catch(() => null);
-        const agentsList = unwrapList(agentAvailRes?.data ?? agentAvailRes ?? []);
+        let agentsList: any[] = [];
+        try {
+          const agentAvailRes = await rescueService.getAgentAvailability();
+          agentsList = unwrapList(agentAvailRes?.data ?? agentAvailRes ?? []);
+        } catch (agentErr) {
+          console.warn("Agent availability query skipped/failed:", agentErr);
+        }
 
-        // 2. Fetch admin user directory ONLY if session is super_admin / rescue_centre_admin / shelter_manager
-        const userDirRes = await userService.getUsers().catch(() => null);
-        const userDirList = unwrapList(userDirRes?.data ?? userDirRes ?? []);
+        let userDirList: any[] = [];
+        try {
+          const userDirRes = await userService.getUsers();
+          userDirList = unwrapList(userDirRes?.data ?? userDirRes ?? []);
+        } catch (userErr) {
+          console.warn("User directory query skipped/failed:", userErr);
+        }
 
-        // 3. Include current authenticated user (so Rescue Coordinator can select themselves in Coordinator dropdown)
         const current = getCurrentUser();
         const currentArr = current ? [current] : [];
 
-        // Deduplicate merged user dataset by user ID
         const combined = [...currentArr, ...agentsList, ...userDirList];
         const seenIds = new Set<string>();
         const uniqueUsers: Record<string, unknown>[] = [];
@@ -307,7 +340,8 @@ const RescueRequests = () => {
         }
 
         setUsers(uniqueUsers);
-      } catch {
+      } catch (err) {
+        console.error("Failed to load staff users:", err);
         const current = getCurrentUser();
         setUsers(current ? [current as unknown as Record<string, unknown>] : []);
       }
@@ -328,27 +362,22 @@ const RescueRequests = () => {
     void fetchRequests();
   }, [fetchRequests]);
 
-  // Accept Rescue Request Action with Concurrency Protection
+  // Accept Rescue Request / Dispatch Action
   const handleAccept = async (req: RescueRequestTableRow) => {
     const currentUserId = String(currentUser?.id ?? "");
     if (req.assigned_agent_id && req.assigned_agent_id !== currentUserId) {
-      addToast(`This rescue request has already been accepted by agent ${req.assigned_agent_name || req.assigned_agent_id}.`, "error");
-      return;
-    }
-    if (["accepted", "dispatched", "in_progress", "completed", "admitted"].includes(req.status)) {
-      addToast("This rescue request has already been accepted or dispatched.", "error");
+      addToast(`This rescue request has already been assigned to agent ${req.assigned_agent_name || req.assigned_agent_id}.`, "error");
       return;
     }
     try {
       setIsSubmitting(true);
-      const agentName = (currentUser as any)?.name || (currentUser as any)?.email || "Rescue Agent";
-      await rescueService.acceptRescueRequest(req.id, currentUserId || "agent", agentName);
-      addToast(`Rescue Request Accepted! Assigned to ${agentName}.`, "success");
+      await rescueService.acceptDispatch(req.id);
+      addToast("Rescue dispatch accepted! You are marked as responder.", "success");
       fetchRequests();
       notifyDataChanged();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string; message?: string } } };
-      addToast(e?.response?.data?.detail || e?.response?.data?.message || "Failed to accept rescue request.", "error");
+      const errMsg = extractErrorMessage(err, "Failed to accept rescue dispatch.");
+      addToast(errMsg, "error");
     } finally {
       setIsSubmitting(false);
     }
@@ -358,8 +387,6 @@ const RescueRequests = () => {
     setTargetDispatchRequest(req);
     setIsDispatchModalOpen(true);
   };
-
-
 
   // Create Request Action
   const handleCreateRequest = async (e: React.FormEvent) => {
@@ -418,8 +445,8 @@ const RescueRequests = () => {
       fetchRequests();
       notifyDataChanged();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string; message?: string } } };
-      addToast(e?.response?.data?.detail || e?.response?.data?.message || "Failed to log rescue report", "error");
+      const errMsg = extractErrorMessage(err, "Failed to log rescue report");
+      addToast(errMsg, "error");
     } finally {
       setIsSubmitting(false);
     }
@@ -440,8 +467,7 @@ const RescueRequests = () => {
       fetchRequests();
       notifyDataChanged();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string; message?: string; error?: { message?: string } } }; message?: string };
-      const errMsg = e?.response?.data?.error?.message || e?.response?.data?.detail || e?.response?.data?.message || e?.message || "Failed to verify request";
+      const errMsg = extractErrorMessage(err, "Failed to verify request");
       addToast(errMsg, "error");
     } finally {
       setIsSubmitting(false);
@@ -472,8 +498,8 @@ const RescueRequests = () => {
       fetchRequests();
       notifyDataChanged();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string; message?: string } } };
-      addToast(e?.response?.data?.detail || e?.response?.data?.message || "Failed to reject request", "error");
+      const errMsg = extractErrorMessage(err, "Failed to reject request");
+      addToast(errMsg, "error");
     } finally {
       setIsSubmitting(false);
     }
@@ -656,7 +682,8 @@ const RescueRequests = () => {
           );
         }
 
-        const canAccept = row.status === "verified" && (!row.assigned_agent_id || row.assigned_agent_id === String(currentUser?.id ?? ""));
+        const isAssignedToMe = row.assigned_agent_id === String(currentUser?.id ?? "");
+        const canAcceptDispatch = row.status === "dispatched" && isAssignedToMe && !(row.dispatch as any)?.accepted_at;
 
         return (
           <div style={{ display: "flex", gap: "6px", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
@@ -690,16 +717,16 @@ const RescueRequests = () => {
                 </button>
               </>
             )}
-            {canAccept && (
+            {canAcceptDispatch && (
               <button
                 type="button"
                 onClick={() => handleAccept(row)}
-                style={{ padding: "5px 11px", borderRadius: "6px", border: "none", background: "#D97706", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+                style={{ padding: "5px 11px", borderRadius: "6px", border: "none", background: "#16A34A", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
               >
-                Accept
+                Accept Dispatch
               </button>
             )}
-            {row.status === "accepted" && canDispatch && (
+            {(row.status === "verified" || row.status === "accepted") && canDispatch && (
               <button
                 type="button"
                 onClick={() => handleOpenDispatchModal(row)}
@@ -901,7 +928,7 @@ const RescueRequests = () => {
               <label style={{ fontSize: "13px", fontWeight: 600, color: "#334155" }}>Location Address *</label>
               <button
                 type="button"
-                onClick={handleUseCurrentLocation}
+                onClick={handleGetLocation}
                 disabled={isGettingGps}
                 style={{
                   display: "flex",
@@ -1094,10 +1121,10 @@ const RescueRequests = () => {
             )}
             <input
               id="rescue-image-upload"
-              ref={rescueImageInputRef}
+              ref={fileInputRef}
               type="file"
               accept="image/*"
-              onChange={handleRescueImageChange}
+              onChange={handleImageChange}
               style={{ display: "none" }}
             />
           </div>
@@ -1205,18 +1232,18 @@ const RescueRequests = () => {
                     </button>
                   </>
                 )}
-                {selectedRequest.status === "verified" && (!selectedRequest.assigned_agent_id || selectedRequest.assigned_agent_id === String(currentUser?.id ?? "")) && (
+                {selectedRequest.status === "dispatched" && selectedRequest.assigned_agent_id === String(currentUser?.id ?? "") && !(selectedRequest.dispatch as any)?.accepted_at && (
                   <button
                     onClick={() => {
                       handleAccept(selectedRequest);
                       setIsViewModalOpen(false);
                     }}
-                    style={{ padding: "8px 16px", background: "#D97706", color: "#FFF", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
+                    style={{ padding: "8px 16px", background: "#16A34A", color: "#FFF", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "13px" }}
                   >
-                    Accept Request
+                    Accept Dispatch
                   </button>
                 )}
-                {selectedRequest.status === "accepted" && canDispatch && (
+                {(selectedRequest.status === "verified" || selectedRequest.status === "accepted") && canDispatch && (
                   <button
                     onClick={() => {
                       handleOpenDispatchModal(selectedRequest);

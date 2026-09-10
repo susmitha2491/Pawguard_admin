@@ -2243,12 +2243,12 @@ const VeterinarianDashboard = () => {
             const isCleared = medStatus.toLowerCase().includes("clear") || Boolean(selectedShelterRequest.is_fit_for_adoption || selectedShelterRequest.is_adoptable);
 
             const priorityStr = str(pick(selectedShelterRequest, "priority", "urgency", "severity")).toUpperCase() ||
-              (medStatus.toLowerCase().includes("critical") || medStatus.toLowerCase().includes("urgent") ? "HIGH / URGENT" : "NORMAL");
+              (medStatus.toLowerCase().includes("critical") || medStatus.toLowerCase().includes("urgent") ? "HIGH / URGENT" : "ROUTINE");
 
-            const medicalIssue = str(pick(selectedShelterRequest, "reason", "medical_notes", "issue", "chief_complaint", "medical_status")) || "Routine Clinical Examination & Triage";
-            const symptoms = str(pick(selectedShelterRequest, "visible_injuries", "symptoms", "observations", "triage_notes", "notes")) || "None reported by shelter staff";
-            const shelterNotes = str(pick(selectedShelterRequest, "shelter_notes", "notes", "description", "vetting_notes")) || "Standard shelter intake & clinical examination request.";
-            const requestedExam = str(pick(selectedShelterRequest, "requested_exam", "examination_type", "type")) || "General Veterinary Check-up & Health Clearance";
+            const medicalIssue = str(pick(selectedShelterRequest, "reason", "medical_notes", "issue", "chief_complaint")) || "No specific medical reason recorded";
+            const symptoms = str(pick(selectedShelterRequest, "visible_injuries", "symptoms", "observations", "triage_notes")) || "None recorded";
+            const shelterNotes = str(pick(selectedShelterRequest, "shelter_notes", "notes", "description", "vetting_notes")) || "";
+            const requestedExam = str(pick(selectedShelterRequest, "requested_exam", "examination_type", "type")) || "Clinical Health Examination";
 
             const requiresSurgery = Boolean(selectedShelterRequest.requires_surgery || str(selectedShelterRequest.treatment_type).toLowerCase().includes("surg") || selectedShelterRequest.surgery);
 

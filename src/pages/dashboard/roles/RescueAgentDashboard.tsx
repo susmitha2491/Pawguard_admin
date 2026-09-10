@@ -198,7 +198,9 @@ const RescueAgentDashboard = () => {
         setGpsStatus("active");
 
         if (caseId) {
-          rescueService.startTracking(caseId).catch(() => {});
+          rescueService.startTracking(caseId).catch((err) => {
+            console.warn("Backend GPS start tracking notification skipped:", err);
+          });
         }
       },
       (err) => {
@@ -223,7 +225,9 @@ const RescueAgentDashboard = () => {
     }
     setGpsStatus("idle");
     if (caseId) {
-      rescueService.stopTracking(caseId).catch(() => {});
+      rescueService.stopTracking(caseId).catch((err) => {
+        console.warn("Backend GPS stop tracking notification skipped:", err);
+      });
     }
   };
 
@@ -624,8 +628,14 @@ const RescueAgentDashboard = () => {
       fetchAssignedCases();
       fetchDashboard();
       notifyDataChanged();
-    } catch {
-      addToast("Failed to confirm delivery and admit animal.", "error");
+    } catch (err: any) {
+      const isForbidden = err?.response?.status === 403;
+      const backendMsg = err?.response?.data?.error?.message || err?.response?.data?.detail || err?.response?.data?.message;
+      if (isForbidden) {
+        addToast(backendMsg || "Admission restricted: Shelter admission requires Rescue Coordinator or Shelter Manager authorization.", "error");
+      } else {
+        addToast(backendMsg || "Failed to confirm delivery and admit animal.", "error");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -889,22 +899,10 @@ const RescueAgentDashboard = () => {
     const agentUser = getCurrentUser();
     const agentUserId = String(agentUser?.id ?? "");
     if (assignedAgentId && assignedAgentId !== agentUserId) {
-      addToast(`This rescue request has already been accepted by another agent.`, "error");
+      addToast("This rescue request has already been accepted by another agent.", "error");
       return;
     }
-    try {
-      setIsSubmitting(true);
-      const agentName = (agentUser as any)?.name || (agentUser as any)?.email || "Rescue Agent";
-      await rescueService.acceptRescueRequest(caseId, agentUserId || "agent", agentName);
-      addToast("Rescue Request Accepted!", "success");
-      fetchAssignedCases();
-      fetchDashboard();
-      notifyDataChanged();
-    } catch (err: any) {
-      addToast(err?.response?.data?.detail || err?.response?.data?.message || "Failed to accept rescue request.", "error");
-    } finally {
-      setIsSubmitting(false);
-    }
+    await handleAcceptDispatch(caseId);
   };
 
   const rowActions = (row: Record<string, unknown>) => {

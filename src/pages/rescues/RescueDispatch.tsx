@@ -55,6 +55,24 @@ export interface EnrichedDispatch {
   [key: string]: unknown;
 }
 
+const extractErrorMessage = (err: any, fallback: string): string => {
+  const detail =
+    err?.response?.data?.error?.message ||
+    err?.response?.data?.error ||
+    err?.response?.data?.detail ||
+    err?.response?.data?.message ||
+    err?.message;
+  if (!detail) return fallback;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((item) => (typeof item === "string" ? item : item?.msg || JSON.stringify(item))).join("; ");
+  }
+  if (typeof detail === "object") {
+    return (detail as any).msg || (detail as any).message || JSON.stringify(detail);
+  }
+  return String(detail);
+};
+
 const RescueDispatch = () => {
   const currentUserRole = getCurrentUserRole();
   const isRescueCentreAdmin = currentUserRole === "rescue_centre_admin";
@@ -274,8 +292,8 @@ const RescueDispatch = () => {
       fetchAll();
       notifyDataChanged();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string; message?: string } } };
-      addToast(e?.response?.data?.detail || e?.response?.data?.message || "Failed to create dispatch", "error");
+      const errMsg = extractErrorMessage(err, "Failed to create dispatch");
+      addToast(errMsg, "error");
     } finally {
       setIsSubmitting(false);
     }
@@ -306,8 +324,8 @@ const RescueDispatch = () => {
       fetchAll();
       notifyDataChanged();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string; message?: string } } };
-      addToast(e?.response?.data?.detail || e?.response?.data?.message || "Failed to update dispatch status", "error");
+      const errMsg = extractErrorMessage(err, "Failed to update dispatch status");
+      addToast(errMsg, "error");
     }
   };
 
@@ -334,8 +352,8 @@ const RescueDispatch = () => {
       fetchAll();
       notifyDataChanged();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string; message?: string } } };
-      addToast(e?.response?.data?.detail || e?.response?.data?.message || "Failed to reassign agent", "error");
+      const errMsg = extractErrorMessage(err, "Failed to reassign agent");
+      addToast(errMsg, "error");
     } finally {
       setIsSubmitting(false);
     }
@@ -364,8 +382,8 @@ const RescueDispatch = () => {
       fetchAll();
       notifyDataChanged();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string; message?: string } } };
-      addToast(e?.response?.data?.detail || e?.response?.data?.message || "Failed to reassign vehicle", "error");
+      const errMsg = extractErrorMessage(err, "Failed to reassign vehicle");
+      addToast(errMsg, "error");
     } finally {
       setIsSubmitting(false);
     }
@@ -389,8 +407,8 @@ const RescueDispatch = () => {
       fetchAll();
       notifyDataChanged();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { detail?: string; message?: string } } };
-      addToast(e?.response?.data?.detail || e?.response?.data?.message || "Failed to cancel dispatch", "error");
+      const errMsg = extractErrorMessage(err, "Failed to cancel dispatch");
+      addToast(errMsg, "error");
     } finally {
       setIsSubmitting(false);
     }

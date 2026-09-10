@@ -156,7 +156,11 @@ export const volunteerService = {
 
   // POST /volunteers/bulk/status - Bulk status update
   bulkUpdateStatus: async (profileIds: string[], status: "applied" | "onboarded" | "active" | "inactive") => {
-    const response = await api.post("/volunteers/bulk/status", { profile_ids: profileIds, status });
+    const response = await api.post("/volunteers/bulk/status", {
+      ids: profileIds,
+      profile_ids: profileIds,
+      status,
+    });
     return response.data;
   },
 
@@ -409,7 +413,10 @@ export const volunteerService = {
 
   // POST /volunteers/bulk/delete - Bulk delete profiles
   bulkDeleteProfiles: async (profileIds: string[]) => {
-    const response = await api.post("/volunteers/bulk/delete", { profile_ids: profileIds });
+    const response = await api.post("/volunteers/bulk/delete", {
+      ids: profileIds,
+      profile_ids: profileIds,
+    });
     return response.data;
   },
 
