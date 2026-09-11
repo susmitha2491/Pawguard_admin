@@ -1775,7 +1775,7 @@ const Reports = () => {
         <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
           <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Medical Care &amp; Immunization Compliance Report</h1>
           <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-            Backend-generated veterinary analytics — GET /api/v1/reports/medical/analytics
+            Monitor veterinary care, vaccination compliance, follow-ups, and treatment outcomes across shelter animals.
           </p>
         </div>
 
