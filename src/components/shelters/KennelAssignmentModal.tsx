@@ -78,7 +78,7 @@ export const KennelAssignmentModal: React.FC<KennelAssignmentModalProps> = ({
     };
 
     loadInitialData();
-  }, [isOpen, preselectedFacilityId]);
+  }, [isOpen, preselectedFacilityId, addToast]);
 
   const handleFacilityChange = async (facId: string) => {
     setSelectedFacilityId(facId);
@@ -197,8 +197,6 @@ export const KennelAssignmentModal: React.FC<KennelAssignmentModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
-
   const dogOptions: SelectOption[] = useMemo(() => {
     return dogs.map((d) => {
       const dId = String(d.id || d.dog_id || "");
@@ -248,6 +246,8 @@ export const KennelAssignmentModal: React.FC<KennelAssignmentModalProps> = ({
       };
     });
   }, [kennels]);
+
+  if (!isOpen) return null;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Kennel Unit Assignment Workflow" size="lg">

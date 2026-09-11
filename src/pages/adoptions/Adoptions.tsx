@@ -149,23 +149,31 @@ const Adoptions = () => {
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const { addToast } = useToast();
 
-  if (isRescueCentreAdmin) {
-    return (
-      <div style={{ padding: "40px 20px", textAlign: "center" }}>
-        <h2 style={{ color: "#DC2626", fontWeight: 800 }}>Access Restricted</h2>
-        <p style={{ color: "#64748B", maxWidth: "600px", margin: "12px auto" }}>
-          Adoption Management is reserved for Adoption Coordinators, Shelter Managers, and Super Administrators. Rescue Centre Admin access is restricted to centre rescue operations, dispatch, vehicle fleet, and dog master management.
-        </p>
-      </div>
-    );
-  }
-
   // Search & Pagination & Filter
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
   const pageSize = 20;
+
+  // Modals state
+  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [isScoreModalOpen, setIsScoreModalOpen] = useState(false);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+
+  // Safety Tag QR Modal
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+
+  // Selection state
+  const [selectedAdoption, setSelectedAdoption] = useState<Record<string, unknown> | null>(null);
+  const [candidateScores, setCandidateScores] = useState<any[]>([]);
+  const [identityVerification, setIdentityVerification] = useState<AdopterIdentityVerification | null>(null);
+  const [isIdentityLoading, setIsIdentityLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const tabParam = searchParams.get("tab");
@@ -198,25 +206,6 @@ const Adoptions = () => {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
-
-  // Modals state
-  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
-  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
-  const [isScoreModalOpen, setIsScoreModalOpen] = useState(false);
-  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-
-  // Safety Tag QR Modal
-  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
-  const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
-  const [qrLoading, setQrLoading] = useState(false);
-
-  // Selection state
-  const [selectedAdoption, setSelectedAdoption] = useState<Record<string, unknown> | null>(null);
-  const [candidateScores, setCandidateScores] = useState<any[]>([]);
-  const [identityVerification, setIdentityVerification] = useState<AdopterIdentityVerification | null>(null);
-  const [isIdentityLoading, setIsIdentityLoading] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Forms
   const [newAppForm, setNewAppForm] = useState({
@@ -687,6 +676,17 @@ const Adoptions = () => {
       render: (_v, row) => <span>{row.date ? formatDateTime(String(row.date)) : "—"}</span>,
     },
   ];
+
+  if (isRescueCentreAdmin) {
+    return (
+      <div style={{ padding: "40px 20px", textAlign: "center" }}>
+        <h2 style={{ color: "#DC2626", fontWeight: 800 }}>Access Restricted</h2>
+        <p style={{ color: "#64748B", maxWidth: "600px", margin: "12px auto" }}>
+          Adoption Management is reserved for Adoption Coordinators, Shelter Managers, and Super Administrators. Rescue Centre Admin access is restricted to centre rescue operations, dispatch, vehicle fleet, and dog master management.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div>

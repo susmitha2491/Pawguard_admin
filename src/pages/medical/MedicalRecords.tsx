@@ -73,6 +73,31 @@ const MedicalRecords = () => {
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
+  // Modals state
+  const [isExamModalOpen, setIsExamModalOpen] = useState(false);
+  const [isVaccineModalOpen, setIsVaccineModalOpen] = useState(false);
+  const [isSurgeryModalOpen, setIsSurgeryModalOpen] = useState(false);
+  const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
+  const [isAdministrationModalOpen, setIsAdministrationModalOpen] = useState(false);
+  const [isCertModalOpen, setIsCertModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [selectedRecord, setSelectedRecord] = useState<Record<string, unknown> | null>(null);
+  const [selectedDogProfile, setSelectedDogProfile] = useState<Record<string, unknown> | null>(null);
+  const [dogHistory, setDogHistory] = useState<Record<string, unknown>[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Form states
+  const [examForm, setExamForm] = useState<ClinicalExamPayload>({
+    dog_id: "",
+    body_condition_score: 5,
+    dental_health: "",
+    ocular_aural_notes: "",
+    coat_condition: "",
+    visible_injuries: "",
+    triage_diagnosis: "",
+  });
+
   useEffect(() => {
     if (dogIdParam) {
       setDogIdFilter(dogIdParam);
@@ -106,31 +131,6 @@ const MedicalRecords = () => {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
-
-  // Modals state
-  const [isExamModalOpen, setIsExamModalOpen] = useState(false);
-  const [isVaccineModalOpen, setIsVaccineModalOpen] = useState(false);
-  const [isSurgeryModalOpen, setIsSurgeryModalOpen] = useState(false);
-  const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
-  const [isAdministrationModalOpen, setIsAdministrationModalOpen] = useState(false);
-  const [isCertModalOpen, setIsCertModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [selectedRecord, setSelectedRecord] = useState<Record<string, unknown> | null>(null);
-  const [selectedDogProfile, setSelectedDogProfile] = useState<Record<string, unknown> | null>(null);
-  const [dogHistory, setDogHistory] = useState<Record<string, unknown>[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-
-  // Form states
-  const [examForm, setExamForm] = useState<ClinicalExamPayload>({
-    dog_id: "",
-    body_condition_score: 5,
-    dental_health: "",
-    ocular_aural_notes: "",
-    coat_condition: "",
-    visible_injuries: "",
-    triage_diagnosis: "",
-  });
 
   const [vaccineForm, setVaccineForm] = useState<VaccinationRecordPayload>({
     dog_id: "",

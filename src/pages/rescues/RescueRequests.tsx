@@ -207,7 +207,7 @@ const RescueRequests = () => {
       const response = await rescueService.getAllRescueCases(queryParams);
       const list = unwrapList(response?.data ?? response);
 
-      let formatted: RescueRequestTableRow[] = list.map((item: Record<string, unknown>) => {
+      const formatted: RescueRequestTableRow[] = list.map((item: Record<string, unknown>) => {
         const dispatchObj = (item.dispatch as Record<string, unknown>) || null;
         const assignedAgentId = String(item.assigned_agent_id || item.agent_id || dispatchObj?.assigned_driver_id || dispatchObj?.agent_id || item.assigned_agent || "");
         const userAgent = assignedAgentId ? users.find((u) => String((u as any).id || "").toLowerCase() === assignedAgentId.toLowerCase()) : null;

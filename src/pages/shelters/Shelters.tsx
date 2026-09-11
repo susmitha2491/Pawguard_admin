@@ -258,7 +258,7 @@ export const Shelters = () => {
     } catch (err: any) {
       const status = err?.response?.status;
       const dataDetail = err?.response?.data?.detail || err?.response?.data?.message;
-      let detailStr = "";
+      let detailStr: string;
       if (typeof dataDetail === "string") {
         detailStr = dataDetail;
       } else if (Array.isArray(dataDetail)) {

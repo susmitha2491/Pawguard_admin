@@ -163,8 +163,6 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
     }
   }, [rescue, isOpen, safeUsersList]);
 
-  if (!rescue || !isOpen) return null;
-
   // 1. Coordinators dropdown: actual Rescue Coordinators or Super Admin / Rescue Centre Admin
   const coordinatorsList = safeUsersList.filter((u) => isRescueCoordinatorUser(u));
 
@@ -182,7 +180,7 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
 
   const handleAssignSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting) return;
+    if (isSubmitting || !rescue) return;
 
     if (
       !assignForm.coordinator_id ||
@@ -299,6 +297,8 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
       };
     });
   }, [vehicles]);
+
+  if (!rescue || !isOpen) return null;
 
   return (
     <Modal

@@ -614,7 +614,7 @@ const Users = () => {
       const rawBody = response as unknown;
       const rawData = (rawBody as { data?: unknown })?.data;
       const rawItems = (rawData as { items?: unknown })?.items;
-      let facilityList = Array.isArray(rawBody)
+      const facilityList = Array.isArray(rawBody)
         ? (rawBody as any[])
         : Array.isArray(rawData)
           ? (rawData as any[])

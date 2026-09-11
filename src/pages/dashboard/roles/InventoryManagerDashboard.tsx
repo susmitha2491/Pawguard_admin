@@ -75,7 +75,7 @@ const InventoryManagerDashboard = () => {
         summaryObj = dashRes.value?.data || dashRes.value;
       }
 
-      let alertsObj: any = null;
+      const alertsObj: any = null;
 
       let itemsList: any[] = [];
       if (invRes.status === "fulfilled" && invRes.value) {
