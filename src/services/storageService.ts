@@ -1,5 +1,7 @@
 import api from "../api/axios";
 
+import { resolveImageUrl } from "../utils/imageUtils";
+
 export interface StorageUploadPayload {
   original_filename: string;
   mime_type: string;
@@ -92,9 +94,11 @@ export const storageService = {
       confirmed.forEach((f: any) => {
         const dId = f.entity_id;
         if (!dId) return;
-        const directUrl = f.download_url || f.file_url || f.public_url || f.url || f.presigned_url;
+        const directUrl = f.object_key
+          ? `/api/v1/storage/media/original/${f.object_key}`
+          : f.download_url || f.file_url || f.public_url || f.url || f.presigned_url;
         if (directUrl && typeof directUrl === "string") {
-          resolvedMap[dId] = directUrl.trim();
+          resolvedMap[dId] = resolveImageUrl(directUrl);
         }
       });
 
@@ -133,17 +137,19 @@ export const storageService = {
         headers: { "Content-Type": "multipart/form-data" },
       });
       const data = res.data?.data || res.data;
-      const url =
+      if (data?.object_key) {
+        return `/api/v1/storage/media/original/${data.object_key}`;
+      }
+      const rawUrl =
         data?.cdn_url ||
         data?.url ||
         data?.file_url ||
         data?.download_url ||
         data?.media_url ||
         data?.photo_url ||
-        data?.object_key ||
         (typeof data === "string" ? data : "");
-      if (url && typeof url === "string") {
-        return url;
+      if (rawUrl && typeof rawUrl === "string") {
+        return resolveImageUrl(rawUrl);
       }
     } catch {
       // Fall through to presigned upload pipeline
@@ -160,7 +166,7 @@ export const storageService = {
    * 1. Get presigned upload URL from backend
    * 2. PUT binary file directly to presigned S3/Supabase URL
    * 3. Confirm upload with backend
-   * 4. Retrieve persistent download URL
+   * 4. Return persistent media stream URL
    */
   uploadFile: async (
     file: File,
@@ -186,7 +192,7 @@ export const storageService = {
       entity_id: options.entity_id,
     });
 
-    const { upload_url, file_id } = uploadRes;
+    const { upload_url, file_id, object_key } = uploadRes;
     if (!upload_url || !file_id) {
       throw new Error("Failed to generate storage upload URL.");
     }
@@ -207,7 +213,12 @@ export const storageService = {
     // 3. Confirm upload with backend
     await storageService.confirmUpload(file_id);
 
-    // 4. Retrieve presigned download URL (or fallback to base upload URL)
+    // 4. Return backend media stream URL if object_key is known
+    if (object_key) {
+      return `/api/v1/storage/media/original/${object_key}`;
+    }
+
+    // 5. Retrieve presigned download URL fallback
     let persistentUrl = "";
     try {
       const downloadRes = await storageService.getDownloadUrl(file_id);
@@ -217,11 +228,10 @@ export const storageService = {
     }
 
     if (!persistentUrl && upload_url) {
-      // Strip query parameters for persistent asset link if S3 URL
       persistentUrl = upload_url.split("?")[0];
     }
 
-    return persistentUrl;
+    return resolveImageUrl(persistentUrl);
   },
 };
 

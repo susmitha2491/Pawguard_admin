@@ -2,6 +2,7 @@ import api from "../api/axios";
 import { publishActionEvent } from "../utils/eventSystem";
 import { getAccessToken } from "../utils/authStorage";
 import type { DogProfileCreate, DogProfileUpdate } from "../types/pipeline";
+import { resolveImageUrl } from "../utils/imageUtils";
 
 export interface PetPayload {
   id?: string;
@@ -192,8 +193,8 @@ export const petService = {
     adoptableDogCount: number;
   }> => {
     let dogMasterCount = 0;
-    let companionPetCount = 0;
-    let companionDogCount = 0;
+    let companionPetCount: number;
+    let companionDogCount: number;
     let adoptableDogCount = 0;
 
     const dogParams: Record<string, unknown> = { page: 1, page_size: 1 };
@@ -272,7 +273,7 @@ export const petService = {
     const promise = (async () => {
       const pageSize = (params?.page_size as number) || 50;
       const collected: any[] = [];
-      let totalCount = 0;
+      let totalCount: number;
       try {
         const firstRes = await api.get("/dogs", { params: { page: 1, page_size: pageSize, ...params } });
         const firstBody = firstRes.data;
@@ -343,13 +344,17 @@ export const petService = {
     petService.clearCache();
 
     // Normalize photos array and field aliases
-    const photos = Array.isArray(data.photos)
+    const rawPhotos = Array.isArray(data.photos)
       ? data.photos
       : Array.isArray(data.image_urls)
       ? data.image_urls
       : data.photo_url
       ? [data.photo_url]
       : [];
+
+    const photos = rawPhotos
+      .map((p) => (typeof p === "string" ? resolveImageUrl(p) : typeof (p as any)?.url === "string" ? resolveImageUrl((p as any).url) : ""))
+      .filter((p): p is string => Boolean(p && typeof p === "string" && p.trim() !== ""));
 
     const weightVal = data.weight_kg !== undefined ? data.weight_kg : data.weight;
     const microchipVal = data.microchip_number || data.microchip_id;
@@ -414,13 +419,16 @@ export const petService = {
     }
 
     if (data.photos || data.image_urls || data.photo_url) {
-      const photos = Array.isArray(data.photos)
+      const rawPhotos = Array.isArray(data.photos)
         ? data.photos
         : Array.isArray(data.image_urls)
         ? data.image_urls
         : data.photo_url
         ? [data.photo_url]
         : [];
+      const photos = rawPhotos
+        .map((p) => (typeof p === "string" ? resolveImageUrl(p) : typeof (p as any)?.url === "string" ? resolveImageUrl((p as any).url) : ""))
+        .filter((p): p is string => Boolean(p && typeof p === "string" && p.trim() !== ""));
       if (photos.length > 0) {
         payload.photos = photos;
         payload.image_urls = photos;

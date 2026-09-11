@@ -40,6 +40,9 @@ import { generateQrDataUrl, generateQrBlob } from "../../utils/qrGenerator";
 import DogLifecycleTimelineModal from "../../components/pets/DogLifecycleTimelineModal";
 import ImageUploader from "../../components/common/ImageUploader";
 import FosterDogs from "../fosters/FosterDogs";
+import { getDogPhotoUrl, resolveImageUrl } from "../../utils/imageUtils";
+
+export { getDogPhotoUrl, resolveImageUrl };
 
 const DOG_STATUSES = ["rescued", "clinic", "shelter", "fostered", "adopted"];
 const GENDERS = ["male", "female", "unknown"];
@@ -88,31 +91,6 @@ export const formatTailType = (val?: string | null): string => {
     case "unknown": return "Not recorded";
     default: return val.charAt(0).toUpperCase() + val.slice(1);
   }
-};
-
-export const getDogPhotoUrl = (dog: any, photoMap?: Record<string, string>): string => {
-  if (!dog) return "";
-  const dId = dog?.id || dog?.dog_id || dog?.registration_number;
-  if (dId && photoMap && photoMap[dId]) return photoMap[dId];
-  if (typeof dog.photo_url === "string" && dog.photo_url.trim()) return dog.photo_url.trim();
-  if (typeof dog.image_url === "string" && dog.image_url.trim()) return dog.image_url.trim();
-  if (typeof dog.avatar_url === "string" && dog.avatar_url.trim()) return dog.avatar_url.trim();
-  if (Array.isArray(dog.image_urls) && dog.image_urls.length > 0 && typeof dog.image_urls[0] === "string" && dog.image_urls[0].trim()) {
-    return dog.image_urls[0].trim();
-  }
-  if (Array.isArray(dog.photo_gallery_urls) && dog.photo_gallery_urls.length > 0 && typeof dog.photo_gallery_urls[0] === "string" && dog.photo_gallery_urls[0].trim()) {
-    return dog.photo_gallery_urls[0].trim();
-  }
-  if (Array.isArray(dog.photos) && dog.photos.length > 0) {
-    const p = dog.photos[0];
-    if (typeof p === "string" && p.trim()) return p.trim();
-    if (p && typeof p.url === "string" && p.url.trim()) return p.url.trim();
-  }
-  if (dId) {
-    const cached = localStorage.getItem(`pawguard_dog_photo_${dId}`) || sessionStorage.getItem(`pawguard_dog_photo_${dId}`);
-    if (cached) return cached;
-  }
-  return "";
 };
 
 export const isDogMedicallyCleared = (dog: any, clearancesList?: any[]): boolean => {
@@ -419,6 +397,17 @@ const GeneralDogManagement = () => {
         sessionStorage.removeItem(`pawguard_dog_photo_${dId}`);
       } catch {
         /* ignore storage errors */
+      }
+
+      // Persist the photo URL to the dog profile record in the database
+      try {
+        await petService.updateDog(dId, {
+          photo_url: persistentStorageUrl,
+          image_urls: [persistentStorageUrl],
+          photos: [persistentStorageUrl],
+        });
+      } catch (patchErr) {
+        console.warn("Could not patch dog profile record with photo URL:", patchErr);
       }
 
       // Update the dogPhotoMap immediately for this dog so the UI reflects the new photo
@@ -1520,6 +1509,83 @@ const extractTagData = (res: any) => {
   ];
 
   const columns = [
+    {
+      key: "photo",
+      title: "Photo",
+      render: (_: unknown, row: any) => {
+        const photoUrl = getDogPhotoUrl(row, dogPhotoMap);
+        const name = row.name || "Dog";
+        return (
+          <div
+            style={{
+              width: "48px",
+              height: "48px",
+              borderRadius: "8px",
+              overflow: "hidden",
+              background: "#F1F5F9",
+              border: "1px solid #CBD5E1",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              boxSizing: "border-box",
+            }}
+          >
+            {photoUrl ? (
+              <>
+                <img
+                  src={photoUrl}
+                  alt={name}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    maxWidth: "100%",
+                    maxHeight: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                  }}
+                  onError={(e) => {
+                    (e.currentTarget as HTMLElement).style.display = "none";
+                    const fb = e.currentTarget.parentElement?.querySelector(".fallback-table-photo") as HTMLElement;
+                    if (fb) fb.style.display = "flex";
+                  }}
+                />
+                <div
+                  className="fallback-table-photo"
+                  style={{
+                    display: "none",
+                    width: "100%",
+                    height: "100%",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#94A3B8",
+                    background: "#F8FAFC",
+                    fontSize: "18px",
+                  }}
+                >
+                  <FaPaw />
+                </div>
+              </>
+            ) : (
+              <div
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#94A3B8",
+                  background: "#F8FAFC",
+                  fontSize: "18px",
+                }}
+              >
+                <FaPaw />
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
     { key: "registration_number", title: "Pet ID" },
     {
       key: "name",
@@ -3287,38 +3353,67 @@ const extractTagData = (res: any) => {
                     }}
                     title="Click to Upload or Select New Dog Photo (JPG, PNG, WEBP max 5MB)"
                   >
-                    {(pendingPhotoUrl || getDogPhotoUrl(selectedViewDog)) ? (
-                      <img
-                        src={pendingPhotoUrl || getDogPhotoUrl(selectedViewDog)}
-                        alt={selectedViewDog.name || "Dog"}
-                        style={{
-                          width: "76px",
-                          height: "76px",
-                          borderRadius: "12px",
-                          objectFit: "cover",
-                          border: pendingPhotoUrl ? "2px solid #F59E0B" : "2px solid #38BDF8",
-                          boxShadow: "0 4px 6px -1px rgba(0,0,0,0.3)",
-                        }}
-                      />
-                    ) : (
-                      <div
-                        style={{
-                          width: "76px",
-                          height: "76px",
-                          borderRadius: "12px",
-                          background: "#334155",
-                          border: "2px dashed #64748B",
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          color: "#94A3B8",
-                        }}
-                      >
-                        <FaPaw style={{ fontSize: "24px" }} />
-                        <span style={{ fontSize: "9px", fontWeight: 700, marginTop: "2px" }}>No Photo</span>
-                      </div>
-                    )}
+                    {(() => {
+                      const displayPhoto = pendingPhotoUrl || getDogPhotoUrl(selectedViewDog, dogPhotoMap);
+                      return displayPhoto ? (
+                        <>
+                          <img
+                            src={displayPhoto}
+                            alt={selectedViewDog.name || "Dog"}
+                            style={{
+                              width: "76px",
+                              height: "76px",
+                              borderRadius: "12px",
+                              objectFit: "cover",
+                              border: pendingPhotoUrl ? "2px solid #F59E0B" : "2px solid #38BDF8",
+                              boxShadow: "0 4px 6px -1px rgba(0,0,0,0.3)",
+                              display: "block",
+                            }}
+                            onError={(e) => {
+                              (e.currentTarget as HTMLElement).style.display = "none";
+                              const fallback = e.currentTarget.parentElement?.querySelector(".fallback-master-photo") as HTMLElement;
+                              if (fallback) fallback.style.display = "flex";
+                            }}
+                          />
+                          <div
+                            className="fallback-master-photo"
+                            style={{
+                              display: "none",
+                              width: "76px",
+                              height: "76px",
+                              borderRadius: "12px",
+                              background: "#334155",
+                              border: "2px dashed #64748B",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "#94A3B8",
+                            }}
+                          >
+                            <FaPaw style={{ fontSize: "24px" }} />
+                            <span style={{ fontSize: "9px", fontWeight: 700, marginTop: "2px" }}>No Photo</span>
+                          </div>
+                        </>
+                      ) : (
+                        <div
+                          style={{
+                            width: "76px",
+                            height: "76px",
+                            borderRadius: "12px",
+                            background: "#334155",
+                            border: "2px dashed #64748B",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#94A3B8",
+                          }}
+                        >
+                          <FaPaw style={{ fontSize: "24px" }} />
+                          <span style={{ fontSize: "9px", fontWeight: 700, marginTop: "2px" }}>No Photo</span>
+                        </div>
+                      );
+                    })()}
 
                     <div
                       style={{

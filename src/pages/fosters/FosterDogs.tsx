@@ -30,6 +30,7 @@ import petService from "../../services/petService";
 import vetService from "../../services/vetService";
 import { useDataSync, notifyDataChanged } from "../../utils/dataSync";
 import { formatDateTime } from "../../utils/dateUtils";
+import { getDogPhotoUrl, resolveImageUrl } from "../../utils/imageUtils";
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
@@ -69,16 +70,8 @@ const getDurationInCare = (placedAt?: string | null): string | null => {
 
 const getPetPhoto = (dog?: any): string | null => {
   if (!dog) return null;
-  if (typeof dog.photo_url === "string" && dog.photo_url.trim()) return dog.photo_url.trim();
-  if (typeof dog.image_url === "string" && dog.image_url.trim()) return dog.image_url.trim();
-  if (typeof dog.avatar_url === "string" && dog.avatar_url.trim()) return dog.avatar_url.trim();
-  if (Array.isArray(dog.image_urls) && dog.image_urls.length > 0 && typeof dog.image_urls[0] === "string" && dog.image_urls[0].trim()) {
-    return dog.image_urls[0].trim();
-  }
-  if (Array.isArray(dog.photo_gallery_urls) && dog.photo_gallery_urls.length > 0 && typeof dog.photo_gallery_urls[0] === "string" && dog.photo_gallery_urls[0].trim()) {
-    return dog.photo_gallery_urls[0].trim();
-  }
-  return null;
+  const url = getDogPhotoUrl(dog);
+  return url ? resolveImageUrl(url) : null;
 };
 
 const extractBackendErrorMessage = (err: any, fallbackMessage: string): string => {
