@@ -1816,7 +1816,7 @@ const Reports = () => {
             </div>
 
             {/* Export actions */}
-            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "24px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px", marginBottom: "24px" }}>
               <QuickActionCard
                 icon={<FaFileAlt />}
                 title="Export CSV"

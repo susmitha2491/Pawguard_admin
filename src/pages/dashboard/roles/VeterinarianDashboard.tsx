@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import StatCard from "../../../components/dashboard/StatCard";
 import DataTable from "../../../components/common/DataTable";
@@ -23,6 +23,7 @@ import {
   FaHome,
   FaChartBar,
   FaCertificate,
+  FaHospital,
 } from "react-icons/fa";
 import vetService from "../../../services/vetService";
 import medicalService, { isCriticalMedicalRecord } from "../../../services/medicalService";
@@ -1278,7 +1279,7 @@ const VeterinarianDashboard = () => {
 
       {error && (
         <div style={{ marginBottom: "20px", padding: "14px 18px", borderRadius: "10px", backgroundColor: "#FEF2F2", border: "1px solid #FCA5A5", color: "#991B1B", fontSize: "14px", fontWeight: 600 }}>
-          âš ï¸ {error}
+          ⚠️ {error}
         </div>
       )}
 
@@ -1288,6 +1289,7 @@ const VeterinarianDashboard = () => {
         <QuickActionCard icon={<FaSyringe />} title="Vaccinations & Medications" subtitle="Booster Reminders" color="#16A34A" onClick={() => navigate("/medical-reminders")} />
         <QuickActionCard icon={<FaFileMedical />} title="Health Certificates" subtitle="Medical clearance" color="#1E3A8A" onClick={() => navigate("/certificates")} />
         <QuickActionCard icon={<FaCalendarAlt />} title="Veterinary Appointments" subtitle="Schedule & Consultations" color="#1E3A8A" onClick={() => navigate("/vet-directory")} />
+        <QuickActionCard icon={<FaHospital />} title="Vet Directory & Clinics" subtitle="Manage Clinics & Directory" color="#0891B2" onClick={() => navigate("/vet-directory?tab=directory")} />
         <QuickActionCard icon={<FaChartBar />} title="Reports & Analytics" subtitle="Clinical performance metrics" color="#7C3AED" onClick={() => navigate("/reports")} />
       </div>
 
@@ -1320,7 +1322,7 @@ const VeterinarianDashboard = () => {
                 gap: "8px",
               }}
             >
-              <FaHome /> ðŸ  Shelter Medical Requests ({shelterDogRows.length})
+              <FaHome /> Shelter Medical Requests ({shelterDogRows.length})
             </button>
 
             <button

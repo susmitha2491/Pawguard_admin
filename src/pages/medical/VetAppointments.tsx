@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import type { Column } from "../../components/common/DataTable";
 import DataTable from "../../components/common/DataTable";
 import Modal from "../../components/common/Modal";
 import { useToast } from "../../context/ToastContext";
+import { usePermissions } from "../../context/PermissionContext";
 import Can from "../../components/rbac/Can";
 import axios from "axios";
 import {
@@ -13,11 +14,20 @@ import {
   FaBan,
   FaSearch,
   FaStethoscope,
+  FaPlus,
+  FaEdit,
+  FaTrash,
+  FaEye,
+  FaPhone,
+  FaEnvelope,
+  FaMapMarkerAlt,
+  FaExclamationTriangle,
 } from "react-icons/fa";
-import vetService from "../../services/vetService";
+import vetService, { type VetClinicPayload } from "../../services/vetService";
 import petService from "../../services/petService";
 import userService from "../../services/userService";
 import { notifyDataChanged } from "../../utils/dataSync";
+import { formatDateTime } from "../../utils/dateUtils";
 
 type Row = Record<string, unknown>;
 
@@ -36,8 +46,6 @@ const toErrorMessage = (err: unknown, fallback: string): string => {
   return e?.response?.data?.detail || e?.response?.data?.message || fallback;
 };
 
-import { formatDateTime } from "../../utils/dateUtils";
-
 const formatDate = (v: unknown): string => formatDateTime(v as string);
 
 const badgeStyle = (bg: string, color: string): React.CSSProperties => ({
@@ -54,15 +62,79 @@ const badgeStyle = (bg: string, color: string): React.CSSProperties => ({
 const isUuid = (v: unknown): boolean =>
   typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
 
+interface ClinicFormData {
+  name: string;
+  address: string;
+  phone: string;
+  email: string;
+  services: string;
+  latitude: string;
+  longitude: string;
+  is_emergency: boolean;
+  is_active: boolean;
+}
+
+const initialClinicFormData: ClinicFormData = {
+  name: "",
+  address: "",
+  phone: "",
+  email: "",
+  services: "",
+  latitude: "",
+  longitude: "",
+  is_emergency: false,
+  is_active: true,
+};
+
 const VetAppointments = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"directory" | "appointments">("appointments");
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+
+  const [activeTab, setActiveTab] = useState<"directory" | "appointments">(
+    tabParam === "directory" ? "directory" : "appointments"
+  );
+
+  const { role, has, can } = usePermissions();
+  const { addToast } = useToast();
+
+  const canManageClinics =
+    role === "super_admin" ||
+    role === "rescue_centre_admin" ||
+    role === "veterinarian" ||
+    can("create", "medical") ||
+    can("edit", "medical") ||
+    has("create_medical") ||
+    has("edit_medical");
+
+  const canDeleteClinics =
+    role === "super_admin" ||
+    role === "rescue_centre_admin" ||
+    can("delete", "medical") ||
+    has("delete_medical");
 
   // Vet directory state
   const [clinics, setClinics] = useState<Row[]>([]);
   const [clinicsLoading, setClinicsLoading] = useState(false);
   const [clinicsError, setClinicsError] = useState<string | null>(null);
   const [clinicSearch, setClinicSearch] = useState("");
+
+  // Add / Edit Clinic modal state
+  const [isAddEditModalOpen, setIsAddEditModalOpen] = useState(false);
+  const [editingClinic, setEditingClinic] = useState<Row | null>(null);
+  const [clinicFormData, setClinicFormData] = useState<ClinicFormData>(initialClinicFormData);
+  const [clinicFormErrors, setClinicFormErrors] = useState<Record<string, string>>({});
+  const [isSavingClinic, setIsSavingClinic] = useState(false);
+
+  // Clinic Details Modal State
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [viewingClinic, setViewingClinic] = useState<Row | null>(null);
+  const [clinicDoctors, setClinicDoctors] = useState<Row[]>([]);
+  const [doctorsLoading, setDoctorsLoading] = useState(false);
+
+  // Delete Clinic Modal State
+  const [deleteTargetClinic, setDeleteTargetClinic] = useState<Row | null>(null);
+  const [isDeletingClinic, setIsDeletingClinic] = useState(false);
 
   // Appointments state
   const [appointments, setAppointments] = useState<Row[]>([]);
@@ -81,14 +153,6 @@ const VetAppointments = () => {
   const [isCancelling, setIsCancelling] = useState(false);
 
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
-
-  // Doctor modal state
-  const [isDoctorModalOpen, setIsDoctorModalOpen] = useState(false);
-  const [selectedClinic, setSelectedClinic] = useState<Row | null>(null);
-  const [clinicDoctors, setClinicDoctors] = useState<Row[]>([]);
-  const [doctorsLoading, setDoctorsLoading] = useState(false);
-
-  const { addToast } = useToast();
 
   // Explicit lookup Maps for deterministic O(1) resolution
   const [userMap, setUserMap] = useState<Map<string, Row>>(new Map());
@@ -141,7 +205,6 @@ const VetAppointments = () => {
 
       if (ownerIds.size > 0) {
         const newUsers = new Map<string, Row>();
-        // Deduplicate owner IDs against userMap state
         const missingIds: string[] = [];
         setUserMap((prevMap) => {
           ownerIds.forEach((id) => {
@@ -151,7 +214,6 @@ const VetAppointments = () => {
         });
 
         if (missingIds.length > 0) {
-          // Batch user summary requests in chunks of 4 to prevent HTTP 429 rate limit errors
           const chunkSize = 4;
           for (let i = 0; i < missingIds.length; i += chunkSize) {
             const chunk = missingIds.slice(i, i + chunkSize);
@@ -178,9 +240,10 @@ const VetAppointments = () => {
           });
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (axios.isCancel(err)) return;
-      if (err?.response?.status === 429 || String(err).includes("429")) {
+      const errObj = err as { response?: { status?: number } };
+      if (errObj?.response?.status === 429 || String(err).includes("429")) {
         setAppointmentsError("Server rate limit reached (HTTP 429). Please wait a moment and click Retry Loading.");
       } else {
         setAppointmentsError(toErrorMessage(err, "Failed to load appointments."));
@@ -214,6 +277,12 @@ const VetAppointments = () => {
       setDogs([]);
     }
   }, []);
+
+  useEffect(() => {
+    if (tabParam === "directory") {
+      setActiveTab("directory");
+    }
+  }, [tabParam]);
 
   useEffect(() => {
     let isMounted = true;
@@ -408,10 +477,34 @@ const VetAppointments = () => {
     return "Not assigned";
   };
 
-  const openClinicDoctors = async (clinic: Row) => {
-    setSelectedClinic(clinic);
-    setIsDoctorModalOpen(true);
-    const clinicId = str(pick(clinic, "id"));
+  const handleOpenAddClinic = () => {
+    setEditingClinic(null);
+    setClinicFormData(initialClinicFormData);
+    setClinicFormErrors({});
+    setIsAddEditModalOpen(true);
+  };
+
+  const handleOpenEditClinic = (clinic: Row) => {
+    setEditingClinic(clinic);
+    setClinicFormData({
+      name: str(pick(clinic, "name", "clinic_name")),
+      address: str(pick(clinic, "address", "location")),
+      phone: str(pick(clinic, "phone", "contact_phone")),
+      email: str(pick(clinic, "email")),
+      services: str(pick(clinic, "services", "specialization")),
+      latitude: clinic.latitude !== null && clinic.latitude !== undefined ? String(clinic.latitude) : "",
+      longitude: clinic.longitude !== null && clinic.longitude !== undefined ? String(clinic.longitude) : "",
+      is_emergency: Boolean(clinic.is_emergency),
+      is_active: clinic.is_active !== false,
+    });
+    setClinicFormErrors({});
+    setIsAddEditModalOpen(true);
+  };
+
+  const handleOpenClinicDetails = async (clinic: Row) => {
+    setViewingClinic(clinic);
+    setIsDetailsModalOpen(true);
+    const clinicId = str(pick(clinic, "id", "clinic_id"));
     if (!clinicId) return;
     try {
       setDoctorsLoading(true);
@@ -421,6 +514,111 @@ const VetAppointments = () => {
       setClinicDoctors([]);
     } finally {
       setDoctorsLoading(false);
+    }
+  };
+
+  const validateClinicForm = (): boolean => {
+    const errors: Record<string, string> = {};
+    if (!clinicFormData.name.trim()) {
+      errors.name = "Clinic name is required.";
+    } else if (clinicFormData.name.trim().length > 255) {
+      errors.name = "Clinic name cannot exceed 255 characters.";
+    }
+
+    if (!clinicFormData.address.trim()) {
+      errors.address = "Clinic address is required.";
+    } else if (clinicFormData.address.trim().length > 2000) {
+      errors.address = "Address cannot exceed 2000 characters.";
+    }
+
+    if (!clinicFormData.phone.trim()) {
+      errors.phone = "Phone number is required.";
+    } else if (clinicFormData.phone.trim().length < 3) {
+      errors.phone = "Phone number must be at least 3 characters.";
+    } else if (clinicFormData.phone.trim().length > 32) {
+      errors.phone = "Phone number cannot exceed 32 characters.";
+    }
+
+    if (clinicFormData.email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(clinicFormData.email.trim())) {
+        errors.email = "Please enter a valid email address.";
+      }
+    }
+
+    if (clinicFormData.latitude.trim()) {
+      const lat = Number(clinicFormData.latitude.trim());
+      if (isNaN(lat) || lat < -90 || lat > 90) {
+        errors.latitude = "Latitude must be a valid number between -90 and 90.";
+      }
+    }
+
+    if (clinicFormData.longitude.trim()) {
+      const lng = Number(clinicFormData.longitude.trim());
+      if (isNaN(lng) || lng < -180 || lng > 180) {
+        errors.longitude = "Longitude must be a valid number between -180 and 180.";
+      }
+    }
+
+    setClinicFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSaveClinic = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validateClinicForm()) return;
+
+    try {
+      setIsSavingClinic(true);
+      const payload: VetClinicPayload = {
+        name: clinicFormData.name.trim(),
+        address: clinicFormData.address.trim(),
+        phone: clinicFormData.phone.trim(),
+        email: clinicFormData.email.trim() || null,
+        services: clinicFormData.services.trim() || null,
+        latitude: clinicFormData.latitude.trim() ? Number(clinicFormData.latitude.trim()) : null,
+        longitude: clinicFormData.longitude.trim() ? Number(clinicFormData.longitude.trim()) : null,
+        is_emergency: Boolean(clinicFormData.is_emergency),
+        is_active: Boolean(clinicFormData.is_active),
+      };
+
+      if (editingClinic) {
+        const clinicId = str(pick(editingClinic, "id", "clinic_id"));
+        await vetService.updateClinic(clinicId, payload);
+        addToast("Veterinary clinic updated successfully.", "success");
+      } else {
+        await vetService.createClinic(payload);
+        addToast("Veterinary clinic registered successfully.", "success");
+      }
+
+      setIsAddEditModalOpen(false);
+      setEditingClinic(null);
+      setClinicFormData(initialClinicFormData);
+      void fetchClinics(clinicSearch);
+      notifyDataChanged();
+    } catch (err) {
+      addToast(toErrorMessage(err, "Failed to save veterinary clinic."), "error");
+    } finally {
+      setIsSavingClinic(false);
+    }
+  };
+
+  const handleDeleteClinic = async () => {
+    if (!deleteTargetClinic) return;
+    const clinicId = str(pick(deleteTargetClinic, "id", "clinic_id"));
+    if (!clinicId) return;
+
+    try {
+      setIsDeletingClinic(true);
+      await vetService.deleteClinic(clinicId);
+      addToast("Veterinary clinic removed successfully.", "success");
+      setDeleteTargetClinic(null);
+      void fetchClinics(clinicSearch);
+      notifyDataChanged();
+    } catch (err) {
+      addToast(toErrorMessage(err, "Failed to delete veterinary clinic."), "error");
+    } finally {
+      setIsDeletingClinic(false);
     }
   };
 
@@ -469,37 +667,108 @@ const VetAppointments = () => {
   };
 
   const directoryColumns: Column[] = [
-    { key: "name", title: "Clinic / Hospital" },
+    {
+      key: "name",
+      title: "Clinic / Hospital",
+      render: (v, r) => {
+        const isEmergency = Boolean(pick(r, "is_emergency"));
+        return (
+          <div>
+            <div style={{ fontWeight: 700, color: "#0F172A", display: "flex", alignItems: "center", gap: "6px" }}>
+              <span>{str(v) || "Unnamed Clinic"}</span>
+              {isEmergency && (
+                <span
+                  style={{
+                    padding: "2px 6px",
+                    borderRadius: "4px",
+                    fontSize: "10px",
+                    fontWeight: 800,
+                    background: "#FEF2F2",
+                    color: "#DC2626",
+                    border: "1px solid #FECACA",
+                  }}
+                >
+                  24/7 EMERGENCY
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>
+              ID: {str(pick(r, "id", "clinic_id")).slice(0, 8).toUpperCase() || "-"}
+            </div>
+          </div>
+        );
+      },
+    },
     {
       key: "services",
-      title: "Services / Specialization",
-      render: (v) => str(v) || "-",
+      title: "Services & Specialization",
+      render: (v) => {
+        const servicesStr = str(v);
+        if (!servicesStr) return <span style={{ color: "#94A3B8" }}>Standard Veterinary Care</span>;
+        const items = servicesStr.split(",").map((s) => s.trim()).filter(Boolean);
+        return (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", maxWidth: "280px" }}>
+            {items.slice(0, 3).map((item, i) => (
+              <span
+                key={i}
+                style={{
+                  padding: "2px 8px",
+                  borderRadius: "6px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  background: "#F1F5F9",
+                  color: "#334155",
+                  border: "1px solid #E2E8F0",
+                }}
+              >
+                {item}
+              </span>
+            ))}
+            {items.length > 3 && (
+              <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 600, alignSelf: "center" }}>
+                +{items.length - 3} more
+              </span>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: "phone",
-      title: "Contact",
+      title: "Contact Information",
       render: (v, r) => {
         const email = str(pick(r, "email"));
         return (
           <div>
-            <div>{str(v) || "-"}</div>
-            {email && <div style={{ fontSize: "12px", color: "#64748B" }}>{email}</div>}
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600, color: "#1E293B" }}>
+              <FaPhone size={11} color="#64748B" />
+              <span>{str(v) || "-"}</span>
+            </div>
+            {email && (
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#64748B", marginTop: "3px" }}>
+                <FaEnvelope size={10} color="#94A3B8" />
+                <span>{email}</span>
+              </div>
+            )}
           </div>
         );
       },
     },
     {
       key: "address",
-      title: "Location",
+      title: "Location & Coordinates",
       render: (v, r) => {
         const lat = pick(r, "latitude");
         const lng = pick(r, "longitude");
         return (
-          <div>
-            <div>{str(v) || "-"}</div>
-            {lat !== undefined && lng !== undefined && (
-              <div style={{ fontSize: "12px", color: "#64748B" }}>
-                {str(lat)}, {str(lng)}
+          <div style={{ maxWidth: "240px" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "6px", fontSize: "13px", color: "#334155" }}>
+              <FaMapMarkerAlt size={12} color="#DC2626" style={{ marginTop: "3px", flexShrink: 0 }} />
+              <span>{str(v) || "-"}</span>
+            </div>
+            {lat !== undefined && lng !== undefined && lat !== null && lng !== null && (
+              <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px", marginLeft: "18px", fontFamily: "monospace" }}>
+                GPS: {Number(lat).toFixed(4)}, {Number(lng).toFixed(4)}
               </div>
             )}
           </div>
@@ -508,12 +777,24 @@ const VetAppointments = () => {
     },
     {
       key: "is_emergency",
-      title: "Type",
+      title: "Facility Type",
       render: (v) => (
         <span style={badgeStyle(v ? "#FEF2F2" : "#EFF6FF", v ? "#DC2626" : "#2563EB")}>
-          {v ? "Emergency" : "General"}
+          {v ? "Emergency 24/7" : "General Clinic"}
         </span>
       ),
+    },
+    {
+      key: "is_active",
+      title: "Status",
+      render: (v) => {
+        const active = v !== false;
+        return (
+          <span style={badgeStyle(active ? "#ECFDF5" : "#F1F5F9", active ? "#059669" : "#64748B")}>
+            {active ? "Active" : "Inactive"}
+          </span>
+        );
+      },
     },
   ];
 
@@ -651,6 +932,79 @@ const VetAppointments = () => {
     );
   };
 
+  const directoryRowActions = (row: Row) => {
+    return (
+      <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", flexWrap: "nowrap" }}>
+        <button
+          type="button"
+          onClick={() => void handleOpenClinicDetails(row)}
+          title="View Clinic Details & Doctors"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "5px",
+            padding: "6px 10px",
+            borderRadius: "6px",
+            border: "1px solid #93C5FD",
+            background: "#EFF6FF",
+            color: "#1D4ED8",
+            fontSize: "12px",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          <FaEye size={12} /> Details
+        </button>
+
+        {canManageClinics && (
+          <button
+            type="button"
+            onClick={() => handleOpenEditClinic(row)}
+            title="Edit Clinic Information"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+              padding: "6px 10px",
+              borderRadius: "6px",
+              border: "1px solid #E2E8F0",
+              background: "#FFFFFF",
+              color: "#334155",
+              fontSize: "12px",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            <FaEdit size={12} /> Edit
+          </button>
+        )}
+
+        {canDeleteClinics && (
+          <button
+            type="button"
+            onClick={() => setDeleteTargetClinic(row)}
+            title="Delete / Remove Clinic"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+              padding: "6px 10px",
+              borderRadius: "6px",
+              border: "1px solid #FECACA",
+              background: "#FFF1F2",
+              color: "#DC2626",
+              fontSize: "12px",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            <FaTrash size={12} /> Delete
+          </button>
+        )}
+      </div>
+    );
+  };
+
   const tabStyle = (tab: "directory" | "appointments"): React.CSSProperties => ({
     display: "inline-flex",
     alignItems: "center",
@@ -677,19 +1031,19 @@ const VetAppointments = () => {
         }}
       >
         <h1 style={{ margin: 0, fontSize: "28px", fontWeight: 800 }}>
-          Veterinary Appointments
+          Veterinary Appointments &amp; Clinic Management
         </h1>
         <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-          Manage received veterinary appointments, clinical consultations, and provider directory.
+          Manage incoming veterinary consultations, appointment queues, and authoritative partner clinic directory.
         </p>
       </div>
 
       <div style={{ display: "flex", gap: "8px", marginBottom: "16px", marginTop: "16px" }}>
         <button onClick={() => setActiveTab("appointments")} style={tabStyle("appointments")}>
-          <FaCalendarAlt /> Received Appointments
+          <FaCalendarAlt /> Received Appointments ({apptTotal})
         </button>
         <button onClick={() => setActiveTab("directory")} style={tabStyle("directory")}>
-          <FaHospital /> Vet Directory
+          <FaHospital /> Vet Directory &amp; Clinics ({clinics.length})
         </button>
       </div>
 
@@ -749,38 +1103,70 @@ const VetAppointments = () => {
               marginBottom: "16px",
             }}
           >
-            <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
-              Veterinary Clinics & Veterinarians
-            </h3>
-            <div style={{ position: "relative", minWidth: "260px" }}>
-              <FaSearch
-                size={14}
-                style={{
-                  position: "absolute",
-                  left: "12px",
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  color: "#94A3B8",
-                }}
-              />
-              <input
-                type="text"
-                placeholder="Search by name, address, services..."
-                value={clinicSearch}
-                onChange={(e) => setClinicSearch(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "9px 12px 9px 36px",
-                  borderRadius: "10px",
-                  border: "1px solid #E2E8F0",
-                  background: "#F8FAFC",
-                  fontSize: "13px",
-                  outline: "none",
-                  boxSizing: "border-box",
-                }}
-              />
+            <div>
+              <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
+                Veterinary Clinics &amp; Hospitals
+              </h3>
+              <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#64748B" }}>
+                Active partner clinics available for veterinary appointments, emergency dispatches, and public directory listings.
+              </p>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+              <div style={{ position: "relative", minWidth: "260px" }}>
+                <FaSearch
+                  size={14}
+                  style={{
+                    position: "absolute",
+                    left: "12px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    color: "#94A3B8",
+                  }}
+                />
+                <input
+                  type="text"
+                  placeholder="Search clinics by name, address, services..."
+                  value={clinicSearch}
+                  onChange={(e) => setClinicSearch(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "9px 12px 9px 36px",
+                    borderRadius: "10px",
+                    border: "1px solid #E2E8F0",
+                    background: "#F8FAFC",
+                    fontSize: "13px",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              {canManageClinics && (
+                <button
+                  type="button"
+                  onClick={handleOpenAddClinic}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "9px 18px",
+                    borderRadius: "10px",
+                    border: "none",
+                    background: "#2563EB",
+                    color: "#FFFFFF",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    boxShadow: "0 2px 4px rgba(37, 99, 235, 0.2)",
+                  }}
+                >
+                  <FaPlus size={12} /> Add Veterinary Clinic
+                </button>
+              )}
             </div>
           </div>
+
           <DataTable
             columns={directoryColumns}
             data={clinics}
@@ -788,26 +1174,567 @@ const VetAppointments = () => {
             loading={clinicsLoading}
             error={clinicsError}
             onRetry={() => void fetchClinics(clinicSearch)}
-            emptyMessage="No veterinary clinics found."
-            renderRowActions={(row: Row) => (
-              <button
-                onClick={() => void openClinicDoctors(row)}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: "6px",
-                  border: "1px solid #93C5FD",
-                  background: "#EFF6FF",
-                  color: "#1D4ED8",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                View Doctors / Vets
-              </button>
-            )}
+            emptyMessage="No veterinary clinics found in the directory."
+            renderRowActions={directoryRowActions}
+            onRowClick={(row) => void handleOpenClinicDetails(row)}
           />
         </div>
+      )}
+
+      {/* ADD / EDIT VETERINARY CLINIC MODAL */}
+      {isAddEditModalOpen && (
+        <Modal
+          isOpen={true}
+          onClose={() => {
+            if (!isSavingClinic) {
+              setIsAddEditModalOpen(false);
+              setEditingClinic(null);
+            }
+          }}
+          title={editingClinic ? `Edit Clinic — ${str(pick(editingClinic, "name"))}` : "Add New Veterinary Clinic"}
+          maxWidth="680px"
+        >
+          <form onSubmit={handleSaveClinic} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "14px" }}>
+              <div style={{ fontSize: "13px", color: "#475569" }}>
+                Registered clinics are stored in the authoritative backend database and automatically synchronized with the Public Website and Mobile App directories.
+              </div>
+            </div>
+
+            {/* Section 1: Basic Information */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "12px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "6px" }}>
+                  Clinic / Hospital Name <span style={{ color: "#DC2626" }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., PawGuard Central Veterinary Hospital"
+                  value={clinicFormData.name}
+                  onChange={(e) => setClinicFormData({ ...clinicFormData, name: e.target.value })}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: clinicFormErrors.name ? "1px solid #DC2626" : "1px solid #CBD5E1",
+                    fontSize: "13px",
+                    boxSizing: "border-box",
+                  }}
+                />
+                {clinicFormErrors.name && (
+                  <span style={{ fontSize: "12px", color: "#DC2626", marginTop: "4px", display: "block" }}>
+                    {clinicFormErrors.name}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Section 2: Contact Information */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "6px" }}>
+                  Primary Phone Number <span style={{ color: "#DC2626" }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., +1-555-0199 or 9876543210"
+                  value={clinicFormData.phone}
+                  onChange={(e) => setClinicFormData({ ...clinicFormData, phone: e.target.value })}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: clinicFormErrors.phone ? "1px solid #DC2626" : "1px solid #CBD5E1",
+                    fontSize: "13px",
+                    boxSizing: "border-box",
+                  }}
+                />
+                {clinicFormErrors.phone && (
+                  <span style={{ fontSize: "12px", color: "#DC2626", marginTop: "4px", display: "block" }}>
+                    {clinicFormErrors.phone}
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "6px" }}>
+                  Email Address (Optional)
+                </label>
+                <input
+                  type="email"
+                  placeholder="e.g., info@centralvet.example.com"
+                  value={clinicFormData.email}
+                  onChange={(e) => setClinicFormData({ ...clinicFormData, email: e.target.value })}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: clinicFormErrors.email ? "1px solid #DC2626" : "1px solid #CBD5E1",
+                    fontSize: "13px",
+                    boxSizing: "border-box",
+                  }}
+                />
+                {clinicFormErrors.email && (
+                  <span style={{ fontSize: "12px", color: "#DC2626", marginTop: "4px", display: "block" }}>
+                    {clinicFormErrors.email}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Section 3: Physical Location */}
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "6px" }}>
+                Full Physical Address <span style={{ color: "#DC2626" }}>*</span>
+              </label>
+              <textarea
+                rows={2}
+                placeholder="e.g., 108 Compassion Way, Sector 4, Hyderabad, 500081"
+                value={clinicFormData.address}
+                onChange={(e) => setClinicFormData({ ...clinicFormData, address: e.target.value })}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: clinicFormErrors.address ? "1px solid #DC2626" : "1px solid #CBD5E1",
+                  fontSize: "13px",
+                  boxSizing: "border-box",
+                  resize: "vertical",
+                }}
+              />
+              {clinicFormErrors.address && (
+                <span style={{ fontSize: "12px", color: "#DC2626", marginTop: "4px", display: "block" }}>
+                  {clinicFormErrors.address}
+                </span>
+              )}
+            </div>
+
+            {/* Section 4: GPS Coordinates */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "6px" }}>
+                  Latitude (-90 to 90)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., 17.4485"
+                  value={clinicFormData.latitude}
+                  onChange={(e) => setClinicFormData({ ...clinicFormData, latitude: e.target.value })}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: clinicFormErrors.latitude ? "1px solid #DC2626" : "1px solid #CBD5E1",
+                    fontSize: "13px",
+                    boxSizing: "border-box",
+                  }}
+                />
+                {clinicFormErrors.latitude && (
+                  <span style={{ fontSize: "12px", color: "#DC2626", marginTop: "4px", display: "block" }}>
+                    {clinicFormErrors.latitude}
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "6px" }}>
+                  Longitude (-180 to 180)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., 78.3908"
+                  value={clinicFormData.longitude}
+                  onChange={(e) => setClinicFormData({ ...clinicFormData, longitude: e.target.value })}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: clinicFormErrors.longitude ? "1px solid #DC2626" : "1px solid #CBD5E1",
+                    fontSize: "13px",
+                    boxSizing: "border-box",
+                  }}
+                />
+                {clinicFormErrors.longitude && (
+                  <span style={{ fontSize: "12px", color: "#DC2626", marginTop: "4px", display: "block" }}>
+                    {clinicFormErrors.longitude}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Section 5: Services Offered */}
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "6px" }}>
+                Services &amp; Specializations (Comma-separated)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g., 24/7 Emergency, Orthopedic Surgery, Vaccination, Radiology, ICU, Dental Care"
+                value={clinicFormData.services}
+                onChange={(e) => setClinicFormData({ ...clinicFormData, services: e.target.value })}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #CBD5E1",
+                  fontSize: "13px",
+                  boxSizing: "border-box",
+                }}
+              />
+              <span style={{ fontSize: "12px", color: "#64748B", marginTop: "4px", display: "block" }}>
+                Tip: Enter distinct services separated by commas so they display as tags on the public directory.
+              </span>
+            </div>
+
+            {/* Section 6: Options & Flags */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", padding: "12px", background: "#F1F5F9", borderRadius: "8px" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", fontWeight: 600, color: "#1E293B", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={clinicFormData.is_emergency}
+                  onChange={(e) => setClinicFormData({ ...clinicFormData, is_emergency: e.target.checked })}
+                  style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                />
+                <span>24/7 Emergency Care Facility</span>
+              </label>
+
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", fontWeight: 600, color: "#1E293B", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={clinicFormData.is_active}
+                  onChange={(e) => setClinicFormData({ ...clinicFormData, is_active: e.target.checked })}
+                  style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                />
+                <span>Active &amp; Published in Directory</span>
+              </label>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+              <button
+                type="button"
+                disabled={isSavingClinic}
+                onClick={() => {
+                  setIsAddEditModalOpen(false);
+                  setEditingClinic(null);
+                }}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: "8px",
+                  border: "1px solid #CBD5E1",
+                  background: "#FFFFFF",
+                  color: "#334155",
+                  fontWeight: 600,
+                  fontSize: "13px",
+                  cursor: isSavingClinic ? "not-allowed" : "pointer",
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                disabled={isSavingClinic}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "10px 20px",
+                  borderRadius: "8px",
+                  border: "none",
+                  background: "#2563EB",
+                  color: "#FFFFFF",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  cursor: isSavingClinic ? "not-allowed" : "pointer",
+                }}
+              >
+                {isSavingClinic ? (
+                  <span>Saving to Database...</span>
+                ) : editingClinic ? (
+                  <>
+                    <FaCheck /> Update Clinic
+                  </>
+                ) : (
+                  <>
+                    <FaPlus /> Save &amp; Publish Clinic
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* CLINIC DETAILS & DOCTORS MODAL */}
+      {isDetailsModalOpen && viewingClinic && (
+        <Modal
+          isOpen={true}
+          onClose={() => {
+            setIsDetailsModalOpen(false);
+            setViewingClinic(null);
+            setClinicDoctors([]);
+          }}
+          title={`Clinic Details — ${str(pick(viewingClinic, "name"))}`}
+          maxWidth="650px"
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            {/* Overview Header Banner */}
+            <div
+              style={{
+                background: "linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%)",
+                border: "1px solid #DBEAFE",
+                borderRadius: "12px",
+                padding: "16px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                gap: "12px",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: "18px", fontWeight: 800, color: "#0F172A" }}>
+                  🏥 {str(pick(viewingClinic, "name"))}
+                </div>
+                <div style={{ fontSize: "12px", color: "#64748B", fontFamily: "monospace", marginTop: "2px" }}>
+                  Database ID: {str(pick(viewingClinic, "id", "clinic_id"))}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                {Boolean(pick(viewingClinic, "is_emergency")) && (
+                  <span style={badgeStyle("#FEF2F2", "#DC2626")}>24/7 Emergency</span>
+                )}
+                <span
+                  style={badgeStyle(
+                    pick(viewingClinic, "is_active") !== false ? "#ECFDF5" : "#F1F5F9",
+                    pick(viewingClinic, "is_active") !== false ? "#059669" : "#64748B"
+                  )}
+                >
+                  {pick(viewingClinic, "is_active") !== false ? "Active Status" : "Inactive"}
+                </span>
+              </div>
+            </div>
+
+            {/* Contact & Location Cards */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div style={{ background: "#FFFFFF", padding: "14px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", marginBottom: "6px" }}>
+                  Contact Information
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", fontWeight: 600, color: "#1E293B" }}>
+                  <FaPhone size={12} color="#2563EB" />
+                  <span>{str(pick(viewingClinic, "phone")) || "No phone listed"}</span>
+                </div>
+                {Boolean(pick(viewingClinic, "email")) && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#475569", marginTop: "6px" }}>
+                    <FaEnvelope size={11} color="#64748B" />
+                    <span>{str(pick(viewingClinic, "email"))}</span>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ background: "#FFFFFF", padding: "14px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", marginBottom: "6px" }}>
+                  Address &amp; GPS
+                </div>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", fontSize: "13px", color: "#1E293B" }}>
+                  <FaMapMarkerAlt size={12} color="#DC2626" style={{ marginTop: "2px", flexShrink: 0 }} />
+                  <span>{str(pick(viewingClinic, "address")) || "Address not provided"}</span>
+                </div>
+                {viewingClinic.latitude !== null && viewingClinic.longitude !== null && viewingClinic.latitude !== undefined && (
+                  <div style={{ fontSize: "11px", color: "#64748B", marginTop: "4px", marginLeft: "20px", fontFamily: "monospace" }}>
+                    Coords: {String(viewingClinic.latitude)}, {String(viewingClinic.longitude)}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Services Offered */}
+            {Boolean(pick(viewingClinic, "services")) && (
+              <div style={{ background: "#FFFFFF", padding: "14px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", marginBottom: "8px" }}>
+                  Services &amp; Clinical Facilities
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {str(pick(viewingClinic, "services"))
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+                    .map((item, idx) => (
+                      <span
+                        key={idx}
+                        style={{
+                          padding: "4px 10px",
+                          borderRadius: "8px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          background: "#EFF6FF",
+                          color: "#1E40AF",
+                          border: "1px solid #BFDBFE",
+                        }}
+                      >
+                        ✓ {item}
+                      </span>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Doctors / Veterinarians Roster */}
+            <div>
+              <div style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", marginBottom: "8px" }}>
+                Associated Doctors &amp; Medical Staff
+              </div>
+
+              {doctorsLoading ? (
+                <div style={{ textAlign: "center", padding: "24px", color: "#2563EB", fontSize: "13px" }}>
+                  Loading registered veterinarians...
+                </div>
+              ) : clinicDoctors.length === 0 ? (
+                <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "16px", textAlign: "center", color: "#64748B", fontSize: "13px", border: "1px solid #E2E8F0" }}>
+                  No individual doctor profiles registered for this clinic location yet.
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "8px", maxHeight: "200px", overflowY: "auto" }}>
+                  {clinicDoctors.map((doc: Row, idx: number) => (
+                    <div key={idx} style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div style={{ fontWeight: 700, color: "#0F172A" }}>
+                          {str(pick(doc, "name", "full_name")) || `Dr. Specialist #${idx + 1}`}
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>
+                          {str(pick(doc, "specialization", "services")) || "General Veterinary Practitioner"} &bull; Phone: {str(pick(doc, "phone")) || "-"}
+                        </div>
+                      </div>
+                      <span style={badgeStyle("#ECFDF5", "#059669")}>{str(pick(doc, "status")) || "Active"}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Action Bar */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px" }}>
+              {canManageClinics && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = viewingClinic;
+                    setIsDetailsModalOpen(false);
+                    setViewingClinic(null);
+                    handleOpenEditClinic(target);
+                  }}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "9px 16px",
+                    borderRadius: "8px",
+                    border: "1px solid #CBD5E1",
+                    background: "#FFFFFF",
+                    color: "#334155",
+                    fontWeight: 600,
+                    fontSize: "13px",
+                    cursor: "pointer",
+                  }}
+                >
+                  <FaEdit /> Edit Clinic Information
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDetailsModalOpen(false);
+                  setViewingClinic(null);
+                  setClinicDoctors([]);
+                }}
+                style={{
+                  padding: "9px 18px",
+                  borderRadius: "8px",
+                  border: "none",
+                  background: "#0F172A",
+                  color: "#FFFFFF",
+                  fontWeight: 600,
+                  fontSize: "13px",
+                  cursor: "pointer",
+                  marginLeft: "auto",
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* DELETE / DEACTIVATE CONFIRMATION MODAL */}
+      {deleteTargetClinic && (
+        <Modal
+          isOpen={true}
+          onClose={() => {
+            if (!isDeletingClinic) setDeleteTargetClinic(null);
+          }}
+          title="Confirm Clinic Removal"
+          maxWidth="460px"
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
+              <div style={{ background: "#FEE2E2", color: "#DC2626", padding: "10px", borderRadius: "10px" }}>
+                <FaExclamationTriangle size={20} />
+              </div>
+              <div>
+                <p style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "#0F172A" }}>
+                  Remove &ldquo;{str(pick(deleteTargetClinic, "name"))}&rdquo;?
+                </p>
+                <p style={{ margin: "6px 0 0", fontSize: "13px", color: "#64748B" }}>
+                  This will remove the clinic from active database directories, public appointment booking, and companion pet services.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+              <button
+                type="button"
+                disabled={isDeletingClinic}
+                onClick={() => setDeleteTargetClinic(null)}
+                style={{
+                  padding: "9px 16px",
+                  borderRadius: "8px",
+                  border: "1px solid #CBD5E1",
+                  background: "#FFFFFF",
+                  color: "#334155",
+                  fontWeight: 600,
+                  fontSize: "13px",
+                  cursor: isDeletingClinic ? "not-allowed" : "pointer",
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                disabled={isDeletingClinic}
+                onClick={() => void handleDeleteClinic()}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "9px 18px",
+                  borderRadius: "8px",
+                  border: "none",
+                  background: "#DC2626",
+                  color: "#FFFFFF",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  cursor: isDeletingClinic ? "not-allowed" : "pointer",
+                }}
+              >
+                {isDeletingClinic ? "Removing Clinic..." : "Yes, Delete Clinic"}
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {/* Cancel Appointment Modal */}
@@ -860,10 +1787,11 @@ const VetAppointments = () => {
                   background: "#F1F5F9",
                   color: "#334155",
                   fontWeight: 600,
+                  fontSize: "13px",
                   cursor: "pointer",
                 }}
               >
-                Back
+                Keep Appointment
               </button>
               <button
                 type="button"
@@ -873,74 +1801,14 @@ const VetAppointments = () => {
                   padding: "10px 18px",
                   borderRadius: "8px",
                   border: "none",
-                  background: "#EF4444",
+                  background: "#DC2626",
                   color: "#FFFFFF",
-                  fontWeight: 600,
-                  cursor: isCancelling ? "wait" : "pointer",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  cursor: isCancelling ? "not-allowed" : "pointer",
                 }}
               >
-                {isCancelling ? "Cancelling..." : "Confirm Cancellation"}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* Clinic Doctors Modal */}
-      {isDoctorModalOpen && selectedClinic && (
-        <Modal
-          isOpen={true}
-          onClose={() => {
-            setIsDoctorModalOpen(false);
-            setSelectedClinic(null);
-            setClinicDoctors([]);
-          }}
-          title={`Veterinarians — ${str(pick(selectedClinic, "name"))}`}
-          maxWidth="640px"
-        >
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "14px" }}>
-              <div style={{ fontWeight: 700, color: "#0F172A", fontSize: "16px" }}>{str(pick(selectedClinic, "name"))}</div>
-              <div style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>
-                Address: {str(pick(selectedClinic, "address")) || "Main Branch"} &bull; Contact: {str(pick(selectedClinic, "phone")) || "Direct Line"}
-              </div>
-            </div>
-
-            <div style={{ fontSize: "14px", fontWeight: 700, color: "#334155" }}>Assigned Doctors &amp; Specialists:</div>
-
-            {doctorsLoading ? (
-              <div style={{ textAlign: "center", padding: "30px", color: "#2563EB", fontSize: "13px" }}>Loading assigned veterinarians...</div>
-            ) : clinicDoctors.length === 0 ? (
-              <div style={{ background: "#F1F5F9", borderRadius: "8px", padding: "20px", textAlign: "center", color: "#64748B", fontSize: "13px" }}>
-                No explicit doctor profiles listed under this clinic location yet. Consultations are handled by on-duty clinic staff.
-              </div>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "10px", maxHeight: "250px", overflowY: "auto" }}>
-                {clinicDoctors.map((doc: Row, idx: number) => (
-                  <div key={idx} style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
-                      <div style={{ fontWeight: 700, color: "#0F172A" }}>{str(pick(doc, "name", "full_name")) || `Dr. Veterinarian #${idx + 1}`}</div>
-                      <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>
-                        Specialization: {str(pick(doc, "specialization", "services")) || "General Practice"} &bull; Phone: {str(pick(doc, "phone")) || "-"}
-                      </div>
-                    </div>
-                    <span style={badgeStyle("#ECFDF5", "#059669")}>{str(pick(doc, "status")) || "Active"}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsDoctorModalOpen(false);
-                  setSelectedClinic(null);
-                  setClinicDoctors([]);
-                }}
-                style={{ padding: "10px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFFFFF", color: "#334155", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
-              >
-                Close
+                {isCancelling ? "Cancelling..." : "Cancel Appointment"}
               </button>
             </div>
           </div>

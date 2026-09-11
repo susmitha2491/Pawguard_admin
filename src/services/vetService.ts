@@ -17,6 +17,18 @@ const unwrapData = (res: unknown): Record<string, unknown> => {
   return asRecord(body);
 };
 
+export interface VetClinicPayload {
+  name: string;
+  address: string;
+  phone: string;
+  email?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  is_emergency?: boolean;
+  services?: string | null;
+  is_active?: boolean;
+}
+
 export interface PartnerClinicPayload {
   name: string;
   address: string;
@@ -37,6 +49,51 @@ export const vetService = {
       data: unwrapList(response),
       meta: asRecord(response).meta,
     };
+  },
+
+  // GET /companion-pets/clinics/{clinic_id} - get single clinic by ID
+  getClinicById: async (clinicId: string) => {
+    const response = await api.get(`/companion-pets/clinics/${clinicId}`);
+    return unwrapData(response);
+  },
+
+  // POST /companion-pets/clinics - create veterinary clinic
+  createClinic: async (payload: VetClinicPayload) => {
+    const response = await api.post("/companion-pets/clinics", payload);
+    await publishActionEvent({
+      module: "medical",
+      action: "create",
+      title: "Veterinary Clinic Registered",
+      message: `Clinic "${payload.name}" was registered in the veterinary directory.`,
+      targetRoles: ["super_admin", "veterinarian", "rescue_centre_admin"],
+    });
+    return unwrapData(response);
+  },
+
+  // PATCH /companion-pets/clinics/{clinic_id} - update veterinary clinic
+  updateClinic: async (clinicId: string, payload: Partial<VetClinicPayload>) => {
+    const response = await api.patch(`/companion-pets/clinics/${clinicId}`, payload);
+    await publishActionEvent({
+      module: "medical",
+      action: "update",
+      title: "Veterinary Clinic Updated",
+      message: `Clinic details for "${payload.name || clinicId}" were updated.`,
+      targetRoles: ["super_admin", "veterinarian", "rescue_centre_admin"],
+    });
+    return unwrapData(response);
+  },
+
+  // DELETE /companion-pets/clinics/{clinic_id} - delete veterinary clinic
+  deleteClinic: async (clinicId: string) => {
+    const response = await api.delete(`/companion-pets/clinics/${clinicId}`);
+    await publishActionEvent({
+      module: "medical",
+      action: "delete",
+      title: "Veterinary Clinic Removed",
+      message: `Clinic ${clinicId} was removed from the veterinary directory.`,
+      targetRoles: ["super_admin", "veterinarian", "rescue_centre_admin"],
+    });
+    return unwrapData(response);
   },
 
   // GET /companion-pets/appointments - list authorized veterinary appointments
