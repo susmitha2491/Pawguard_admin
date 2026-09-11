@@ -313,8 +313,8 @@ const VolunteerManagement = () => {
       return;
     }
 
-    if (!rejectionReason.trim()) {
-      addToast("Rejection reason is required.", "error");
+    if (!rejectionReason.trim() || rejectionReason.trim().length < 10) {
+      addToast("Rejection reason is required (minimum 10 characters).", "error");
       return;
     }
 

@@ -187,11 +187,13 @@ export const volunteerService = {
       }
     }
 
+    const { message, ...rest } = data;
     const payload = {
-      ...data,
+      ...rest,
       full_name: data.full_name?.trim() || undefined,
       email: data.email?.trim() || undefined,
       phone: data.phone?.trim() || undefined,
+      notes: data.notes || message || undefined,
       applied_role: data.applied_role || data.preferred_role,
       emergency_contact_name: data.emergency_contact_name || data.full_name || "Emergency Contact",
       emergency_contact_phone: data.emergency_contact_phone || data.phone || "0000000000",
