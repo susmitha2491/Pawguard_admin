@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+﻿import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import StatCard from "../../../components/dashboard/StatCard";
 import DataTable from "../../../components/common/DataTable";
@@ -65,8 +65,6 @@ const badgeStyle = (bg: string, color: string): React.CSSProperties => ({
   textTransform: "uppercase",
 });
 
-const isUuid = (v: unknown): boolean =>
-  typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
 
 const emptyConsultationForm = {
   chiefComplaint: "",
@@ -328,7 +326,7 @@ const VeterinarianDashboard = () => {
         dogName: str(dog.name || "Canine Patient"),
         dogBreed: str(dog.breed || "Mixed Breed"),
         pet: dog.name ? `${dog.name} (DOG-${dogId.slice(0, 8).toUpperCase()})` : `DOG-${dogId.slice(0, 8).toUpperCase()}`,
-        issuedTo: validClearance.decision_notes || "Medically cleared – Ready for Adoption",
+        issuedTo: validClearance.decision_notes || "Medically cleared â€“ Ready for Adoption",
         issuedBy: validClearance.authorized_by_id
           ? currentUser?.id === validClearance.authorized_by_id
             ? vetDisplayName
@@ -1280,7 +1278,7 @@ const VeterinarianDashboard = () => {
 
       {error && (
         <div style={{ marginBottom: "20px", padding: "14px 18px", borderRadius: "10px", backgroundColor: "#FEF2F2", border: "1px solid #FCA5A5", color: "#991B1B", fontSize: "14px", fontWeight: 600 }}>
-          ⚠️ {error}
+          âš ï¸ {error}
         </div>
       )}
 
@@ -1322,7 +1320,7 @@ const VeterinarianDashboard = () => {
                 gap: "8px",
               }}
             >
-              <FaHome /> 🏠 Shelter Medical Requests ({shelterDogRows.length})
+              <FaHome /> ðŸ  Shelter Medical Requests ({shelterDogRows.length})
             </button>
 
             <button
@@ -1342,7 +1340,7 @@ const VeterinarianDashboard = () => {
                 gap: "8px",
               }}
             >
-              <FaCalendarAlt /> 🌐 Public Website Appointments ({filteredAppointments.length})
+              <FaCalendarAlt /> ðŸŒ Public Website Appointments ({filteredAppointments.length})
             </button>
           </div>
         </div>
@@ -1835,7 +1833,7 @@ const VeterinarianDashboard = () => {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
           <div>
             <h3 style={{ margin: 0, color: "#0F172A", fontSize: "16px", fontWeight: 700 }}>
-              🏥 Recent Medical Exams & Intensive Care Records
+              ðŸ¥ Recent Medical Exams & Intensive Care Records
             </h3>
             <span style={{ fontSize: "12px", color: "#64748B" }}>
               Attending veterinary exam history and active treatment logs
@@ -1904,7 +1902,7 @@ const VeterinarianDashboard = () => {
         <Modal
           isOpen={true}
           onClose={() => { setIsConsultationOpen(false); setActiveAppt(null); }}
-          title={`Veterinary Clinical Examination — ${dogName(activeAppt)}`}
+          title={`Veterinary Clinical Examination â€” ${dogName(activeAppt)}`}
           maxWidth="640px"
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -1926,7 +1924,7 @@ const VeterinarianDashboard = () => {
                 <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                     <div>
-                      <div style={{ fontSize: "16px", fontWeight: 800, color: "#0F172A" }}>🐶 {petNameStr}</div>
+                      <div style={{ fontSize: "16px", fontWeight: 800, color: "#0F172A" }}>ðŸ¶ {petNameStr}</div>
                       <div style={{ fontSize: "12px", color: "#64748B", fontFamily: "monospace", marginTop: "2px" }}>
                         {petRec?.registration_number ? `Reg: ${str(petRec.registration_number)}` : isUuid(pId) ? `ID: ${str(pId).slice(0, 8).toUpperCase()}` : `ID: ${str(pId || "-")}`}
                       </div>
@@ -2042,7 +2040,7 @@ const VeterinarianDashboard = () => {
               {/* 5. Optional Secondary Add-ons Bar */}
               <div style={{ background: "#F1F5F9", borderRadius: "10px", padding: "12px", border: "1px solid #E2E8F0" }}>
                 <div style={{ fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "8px" }}>
-                  ➕ Optional Clinical Add-ons for this Visit:
+                  âž• Optional Clinical Add-ons for this Visit:
                 </div>
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                   <button
@@ -2050,7 +2048,7 @@ const VeterinarianDashboard = () => {
                     onClick={() => setShowTreatmentSection(!showTreatmentSection)}
                     style={{ padding: "6px 12px", borderRadius: "6px", border: showTreatmentSection ? "1px solid #1E3A8A" : "1px solid #CBD5E1", background: showTreatmentSection ? "#EFF6FF" : "#FFF", color: showTreatmentSection ? "#1E3A8A" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
                   >
-                    {showTreatmentSection ? "✓ Treatment/Surgery" : "+ Treatment / Surgery"}
+                    {showTreatmentSection ? "âœ“ Treatment/Surgery" : "+ Treatment / Surgery"}
                   </button>
 
                   <button
@@ -2058,7 +2056,7 @@ const VeterinarianDashboard = () => {
                     onClick={() => setShowPrescriptionSection(!showPrescriptionSection)}
                     style={{ padding: "6px 12px", borderRadius: "6px", border: showPrescriptionSection ? "1px solid #1E3A8A" : "1px solid #CBD5E1", background: showPrescriptionSection ? "#EFF6FF" : "#FFF", color: showPrescriptionSection ? "#1E3A8A" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
                   >
-                    {showPrescriptionSection ? "✓ Prescription" : "+ Prescription"}
+                    {showPrescriptionSection ? "âœ“ Prescription" : "+ Prescription"}
                   </button>
 
                   <button
@@ -2066,7 +2064,7 @@ const VeterinarianDashboard = () => {
                     onClick={() => setShowVaccineSection(!showVaccineSection)}
                     style={{ padding: "6px 12px", borderRadius: "6px", border: showVaccineSection ? "1px solid #1E3A8A" : "1px solid #CBD5E1", background: showVaccineSection ? "#EFF6FF" : "#FFF", color: showVaccineSection ? "#1E3A8A" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
                   >
-                    {showVaccineSection ? "✓ Vaccination" : "+ Vaccination"}
+                    {showVaccineSection ? "âœ“ Vaccination" : "+ Vaccination"}
                   </button>
 
                   <button
@@ -2074,7 +2072,7 @@ const VeterinarianDashboard = () => {
                     onClick={() => setShowFollowupSection(!showFollowupSection)}
                     style={{ padding: "6px 12px", borderRadius: "6px", border: showFollowupSection ? "1px solid #1E3A8A" : "1px solid #CBD5E1", background: showFollowupSection ? "#EFF6FF" : "#FFF", color: showFollowupSection ? "#1E3A8A" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
                   >
-                    {showFollowupSection ? "✓ Follow-Up" : "+ Schedule Follow-Up"}
+                    {showFollowupSection ? "âœ“ Follow-Up" : "+ Schedule Follow-Up"}
                   </button>
 
                   <button
@@ -2082,7 +2080,7 @@ const VeterinarianDashboard = () => {
                     onClick={() => setShowHistorySection(!showHistorySection)}
                     style={{ padding: "6px 12px", borderRadius: "6px", border: showHistorySection ? "1px solid #1E3A8A" : "1px solid #CBD5E1", background: showHistorySection ? "#EFF6FF" : "#FFF", color: showHistorySection ? "#1E3A8A" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
                   >
-                    {showHistorySection ? "✓ Medical History" : `📋 History (${petHistory.length})`}
+                    {showHistorySection ? "âœ“ Medical History" : `ðŸ“‹ History (${petHistory.length})`}
                   </button>
 
                   <button
@@ -2090,7 +2088,7 @@ const VeterinarianDashboard = () => {
                     onClick={() => setShowAttachmentSection(!showAttachmentSection)}
                     style={{ padding: "6px 12px", borderRadius: "6px", border: showAttachmentSection ? "1px solid #1E3A8A" : "1px solid #CBD5E1", background: showAttachmentSection ? "#EFF6FF" : "#FFF", color: showAttachmentSection ? "#1E3A8A" : "#334155", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
                   >
-                    {showAttachmentSection ? "✓ Lab Attachment" : "📎 Attach Document"}
+                    {showAttachmentSection ? "âœ“ Lab Attachment" : "ðŸ“Ž Attach Document"}
                   </button>
                 </div>
               </div>
@@ -2098,7 +2096,7 @@ const VeterinarianDashboard = () => {
               {/* OPTIONAL EXPANDABLE SECTION 1: TREATMENT / SURGERY */}
               {showTreatmentSection && (
                 <div style={{ background: "#FFF", border: "1px solid #BFDBFE", borderRadius: "10px", padding: "14px", display: "flex", flexDirection: "column", gap: "10px" }}>
-                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#1E40AF" }}>🏥 Procedure / Surgery Details</div>
+                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#1E40AF" }}>ðŸ¥ Procedure / Surgery Details</div>
                   <div>
                     <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>Procedure / Surgery Type *</label>
                     <input
@@ -2147,7 +2145,7 @@ const VeterinarianDashboard = () => {
               {/* OPTIONAL EXPANDABLE SECTION 2: PRESCRIPTION */}
               {showPrescriptionSection && (
                 <div style={{ background: "#FFF", border: "1px solid #BFDBFE", borderRadius: "10px", padding: "14px", display: "flex", flexDirection: "column", gap: "10px" }}>
-                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#1E40AF" }}>💊 Prescription Details</div>
+                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#1E40AF" }}>ðŸ’Š Prescription Details</div>
                   <div>
                     <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>Medication Name</label>
                     <input
@@ -2200,7 +2198,7 @@ const VeterinarianDashboard = () => {
               {/* OPTIONAL EXPANDABLE SECTION 3: VACCINATION */}
               {showVaccineSection && (
                 <div style={{ background: "#FFF", border: "1px solid #BFDBFE", borderRadius: "10px", padding: "14px", display: "flex", flexDirection: "column", gap: "10px" }}>
-                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#1E40AF" }}>💉 Vaccination Log</div>
+                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#1E40AF" }}>ðŸ’‰ Vaccination Log</div>
                   <div>
                     <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>Vaccine Name</label>
                     <input
@@ -2238,7 +2236,7 @@ const VeterinarianDashboard = () => {
               {/* OPTIONAL EXPANDABLE SECTION 4: FOLLOW-UP */}
               {showFollowupSection && (
                 <div style={{ background: "#FFF", border: "1px solid #BFDBFE", borderRadius: "10px", padding: "14px", display: "flex", flexDirection: "column", gap: "10px" }}>
-                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#1E40AF" }}>📅 Schedule Follow-up Visit</div>
+                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#1E40AF" }}>ðŸ“… Schedule Follow-up Visit</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "10px" }}>
                     <div>
                       <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>Follow-up Date</label>
@@ -2266,7 +2264,7 @@ const VeterinarianDashboard = () => {
               {/* OPTIONAL EXPANDABLE SECTION 5: MEDICAL HISTORY */}
               {showHistorySection && (
                 <div style={{ background: "#FFF", border: "1px solid #CBD5E1", borderRadius: "10px", padding: "14px", maxHeight: "220px", overflowY: "auto" }}>
-                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "8px" }}>📋 Patient Prior Medical Records</div>
+                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "8px" }}>ðŸ“‹ Patient Prior Medical Records</div>
                   {historyLoading ? (
                     <div style={{ padding: "12px", textAlign: "center", color: "#1E3A8A", fontSize: "12px" }}>Loading patient medical history...</div>
                   ) : petHistory.length === 0 ? (
@@ -2294,7 +2292,7 @@ const VeterinarianDashboard = () => {
               {/* OPTIONAL EXPANDABLE SECTION 6: ATTACHMENT */}
               {showAttachmentSection && (
                 <div style={{ background: "#FFF", border: "1px solid #BFDBFE", borderRadius: "10px", padding: "14px" }}>
-                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#1E40AF", marginBottom: "6px" }}>📎 Attach Clinical Lab Document</div>
+                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#1E40AF", marginBottom: "6px" }}>ðŸ“Ž Attach Clinical Lab Document</div>
                   <input
                     type="file"
                     accept="image/*,application/pdf"
@@ -2315,7 +2313,7 @@ const VeterinarianDashboard = () => {
                   />
                   {consultationForm.attachmentUrl && (
                     <div style={{ fontSize: "12px", color: "#16A34A", fontWeight: 700, marginTop: "4px" }}>
-                      ✓ Document attached: {consultationForm.attachmentUrl.slice(0, 45)}...
+                      âœ“ Document attached: {consultationForm.attachmentUrl.slice(0, 45)}...
                     </div>
                   )}
                 </div>
@@ -2336,7 +2334,7 @@ const VeterinarianDashboard = () => {
                   disabled={isSubmittingConsultation}
                   style={{ padding: "10px 22px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, fontSize: "13px", cursor: isSubmittingConsultation ? "not-allowed" : "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                 >
-                  {isSubmittingConsultation ? "Saving..." : "✓ Save & Complete Examination"}
+                  {isSubmittingConsultation ? "Saving..." : "âœ“ Save & Complete Examination"}
                 </button>
               </div>
             </form>
@@ -2349,13 +2347,13 @@ const VeterinarianDashboard = () => {
         <Modal
           isOpen={true}
           onClose={() => setIsDogProfileOpen(false)}
-          title={`Dog Master Profile — ${str(selectedDogMaster.name)}`}
+          title={`Dog Master Profile â€” ${str(selectedDogMaster.name)}`}
           maxWidth="640px"
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <div style={{ display: "flex", gap: "16px", alignItems: "center", background: "#F8FAFC", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
               <div style={{ width: "64px", height: "64px", borderRadius: "50%", background: "#DBEAFE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "28px" }}>
-                🐶
+                ðŸ¶
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: "18px", fontWeight: 800, color: "#0F172A" }}>{str(selectedDogMaster.name)}</div>
@@ -2411,7 +2409,7 @@ const VeterinarianDashboard = () => {
             {/* Medical History Section */}
             <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "12px" }}>
               <div style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", marginBottom: "8px" }}>
-                🏥 Medical & Clinical Exam History ({petHistory.length})
+                ðŸ¥ Medical & Clinical Exam History ({petHistory.length})
               </div>
               {historyLoading ? (
                 <div style={{ fontSize: "12px", color: "#64748B" }}>Loading history...</div>
@@ -2500,7 +2498,7 @@ const VeterinarianDashboard = () => {
         <Modal
           isOpen={true}
           onClose={() => setSelectedMedicalRecord(null)}
-          title={`Clinical Record Details — ${str(selectedMedicalRecord.petName || dogName(pick(selectedMedicalRecord, "petId", "pet_id", "dog_id")))}`}
+          title={`Clinical Record Details â€” ${str(selectedMedicalRecord.petName || dogName(pick(selectedMedicalRecord, "petId", "pet_id", "dog_id")))}`}
           maxWidth="680px"
         >
           {(() => {
@@ -2664,7 +2662,7 @@ const VeterinarianDashboard = () => {
         <Modal
           isOpen={true}
           onClose={() => setSelectedShelterRequest(null)}
-          title={`Shelter Medical Request — ${str(selectedShelterRequest.name || "Dog Patient")}`}
+          title={`Shelter Medical Request â€” ${str(selectedShelterRequest.name || "Dog Patient")}`}
           maxWidth="680px"
         >
           {(() => {
@@ -2857,7 +2855,7 @@ const VeterinarianDashboard = () => {
                 <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "16px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                   <div>
                     <div style={{ fontSize: "16px", fontWeight: 800, color: "#0F172A" }}>
-                      🐶 {petNameStr}
+                      ðŸ¶ {petNameStr}
                     </div>
                     <div style={{ fontSize: "12px", color: "#64748B", fontFamily: "monospace", marginTop: "2px" }}>
                       {petRec?.registration_number ? `Registration: ${str(petRec.registration_number)}` : isUuid(petId) ? `ID: ${str(petId).slice(0, 8).toUpperCase()}` : `ID: ${str(petId || "-")}`}
