@@ -84,7 +84,7 @@ export interface FosterBackgroundCheckInitiatePayload {
 
 export interface FosterBackgroundCheckOutcomePayload {
   outcome: "cleared" | "flagged" | "rejected" | string;
-  notes: string;
+  notes?: string;
   references_checked?: boolean;
   reference_notes?: string;
 }
@@ -93,7 +93,7 @@ export interface FosterHomeInspectionSchedulePayload {
   scheduled_at: string;
   inspector_id?: string;
   inspector_name?: string;
-  inspection_type: "in_person" | "virtual" | "shelter_visit" | "physical" | string;
+  inspection_type?: "physical" | "virtual" | string;
   address?: string;
   notes?: string;
 }
@@ -110,8 +110,8 @@ export interface FosterHomeInspectionAuditPayload {
 }
 
 export interface FosterHomeInspectionOutcomePayload {
-  outcome: "approved" | "rejected" | string;
-  notes: string;
+  outcome?: "approved" | "rejected" | string;
+  notes?: string;
   address?: string;
 }
 
@@ -411,7 +411,7 @@ export const fosterService = {
     if ("outcome" in payload) {
       return fosterService.submitHomeInspectionOutcome(profileId, payload);
     }
-    return fosterService.scheduleHomeInspection(profileId, payload);
+    return fosterService.scheduleHomeInspection(profileId, payload as FosterHomeInspectionSchedulePayload);
   },
 
   // POST /fosters/placements/{placement_id}/supplies - Log supply dispatch (Direct Dedicated Endpoint)

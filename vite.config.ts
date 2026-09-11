@@ -11,7 +11,7 @@ export default defineConfig({
     host: 'localhost',
     proxy: {
       '/api': {
-        target: 'https://pawguard-backend-dev.onrender.com',
+        target: 'https://pawguard-backend-mqri.onrender.com',
         changeOrigin: true,
         secure: false,
         agent: new https.Agent({ family: 4, keepAlive: true }),

@@ -15,7 +15,7 @@ const getBaseUrl = (): string => {
     }
     return trimmed;
   }
-  return "https://pawguard-backend-dev.onrender.com/api/v1";
+  return "https://pawguard-backend-mqri.onrender.com/api/v1";
 };
 
 const API_BASE_URL = getBaseUrl();

@@ -40,8 +40,19 @@ const inputStyle: React.CSSProperties = {
   fontSize: "14px",
 };
 
-const unwrapList = (v: any) =>
-  Array.isArray(v) ? v : Array.isArray(v?.data) ? v.data : Array.isArray(v?.items) ? v.items : [];
+const unwrapList = (v: any): any[] => {
+  if (!v) return [];
+  if (Array.isArray(v)) return v;
+  if (Array.isArray(v.data)) return v.data;
+  if (Array.isArray(v.items)) return v.items;
+  if (Array.isArray(v.data?.items)) return v.data.items;
+  if (Array.isArray(v.data?.data)) return v.data.data;
+  if (Array.isArray(v.results)) return v.results;
+  if (Array.isArray(v.data?.results)) return v.data.results;
+  if (Array.isArray(v.records)) return v.records;
+  if (Array.isArray(v.data?.records)) return v.data.records;
+  return [];
+};
 
 const getDurationInCare = (placedAt?: string | null): string | null => {
   if (!placedAt) return null;
@@ -277,7 +288,7 @@ export const FosterDogs: React.FC = () => {
       const [placementsRes, profilesRes, dogsRes] = await Promise.allSettled([
         fosterService.getFosterPlacements({ page_size: 100 }),
         fosterService.getFosterProfiles({ page_size: 100 }),
-        petService.getPets({ page_size: 100 }),
+        petService.getDogs({ page_size: 100 }),
       ]);
 
       let rawPlacements: any[] = [];
@@ -295,37 +306,52 @@ export const FosterDogs: React.FC = () => {
         rawDogs = unwrapList(dogsRes.value);
       }
 
+      if (
+        placementsRes.status === "rejected" &&
+        profilesRes.status === "rejected" &&
+        dogsRes.status === "rejected"
+      ) {
+        const primaryError = placementsRes.reason || profilesRes.reason || dogsRes.reason;
+        setError(extractBackendErrorMessage(primaryError, "Failed to load foster data from backend."));
+      }
+
       const dogsMap = new Map<string, any>();
       rawDogs.forEach((d) => {
-        const id = String(d.id || d.dog_id || "");
+        const id = String(d.id || d.dog_id || "").trim();
         if (id) dogsMap.set(id, d);
       });
 
       const profilesMap = new Map<string, any>();
       rawProfiles.forEach((p) => {
-        const id = String(p.id || p.profile_id || "");
-        if (id) profilesMap.set(id, p);
+        if (p.id) profilesMap.set(String(p.id).trim(), p);
+        if (p.profile_id) profilesMap.set(String(p.profile_id).trim(), p);
+        if (p.user_id) profilesMap.set(String(p.user_id).trim(), p);
       });
 
       // Enrich placements with dog and foster caregiver information
       const enrichedPlacements = rawPlacements.map((p: any) => {
-        const dogId = String(p.dog_id || p.dog?.id || "");
-        const profileId = String(p.foster_id || p.profile_id || p.foster?.id || "");
+        const dogId = String(p.dog_id || p.dog?.id || "").trim();
+        const profileId = String(p.foster_id || p.profile_id || p.foster?.id || "").trim();
 
-        const dogObj = p.dog || dogsMap.get(dogId) || {
-          id: dogId,
-          name: p.dog_name || "Foster Dog",
-          breed: p.dog_breed || "Mixed Breed",
-          gender: p.dog_gender || "unknown",
+        const fetchedDog = dogsMap.get(dogId) || {};
+        const embeddedDog = p.dog || {};
+        const dogObj = {
+          ...fetchedDog,
+          ...embeddedDog,
+          id: dogId || embeddedDog.id || fetchedDog.id,
+          name: embeddedDog.name || fetchedDog.name || p.dog_name || "Foster Dog",
+          breed: embeddedDog.breed || fetchedDog.breed || p.dog_breed || "Mixed Breed",
+          gender: embeddedDog.gender || fetchedDog.gender || p.dog_gender || "unknown",
         };
 
         const profileObj = profilesMap.get(profileId) || p.foster || {};
         const fosterUser = profileObj.user || {};
         const caregiverName =
-          profileObj.foster_family ||
           p.foster_name ||
+          profileObj.foster_family ||
           fosterUser.full_name ||
           fosterUser.name ||
+          (fosterUser.first_name ? `${fosterUser.first_name} ${fosterUser.last_name || ""}`.trim() : "") ||
           fosterUser.email ||
           "Foster Caregiver";
 
@@ -362,30 +388,39 @@ export const FosterDogs: React.FC = () => {
 
   // Calculate foster statistics
   const activePlacements = useMemo(() => {
-    return placements.filter(
-      (p) =>
-        p.is_active ||
-        p.status === "active" ||
-        (!p.returned_at && p.status !== "converted_to_adopt" && p.status !== "returned")
-    );
+    return placements.filter((p) => {
+      const s = String(p.status || "").toLowerCase().trim();
+      if (p.is_active === true || p.is_active === "true") return true;
+      if (s === "active" || s === "fostered" || s === "in_foster") return true;
+      if (!p.returned_at && s !== "returned" && s !== "converted_to_adopt" && s !== "adopted" && s !== "completed") {
+        return true;
+      }
+      return false;
+    });
   }, [placements]);
 
   const activeHomesCount = useMemo(() => {
-    const approvedProfiles = fosterProfiles.filter(
-      (p) =>
-        p.is_available ||
-        String(p.status).toLowerCase() === "approved" ||
-        String(p.status).toLowerCase() === "active"
-    );
+    const approvedProfiles = fosterProfiles.filter((p) => {
+      const s = String(p.status || "").toLowerCase().trim();
+      return (
+        p.is_available === true ||
+        s === "approved" ||
+        s === "active" ||
+        p.home_inspection_passed === true ||
+        p.background_check_passed === true
+      );
+    });
     return approvedProfiles.length;
   }, [fosterProfiles]);
 
   const totalCapacitySlots = useMemo(() => {
     return fosterProfiles.reduce((sum, p) => {
+      const s = String(p.status || "").toLowerCase().trim();
       const isApproved =
-        p.is_available ||
-        String(p.status).toLowerCase() === "approved" ||
-        String(p.status).toLowerCase() === "active";
+        p.is_available === true ||
+        s === "approved" ||
+        s === "active" ||
+        p.home_inspection_passed === true;
       if (!isApproved) return sum;
       const max = Number(p.max_capacity) || 1;
       const current = Number(p.active_count ?? p.placements_count ?? 0);
@@ -395,17 +430,44 @@ export const FosterDogs: React.FC = () => {
 
   // Dogs eligible for foster (shelter, rescued, clinic status and not currently in active placement)
   const activePlacedDogIds = useMemo(() => {
-    return new Set(activePlacements.map((p) => String(p.dog_id || p.dog?.id || "")));
+    const ids = new Set<string>();
+    activePlacements.forEach((p) => {
+      const dId = String(p.dog_id || p.dog?.id || "").trim();
+      if (dId) ids.add(dId);
+      if (p.dog?.id) ids.add(String(p.dog.id).trim());
+    });
+    return ids;
   }, [activePlacements]);
 
   const eligibleDogs = useMemo(() => {
     return allDogs.filter((d) => {
-      const dId = String(d.id || d.dog_id || "");
-      if (activePlacedDogIds.has(dId)) return false;
-      const status = String(d.status || "").toLowerCase();
-      return status === "shelter" || status === "rescued" || status === "clinic";
+      const dId = String(d.id || d.dog_id || "").trim();
+      if (dId && activePlacedDogIds.has(dId)) return false;
+      const status = String(d.status || "").toLowerCase().trim();
+      if (status === "fostered" || status === "adopted") return false;
+      return (
+        status === "shelter" ||
+        status === "rescued" ||
+        status === "clinic" ||
+        status === "intake" ||
+        status === "available" ||
+        d.is_adoptable === true ||
+        !status
+      );
     });
   }, [allDogs, activePlacedDogIds]);
+
+  const displayedEligibleDogs = useMemo(() => {
+    if (!searchQuery.trim()) return eligibleDogs;
+    const q = searchQuery.toLowerCase().trim();
+    return eligibleDogs.filter((d) => {
+      const name = String(d.name || "").toLowerCase();
+      const breed = String(d.breed || "").toLowerCase();
+      const id = String(d.id || d.dog_id || "").toLowerCase();
+      const status = String(d.status || "").toLowerCase();
+      return name.includes(q) || breed.includes(q) || id.includes(q) || status.includes(q);
+    });
+  }, [eligibleDogs, searchQuery]);
 
   // Filtered rows based on tab, search query, and status filter
   const displayedPlacements = useMemo(() => {
@@ -413,8 +475,9 @@ export const FosterDogs: React.FC = () => {
 
     if (statusFilter !== "all") {
       list = list.filter((p) => {
-        const s = String(p.status || "").toLowerCase();
-        if (statusFilter === "active") return p.is_active || s === "active";
+        const s = String(p.status || "").toLowerCase().trim();
+        const isAct = p.is_active === true || s === "active" || (!p.returned_at && s !== "returned" && s !== "converted_to_adopt" && s !== "adopted");
+        if (statusFilter === "active") return isAct;
         if (statusFilter === "returned") return s === "returned" || !!p.returned_at;
         if (statusFilter === "converted_to_adopt") return s === "converted_to_adopt" || s === "adopted";
         return true;
@@ -1361,8 +1424,8 @@ export const FosterDogs: React.FC = () => {
 
           <div style={{ fontSize: "13px", color: "#64748B", fontWeight: 600 }}>
             {activeTab === "eligible"
-              ? `Showing ${eligibleDogs.length} eligible dogs`
-              : `Showing ${displayedPlacements.length} foster placements`}
+              ? `Showing ${displayedEligibleDogs.length} of ${eligibleDogs.length} eligible dogs`
+              : `Showing ${displayedPlacements.length} of ${(activeTab === "active" ? activePlacements : placements).length} foster placements`}
           </div>
         </div>
 
@@ -1371,7 +1434,7 @@ export const FosterDogs: React.FC = () => {
           {activeTab === "eligible" ? (
             <DataTable
               columns={eligibleDogColumns}
-              data={eligibleDogs}
+              data={displayedEligibleDogs}
               loading={loading}
               emptyMessage="No eligible shelter dogs found available for foster placement."
               onRowClick={(row) => handleOpenPlaceModal(row.id)}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import StatCard from "../../../components/dashboard/StatCard";
 import DataTable, { type Column } from "../../../components/common/DataTable";
@@ -43,6 +43,7 @@ const FosterCoordinatorDashboard = () => {
   const { addToast } = useToast();
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [profiles, setProfiles] = useState<any[]>([]);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -193,6 +194,27 @@ const FosterCoordinatorDashboard = () => {
 
   const pendingApplicationsList = profiles.filter((p) => isPending(p.status));
 
+  const filteredProfiles = useMemo(() => {
+    if (statusFilter === "all") return profiles;
+    const filterLower = statusFilter.toLowerCase();
+    return profiles.filter((p) => {
+      const s = String(p.status || "").toLowerCase();
+      if (filterLower === "approved" || filterLower === "active") {
+        return isApproved(s) || (p.is_available && !isPending(s) && s !== "rejected");
+      }
+      if (filterLower === "applied" || filterLower === "pending") {
+        return isPending(s);
+      }
+      if (filterLower === "rejected") {
+        return s === "rejected";
+      }
+      if (filterLower === "inactive") {
+        return s === "inactive" || s === "busy" || (!p.is_available && isApproved(s));
+      }
+      return s === filterLower;
+    });
+  }, [profiles, statusFilter]);
+
   const stats = [
     { title: "Active Foster Homes", value: loading ? "..." : error ? "-" : String(activeHomesCount), trend: "Available Homes", color: "#1E3A8A", icon: <FaHome />, onClick: () => navigate("/fosters") },
     { title: "Pets in Foster Care", value: loading ? "..." : error ? "-" : String(petsInCareCount), trend: "Active Placements", color: "#16A34A", icon: <FaPaw />, onClick: () => navigate("/pets") },
@@ -338,7 +360,10 @@ const FosterCoordinatorDashboard = () => {
       render: (_: string, row: any) => (
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); setSelectedApplication(row); setIsAppModalOpen(true); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            navigate(`/fosters?action=review&profileId=${encodeURIComponent(row.id || row.profile_id)}`);
+          }}
           style={{ padding: "5px 12px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", color: "#0F172A", fontSize: "12px", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
         >
           <FaEye /> Review Application
@@ -380,15 +405,38 @@ const FosterCoordinatorDashboard = () => {
       <div className="soft-card" style={{ padding: "20px", marginBottom: "24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
           <h3 style={{ margin: 0, color: "#0F172A", fontSize: "16px", fontWeight: 700 }}>
-            Active Foster Caregivers &amp; Placements (Newest First)
+            Active Foster Caregivers &amp; Placements
           </h3>
           {loading && <span style={{ fontSize: "13px", color: "#1E3A8A", fontWeight: 600 }}>Loading foster data...</span>}
         </div>
         <DataTable
           columns={placementColumns}
-          data={profiles}
+          data={filteredProfiles}
           loading={loading}
           emptyMessage="No active foster profiles registered in backend."
+          leftHeaderControls={
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              style={{
+                padding: "8px 12px",
+                borderRadius: "8px",
+                border: "1px solid #CBD5E1",
+                fontSize: "13px",
+                fontWeight: 600,
+                color: "#0F172A",
+                background: "#FFFFFF",
+                cursor: "pointer",
+                outline: "none",
+              }}
+            >
+              <option value="all">All Statuses</option>
+              <option value="approved">Approved &amp; Active</option>
+              <option value="applied">Applied (Pending Review)</option>
+              <option value="rejected">Rejected</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          }
           onRowClick={(row: any) => {
             setSelectedFosterProfile(row);
             setIsFosterInspectModalOpen(true);
@@ -410,8 +458,7 @@ const FosterCoordinatorDashboard = () => {
           loading={loading}
           emptyMessage="No pending foster caregiver applications requiring review."
           onRowClick={(row: any) => {
-            setSelectedApplication(row);
-            setIsAppModalOpen(true);
+            navigate(`/fosters?action=review&profileId=${encodeURIComponent(row.id || row.profile_id)}`);
           }}
         />
       </div>
@@ -450,17 +497,7 @@ const FosterCoordinatorDashboard = () => {
               </div>
             )}
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsFosterInspectModalOpen(false);
-                  navigate(`/fosters?action=place&profileId=${encodeURIComponent(selectedFosterProfile.id)}`);
-                }}
-                style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
-              >
-                <FaPaw /> Place Dog in Home
-              </button>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "12px" }}>
               <button
                 type="button"
                 onClick={() => {
