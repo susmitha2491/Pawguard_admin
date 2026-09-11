@@ -46,6 +46,15 @@ export interface DonationCampaignCreatePayload {
   end_date?: string | null;
 }
 
+export interface DonorProfileUpdate {
+  tax_identifier?: string | null;
+  pan_number?: string | null;
+  full_name_for_80g?: string | null;
+  address_for_80g?: string | null;
+  is_80g_eligible?: boolean | null;
+  notes?: string | null;
+}
+
 export interface DonationFilters {
   search?: string;
   donation_type?: DonationType;
@@ -263,6 +272,45 @@ export const donationsService = {
   // GET /donations/donors/{id}
   getDonorById: async (donorId: string) => {
     const response = await api.get(`/donations/donors/${donorId}`);
+    return response.data?.data ?? response.data;
+  },
+
+  // PUT /donations/donors/{id} - Update Donor Profile (80G details, notes, PAN)
+  updateDonor: async (donorId: string, payload: DonorProfileUpdate) => {
+    const response = await api.put(`/donations/donors/${donorId}`, payload);
+    await publishActionEvent({
+      module: "finance",
+      action: "update",
+      title: "Donor Profile Updated",
+      message: `Donor profile ${donorId} updated.`,
+      targetRoles: ["super_admin", "finance_user"],
+    });
+    return response.data?.data ?? response.data;
+  },
+
+  // DELETE /donations/donors/{id} - Soft Delete Donor
+  deleteDonor: async (donorId: string) => {
+    const response = await api.delete(`/donations/donors/${donorId}`);
+    await publishActionEvent({
+      module: "finance",
+      action: "delete",
+      title: "Donor Profile Soft-Deleted",
+      message: `Donor ${donorId} soft-deleted.`,
+      targetRoles: ["super_admin", "finance_user"],
+    });
+    return response.data?.data ?? response.data;
+  },
+
+  // POST /donations/donors/bulk/delete - Bulk Soft Delete Donors
+  bulkDeleteDonors: async (donorIds: string[]) => {
+    const response = await api.post("/donations/donors/bulk/delete", { ids: donorIds });
+    await publishActionEvent({
+      module: "finance",
+      action: "delete",
+      title: "Donors Bulk Soft-Deleted",
+      message: `${donorIds.length} donors soft-deleted.`,
+      targetRoles: ["super_admin", "finance_user"],
+    });
     return response.data?.data ?? response.data;
   },
 

@@ -6,6 +6,7 @@ export type CanonicalRescueStatus =
   | "reported"
   | "verified"
   | "dispatched"
+  | "en_route"
   | "located"
   | "rescued"
   | "admitted"
@@ -158,6 +159,22 @@ export const rescueService = {
       if (options?.rejection_rationale) payload.rejection_rationale = options.rejection_rationale;
       const res = await api.post(`/rescue/${requestId}/verify`, payload);
       responseData = res.data;
+    } else if (normalizedStatus === "en_route") {
+      const dispatchId = (options as any)?.dispatch_id;
+      if (dispatchId) {
+        const res = await api.patch(`/rescue/dispatches/${dispatchId}`, { status: "en_route" });
+        responseData = res.data;
+      } else {
+        const caseRes = await api.get(`/rescue/${requestId}`);
+        const cData = caseRes.data?.data || caseRes.data;
+        const dId = cData?.dispatch?.id || cData?.dispatch_id;
+        if (dId) {
+          const res = await api.patch(`/rescue/dispatches/${dId}`, { status: "en_route" });
+          responseData = res.data;
+        } else {
+          throw new Error("Cannot mark En Route: No active dispatch found for this rescue case.");
+        }
+      }
     } else if (normalizedStatus === "located") {
       const res = await api.post(`/rescue/${requestId}/located`);
       responseData = res.data;
@@ -184,7 +201,7 @@ export const rescueService = {
         responseData = res.data;
       }
     } else {
-      throw new Error(`Unsupported rescue status transition: '${status}'. Supported statuses are: reported, verified, dispatched, located, rescued, admitted, rejected.`);
+      throw new Error(`Unsupported rescue status transition: '${status}'. Supported statuses are: reported, verified, dispatched, en_route, located, rescued, admitted, rejected.`);
     }
 
     await publishActionEvent({
@@ -326,16 +343,32 @@ export const rescueService = {
     return response.data;
   },
 
-  // PATCH /rescue/dispatch/{dispatch_id} - RescueDispatchUpdate
+  // PATCH /rescue/dispatches/{dispatch_id} - Mark En Route
+  markEnRoute: async (dispatchId: string) => {
+    const response = await api.patch(`/rescue/dispatches/${dispatchId}`, {
+      status: "en_route",
+    });
+    await publishActionEvent({
+      module: "rescue",
+      action: "update",
+      title: "Rescue En Route",
+      message: `Field responder marked En Route for dispatch ${dispatchId}.`,
+      targetRoles: ["super_admin", "rescue_centre_admin", "rescue_coordinator", "rescue_agent"],
+    });
+    return response.data;
+  },
+
+  // PATCH /rescue/dispatches/{dispatch_id} - RescueDispatchUpdate
   updateDispatchStatus: async (dispatchId: string, status: string) => {
-    const response = await api.patch(`/rescue/dispatch/${dispatchId}`, {
-      status: String(status || "").toLowerCase(),
+    const normalized = String(status || "").toLowerCase();
+    const response = await api.patch(`/rescue/dispatches/${dispatchId}`, {
+      status: normalized,
     });
     await publishActionEvent({
       module: "rescue",
       action: "update",
       title: "Dispatch Progress Updated",
-      message: `Field agent confirmed status update for dispatch ${dispatchId}.`,
+      message: `Field agent confirmed status update (${normalized}) for dispatch ${dispatchId}.`,
       targetRoles: ["super_admin", "rescue_coordinator", "rescue_agent"],
     });
     return response.data;

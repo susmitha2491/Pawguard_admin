@@ -94,11 +94,11 @@ const VolunteerManagement = () => {
     preferred_role: "Foster Care",
     emergency_contact_name: "",
     emergency_contact_phone: "",
-    skills: "Dog Handling, Sanitation, Animal Rescue",
-    availability: "Weekends & Morning Shifts",
+    skills: "",
+    availability: "",
     notes: "",
-    medical_conditions: "None",
-    animal_handling_experience: "2 years volunteer experience at local shelter",
+    medical_conditions: "",
+    animal_handling_experience: "",
     legal_consent: false,
   });
 

@@ -18,6 +18,8 @@ import {
   FaInfoCircle,
   FaUser,
   FaUndo,
+  FaEdit,
+  FaTrash,
 } from "react-icons/fa";
 import donationsService, {
   type DonationCreatePayload,
@@ -89,17 +91,29 @@ import { useSearchParams } from "react-router-dom";
 const Finance = () => {
   const [searchParams] = useSearchParams();
   const initialTab = (searchParams.get("tab") as any) || "donations";
-  const [activeTab, setActiveTab] = useState<"donations" | "sponsorships" | "campaigns" | "expenses" | "reconciliations" | "receipts" | "reports" | "requisitions">(
-    ["donations", "sponsorships", "campaigns", "expenses", "reconciliations", "receipts", "reports", "requisitions"].includes(initialTab) ? initialTab : "donations"
+  const [activeTab, setActiveTab] = useState<"donations" | "donors" | "sponsorships" | "campaigns" | "expenses" | "reconciliations" | "receipts" | "reports" | "requisitions">(
+    ["donations", "donors", "sponsorships", "campaigns", "expenses", "reconciliations", "receipts", "reports", "requisitions"].includes(initialTab) ? initialTab : "donations"
   );
 
   useEffect(() => {
     const t = searchParams.get("tab");
-    if (t && ["donations", "sponsorships", "campaigns", "expenses", "reconciliations", "receipts", "reports", "requisitions"].includes(t)) {
+    if (t && ["donations", "donors", "sponsorships", "campaigns", "expenses", "reconciliations", "receipts", "reports", "requisitions"].includes(t)) {
       setActiveTab(t as any);
     }
   }, [searchParams]);
   const [donations, setDonations] = useState<any[]>([]);
+  const [donors, setDonors] = useState<any[]>([]);
+  const [selectedDonor, setSelectedDonor] = useState<any | null>(null);
+  const [isDonorEditModalOpen, setIsDonorEditModalOpen] = useState(false);
+  const [isDeleteDonorModalOpen, setIsDeleteDonorModalOpen] = useState(false);
+  const [donorForm, setDonorForm] = useState({
+    pan_number: "",
+    tax_identifier: "",
+    full_name_for_80g: "",
+    address_for_80g: "",
+    is_80g_eligible: false,
+    notes: "",
+  });
   const [sponsorships, setSponsorships] = useState<any[]>([]);
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
@@ -273,7 +287,7 @@ const Finance = () => {
       setSummaryLoading(true);
       setError(null);
 
-      const [donRes, sponRes, campRes, expRes, reqRes, summaryRes, donSummaryRes, statsRes, dashRes] =
+      const [donRes, sponRes, campRes, expRes, reqRes, summaryRes, donSummaryRes, statsRes, dashRes, donorsRes] =
         await Promise.allSettled([
           donationsService.getDonations(),
           donationsService.getSponsorships(),
@@ -284,6 +298,7 @@ const Finance = () => {
           donationsService.getDonationSummary().catch(() => null),
           financeService.getFinanceStats().catch(() => null),
           financeService.getFinanceDashboard().catch(() => null),
+          donationsService.getDonors().catch(() => []),
         ]);
 
       setDonations(donRes.status === "fulfilled" ? donRes.value?.data || donRes.value || [] : []);
@@ -291,6 +306,7 @@ const Finance = () => {
       setCampaigns(campRes.status === "fulfilled" ? campRes.value?.data || campRes.value || [] : []);
       setExpenses(expRes.status === "fulfilled" ? expRes.value?.data || expRes.value || [] : []);
       setRequisitions(reqRes.status === "fulfilled" ? (Array.isArray(reqRes.value) ? reqRes.value : reqRes.value?.data || []) : []);
+      setDonors(donorsRes.status === "fulfilled" ? donorsRes.value?.data || donorsRes.value || [] : []);
 
       // Unpack aggregate KPIs from authoritative backend response
       const rawSummary =
@@ -520,6 +536,62 @@ const Finance = () => {
     }
   };
 
+  const handleOpenEditDonor = (donor: any) => {
+    setSelectedDonor(donor);
+    setDonorForm({
+      pan_number: donor.pan_number || "",
+      tax_identifier: donor.tax_identifier || "",
+      full_name_for_80g: donor.full_name_for_80g || donor.user?.full_name || "",
+      address_for_80g: donor.address_for_80g || "",
+      is_80g_eligible: Boolean(donor.is_80g_eligible),
+      notes: donor.notes || "",
+    });
+    setIsDonorEditModalOpen(true);
+  };
+
+  const handleUpdateDonor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDonor?.id) return;
+    try {
+      setIsSubmitting(true);
+      await donationsService.updateDonor(selectedDonor.id, {
+        pan_number: donorForm.pan_number.trim() || null,
+        tax_identifier: donorForm.tax_identifier.trim() || null,
+        full_name_for_80g: donorForm.full_name_for_80g.trim() || null,
+        address_for_80g: donorForm.address_for_80g.trim() || null,
+        is_80g_eligible: donorForm.is_80g_eligible,
+        notes: donorForm.notes.trim() || null,
+      });
+      addToast("Donor 80G tax profile updated successfully!", "success");
+      setIsDonorEditModalOpen(false);
+      fetchFinanceData();
+      notifyDataChanged();
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to update donor profile.";
+      addToast(typeof msg === "string" ? msg : JSON.stringify(msg), "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteDonor = async () => {
+    if (!selectedDonor?.id) return;
+    try {
+      setIsSubmitting(true);
+      await donationsService.deleteDonor(selectedDonor.id);
+      addToast("Donor profile soft-deleted successfully.", "success");
+      setIsDeleteDonorModalOpen(false);
+      setSelectedDonor(null);
+      fetchFinanceData();
+      notifyDataChanged();
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to delete donor.";
+      addToast(typeof msg === "string" ? msg : JSON.stringify(msg), "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleProcessRefund = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!refundForm.donation_id) return;
@@ -738,6 +810,9 @@ const Finance = () => {
             <QuickActionCard icon={<FaFileInvoiceDollar />} title="Expenses / Disbursements" subtitle="Log & approve expenses" color="#6366F1" onClick={() => setActiveTab("expenses")} />
           </Can>
           <Can permission="manage_finance">
+            <QuickActionCard icon={<FaUser />} title="Donors Directory" subtitle="80G tax info & donors" color="#0D9488" onClick={() => setActiveTab("donors")} />
+          </Can>
+          <Can permission="manage_finance">
             <QuickActionCard icon={<FaDownload />} title="Financial Reports" subtitle="P&L & transparency" color="#8B5CF6" onClick={() => setActiveTab("reports")} />
           </Can>
         </div>
@@ -759,6 +834,21 @@ const Finance = () => {
           }}
         >
           Donations Received ({donations.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("donors")}
+          style={{
+            padding: "10px 18px",
+            border: "none",
+            borderBottom: activeTab === "donors" ? "3px solid #10B981" : "3px solid transparent",
+            background: "none",
+            color: activeTab === "donors" ? "#10B981" : "#64748B",
+            fontWeight: 700,
+            fontSize: "15px",
+            cursor: "pointer",
+          }}
+        >
+          Donors Directory ({donors.length})
         </button>
         <button
           onClick={() => setActiveTab("sponsorships")}
@@ -920,6 +1010,142 @@ const Finance = () => {
                   style={{ padding: "6px 12px", borderRadius: "6px", border: "1px solid #93C5FD", background: "#EFF6FF", color: "#1D4ED8", fontSize: "12px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
                 >
                   <FaCheckDouble /> Reconcile
+                </button>
+              </div>
+            )}
+          />
+        </div>
+      )}
+
+      {activeTab === "donors" && (
+        <div className="soft-card" style={{ padding: "20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
+            <div>
+              <h3 style={{ margin: "0 0 4px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
+                Registered Donors Directory
+              </h3>
+              <p style={{ margin: 0, color: "#64748B", fontSize: "13px" }}>
+                Inspect registered donors, update official 80G tax exemption details, and maintain donor records.
+              </p>
+            </div>
+            {loading && <span style={{ fontSize: "13px", color: "#10B981", fontWeight: 600 }}>Loading...</span>}
+          </div>
+
+          <DataTable
+            data={donors.filter((d: any) => {
+              if (!debouncedSearch) return true;
+              const q = debouncedSearch.toLowerCase();
+              const name = String(d.user?.full_name || d.full_name_for_80g || "").toLowerCase();
+              const email = String(d.user?.email || "").toLowerCase();
+              const pan = String(d.pan_number || d.tax_identifier || "").toLowerCase();
+              return name.includes(q) || email.includes(q) || pan.includes(q);
+            })}
+            columns={[
+              {
+                key: "name",
+                title: "Donor",
+                render: (_v, row: any) => (
+                  <div>
+                    <strong style={{ color: "#0F172A" }}>{row.user?.full_name || row.full_name_for_80g || "Anonymous Donor"}</strong>
+                    <div style={{ fontSize: "12px", color: "#64748B" }}>{row.user?.email || "No email on record"}</div>
+                  </div>
+                ),
+              },
+              {
+                key: "phone",
+                title: "Phone",
+                render: (_v, row: any) => <span>{row.user?.phone || "—"}</span>,
+              },
+              {
+                key: "pan_number",
+                title: "PAN / Tax ID",
+                render: (_v, row: any) => (
+                  <code style={{ fontSize: "12px", background: "#F1F5F9", padding: "2px 6px", borderRadius: "4px" }}>
+                    {row.pan_number || row.tax_identifier || "Not registered"}
+                  </code>
+                ),
+              },
+              {
+                key: "is_80g_eligible",
+                title: "80G Eligibility",
+                render: (_v, row: any) => (
+                  <span
+                    style={{
+                      background: row.is_80g_eligible ? "#ECFDF5" : "#F1F5F9",
+                      color: row.is_80g_eligible ? "#047857" : "#64748B",
+                      padding: "3px 8px",
+                      borderRadius: "6px",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {row.is_80g_eligible ? "80G Eligible" : "Standard"}
+                  </span>
+                ),
+              },
+              {
+                key: "address",
+                title: "80G Address",
+                render: (_v, row: any) => (
+                  <span style={{ fontSize: "13px", color: "#334155" }}>
+                    {row.address_for_80g || "—"}
+                  </span>
+                ),
+              },
+              {
+                key: "created_at",
+                title: "Registered",
+                render: (_v, row: any) => <span>{row.created_at ? formatDateTime(row.created_at) : "—"}</span>,
+              },
+            ]}
+            emptyMessage="No donor records found."
+            searchValue={searchQuery}
+            onSearchChange={(val: string) => setSearchQuery(val)}
+            module="finance"
+            renderRowActions={(row: any) => (
+              <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenEditDonor(row);
+                  }}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #CBD5E1",
+                    background: "#F8FAFC",
+                    color: "#0F172A",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <FaEdit /> Edit 80G Details
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedDonor(row);
+                    setIsDeleteDonorModalOpen(true);
+                  }}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #FECACA",
+                    background: "#FEF2F2",
+                    color: "#B91C1C",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <FaTrash /> Delete
                 </button>
               </div>
             )}
@@ -1813,6 +2039,157 @@ const Finance = () => {
                 style={{ padding: "8px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFFFFF", color: "#334155", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}
               >
                 Close
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Edit Donor 80G Profile Modal */}
+      <Modal
+        isOpen={isDonorEditModalOpen}
+        onClose={() => setIsDonorEditModalOpen(false)}
+        title="Edit Donor 80G Tax Profile"
+      >
+        {selectedDonor && (
+          <form onSubmit={handleUpdateDonor}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+              <div style={{ background: "#F1F5F9", padding: "12px", borderRadius: "8px", fontSize: "13px" }}>
+                <div><strong>Donor:</strong> {selectedDonor.user?.full_name || "Anonymous"}</div>
+                <div style={{ color: "#64748B" }}><strong>Email:</strong> {selectedDonor.user?.email || "No email"}</div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: "4px", fontSize: "13px", fontWeight: 700 }}>
+                  PAN Number (Income Tax Act)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. ABCDE1234F"
+                  value={donorForm.pan_number}
+                  onChange={(e) => setDonorForm({ ...donorForm, pan_number: e.target.value.toUpperCase() })}
+                  style={inputStyle}
+                  maxLength={20}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: "4px", fontSize: "13px", fontWeight: 700 }}>
+                  Tax Identifier / Alternative ID
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. TAX-ID-9928"
+                  value={donorForm.tax_identifier}
+                  onChange={(e) => setDonorForm({ ...donorForm, tax_identifier: e.target.value })}
+                  style={inputStyle}
+                  maxLength={64}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: "4px", fontSize: "13px", fontWeight: 700 }}>
+                  Full Legal Name for 80G Certificate
+                </label>
+                <input
+                  type="text"
+                  placeholder="Full name as appears on PAN"
+                  value={donorForm.full_name_for_80g}
+                  onChange={(e) => setDonorForm({ ...donorForm, full_name_for_80g: e.target.value })}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: "4px", fontSize: "13px", fontWeight: 700 }}>
+                  Address for 80G Certificate
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Official registered address for tax filing..."
+                  value={donorForm.address_for_80g}
+                  onChange={(e) => setDonorForm({ ...donorForm, address_for_80g: e.target.value })}
+                  style={{ ...inputStyle, resize: "vertical" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <input
+                  type="checkbox"
+                  id="is_80g_eligible"
+                  checked={donorForm.is_80g_eligible}
+                  onChange={(e) => setDonorForm({ ...donorForm, is_80g_eligible: e.target.checked })}
+                  style={{ width: "18px", height: "18px", accentColor: "#10B981" }}
+                />
+                <label htmlFor="is_80g_eligible" style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A", cursor: "pointer" }}>
+                  Eligible for 80G Tax Exemption Certificates
+                </label>
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: "4px", fontSize: "13px", fontWeight: 700 }}>
+                  Internal Donor Notes
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Special donation preferences, giving history notes..."
+                  value={donorForm.notes}
+                  onChange={(e) => setDonorForm({ ...donorForm, notes: e.target.value })}
+                  style={{ ...inputStyle, resize: "vertical" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px", borderTop: "1px solid #E2E8F0", paddingTop: "12px" }}>
+                <button
+                  type="button"
+                  onClick={() => setIsDonorEditModalOpen(false)}
+                  style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF", color: "#334155", fontWeight: 600, cursor: "pointer" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  style={{ padding: "8px 18px", borderRadius: "8px", border: "none", background: "#10B981", color: "#FFF", fontWeight: 700, cursor: isSubmitting ? "not-allowed" : "pointer" }}
+                >
+                  {isSubmitting ? "Saving..." : "Save 80G Profile"}
+                </button>
+              </div>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Delete Donor Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteDonorModalOpen}
+        onClose={() => setIsDeleteDonorModalOpen(false)}
+        title="Confirm Soft Delete Donor"
+      >
+        {selectedDonor && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            <p style={{ margin: 0, color: "#334155", fontSize: "14px", lineHeight: "1.5" }}>
+              Are you sure you want to soft-delete the donor profile for{" "}
+              <strong>{selectedDonor.user?.full_name || selectedDonor.full_name_for_80g || "this donor"}</strong>?
+            </p>
+            <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "8px", padding: "12px", color: "#991B1B", fontSize: "13px" }}>
+              ⚠️ Soft deletion deactivates the donor profile in accordance with retention policies. Historical donation and ledger records will be preserved for financial auditing.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>
+              <button
+                type="button"
+                onClick={() => setIsDeleteDonorModalOpen(false)}
+                style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF", color: "#334155", fontWeight: 600, cursor: "pointer" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={handleDeleteDonor}
+                style={{ padding: "8px 18px", borderRadius: "8px", border: "none", background: "#DC2626", color: "#FFF", fontWeight: 700, cursor: isSubmitting ? "not-allowed" : "pointer" }}
+              >
+                {isSubmitting ? "Deleting..." : "Soft Delete Donor"}
               </button>
             </div>
           </div>

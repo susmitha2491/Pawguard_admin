@@ -62,6 +62,29 @@ export interface ShelterVetCheckRequest {
   urgency?: "routine" | "urgent" | "emergency";
 }
 
+export interface ShelterVetRequestListResponse {
+  [key: string]: any;
+  id: string;
+  dog_id: string;
+  dog_name?: string;
+  shelter_facility_id: string;
+  shelter_facility_name?: string;
+  vet_id: string;
+  vet_name?: string;
+  requested_by_id: string;
+  requester_name?: string;
+  reason: string;
+  notes?: string | null;
+  urgency: "routine" | "urgent" | "emergency";
+  status: "pending" | "in_progress" | "completed" | "rejected" | "cancelled";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShelterMedicalRequestStatusUpdate {
+  status: "pending" | "in_progress" | "completed" | "rejected" | "cancelled";
+}
+
 export const shelterService = {
   // GET /dashboards/shelter - Aggregate Dashboard Data
   getShelterDashboard: async () => {
@@ -321,6 +344,25 @@ export const shelterService = {
   // POST /shelter/dogs/{dog_id}/request-vet-check
   requestVetCheck: async (dogId: string, data: ShelterVetCheckRequest) => {
     const response = await api.post(`/shelter/dogs/${dogId}/request-vet-check`, data);
+    return response.data;
+  },
+
+  // GET /shelter/medical-requests
+  getMedicalRequests: async (params?: { status?: string }) => {
+    const response = await api.get("/shelter/medical-requests", { params });
+    return response.data;
+  },
+
+  // PATCH /shelter/medical-requests/{request_id}/status
+  updateMedicalRequestStatus: async (requestId: string, status: string) => {
+    const response = await api.patch(`/shelter/medical-requests/${requestId}/status`, { status });
+    await publishActionEvent({
+      module: "shelter",
+      action: "update",
+      title: "Medical Request Status Updated",
+      message: `Shelter veterinary check request ${requestId} updated to ${status}.`,
+      targetRoles: ["super_admin", "veterinarian", "shelter_manager", "rescue_centre_admin"],
+    });
     return response.data;
   },
 };

@@ -261,6 +261,35 @@ const FosterCoordinatorDashboard = () => {
         );
       },
     },
+    {
+      key: "actions",
+      title: "Actions",
+      render: (_: string, row: any) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedFosterProfile(row);
+            setIsFosterInspectModalOpen(true);
+          }}
+          style={{
+            padding: "5px 12px",
+            borderRadius: "6px",
+            border: "1px solid #CBD5E1",
+            background: "#FFF",
+            color: "#0F172A",
+            fontSize: "12px",
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+        >
+          <FaEye /> View Profile
+        </button>
+      ),
+    },
   ];
 
   const pendingAppColumns: Column<any>[] = [

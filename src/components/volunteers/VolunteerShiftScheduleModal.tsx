@@ -29,21 +29,39 @@ export interface VolunteerShiftScheduleModalProps {
   initialAssignedVolunteerId?: string;
 }
 
-const DEFAULT_FORM_STATE = {
-  role_name: "Shelter Support & Care",
-  preferred_role: "Shelter Support",
-  date: new Date().toISOString().split("T")[0],
-  start_time: "09:00",
-  end_time: "13:00",
+export interface VolunteerShiftFormState {
+  role_name: string;
+  preferred_role: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  shelter_facility_id: string;
+  notes: string;
+  capacity: number | string;
+  assigned_volunteer_id: string;
+  location_name: string;
+  latitude: string;
+  longitude: string;
+  allowed_radius_meters: string;
+}
+
+export const getInitialShiftFormState = (
+  initialAssignedVolunteerId: string = ""
+): VolunteerShiftFormState => ({
+  role_name: "",
+  preferred_role: "",
+  date: "",
+  start_time: "",
+  end_time: "",
   shelter_facility_id: "",
-  notes: "Please assist with daily shelter tasks.",
-  capacity: 5,
-  assigned_volunteer_id: "",
+  notes: "",
+  capacity: "",
+  assigned_volunteer_id: initialAssignedVolunteerId || "",
   location_name: "",
   latitude: "",
   longitude: "",
   allowed_radius_meters: "",
-};
+});
 
 export const VolunteerShiftScheduleModal: React.FC<VolunteerShiftScheduleModalProps> = ({
   isOpen,
@@ -60,11 +78,10 @@ export const VolunteerShiftScheduleModal: React.FC<VolunteerShiftScheduleModalPr
   const [internalFacilities, setInternalFacilities] = useState<any[]>([]);
   const [internalVolunteers, setInternalVolunteers] = useState<any[]>([]);
 
-  // Shift Form State
-  const [shiftForm, setShiftForm] = useState({
-    ...DEFAULT_FORM_STATE,
-    assigned_volunteer_id: initialAssignedVolunteerId || "",
-  });
+  // Shift Form State - starts completely empty for a new shift
+  const [shiftForm, setShiftForm] = useState<VolunteerShiftFormState>(() =>
+    getInitialShiftFormState(initialAssignedVolunteerId)
+  );
 
   // Map references
   const createMapRef = useRef<any>(null);
@@ -76,13 +93,32 @@ export const VolunteerShiftScheduleModal: React.FC<VolunteerShiftScheduleModalPr
   // Map search query state
   const [createSearchQuery, setCreateSearchQuery] = useState("");
 
-  // Keep assigned volunteer updated when initialAssignedVolunteerId changes
+  const resetFormAndMapState = (assignedId: string = "") => {
+    setShiftForm(getInitialShiftFormState(assignedId));
+    setCreateSearchQuery("");
+    if (createMarkerRef.current) {
+      createMarkerRef.current.remove();
+      createMarkerRef.current = null;
+    }
+    if (createCircleRef.current) {
+      createCircleRef.current.remove();
+      createCircleRef.current = null;
+    }
+    if (createTempMarkerRef.current) {
+      createTempMarkerRef.current.remove();
+      createTempMarkerRef.current = null;
+    }
+  };
+
+  const handleClose = () => {
+    resetFormAndMapState(initialAssignedVolunteerId);
+    onClose();
+  };
+
+  // Reset form to clean empty state whenever modal opens or initialAssignedVolunteerId changes
   useEffect(() => {
     if (isOpen) {
-      setShiftForm((prev) => ({
-        ...prev,
-        assigned_volunteer_id: initialAssignedVolunteerId || prev.assigned_volunteer_id || "",
-      }));
+      resetFormAndMapState(initialAssignedVolunteerId);
     }
   }, [isOpen, initialAssignedVolunteerId]);
 
@@ -363,12 +399,24 @@ export const VolunteerShiftScheduleModal: React.FC<VolunteerShiftScheduleModalPr
   // Handle Create Shift Submission
   const handleCreateShift = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!shiftForm.role_name || !shiftForm.date || !shiftForm.start_time || !shiftForm.end_time) {
-      addToast("Role name, date, start time, and end time are required.", "error");
+    if (
+      !shiftForm.role_name.trim() ||
+      !shiftForm.preferred_role.trim() ||
+      !shiftForm.date ||
+      !shiftForm.start_time ||
+      !shiftForm.end_time
+    ) {
+      addToast("Role name, volunteer type / role, date, start time, and end time are required.", "error");
       return;
     }
     if (shiftForm.start_time >= shiftForm.end_time) {
       addToast("End time must be after start time.", "error");
+      return;
+    }
+
+    const capNum = Number(shiftForm.capacity);
+    if (shiftForm.capacity === "" || isNaN(capNum) || capNum < 1) {
+      addToast("Capacity limit must be a valid number of at least 1.", "error");
       return;
     }
 
@@ -419,7 +467,7 @@ export const VolunteerShiftScheduleModal: React.FC<VolunteerShiftScheduleModalPr
         shelter_facility_id: shiftForm.shelter_facility_id || null,
         start_at: startIso,
         end_at: endIso,
-        capacity: Number(shiftForm.capacity || 5),
+        capacity: capNum,
         notes: shiftForm.notes,
         status: "Scheduled",
         location_name: shiftForm.location_name.trim() || null,
@@ -448,11 +496,7 @@ export const VolunteerShiftScheduleModal: React.FC<VolunteerShiftScheduleModalPr
         .catch(() => {});
 
       addToast("Volunteer shift scheduled successfully!", "success");
-      onClose();
-      setShiftForm({
-        ...DEFAULT_FORM_STATE,
-        assigned_volunteer_id: "",
-      });
+      handleClose();
       onSuccess?.();
       notifyDataChanged();
     } catch (err: any) {
@@ -469,7 +513,7 @@ export const VolunteerShiftScheduleModal: React.FC<VolunteerShiftScheduleModalPr
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Create Volunteer Shift Schedule">
+    <Modal isOpen={isOpen} onClose={handleClose} title="Create Volunteer Shift Schedule">
       <form onSubmit={handleCreateShift} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
         <div>
           <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>
@@ -478,7 +522,7 @@ export const VolunteerShiftScheduleModal: React.FC<VolunteerShiftScheduleModalPr
           <input
             type="text"
             required
-            placeholder="e.g. Feeding & Socialization Care"
+            placeholder="Enter shift title (e.g. Shelter Support & Care)"
             value={shiftForm.role_name}
             onChange={(e) => setShiftForm({ ...shiftForm, role_name: e.target.value })}
             style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }}
@@ -491,10 +535,14 @@ export const VolunteerShiftScheduleModal: React.FC<VolunteerShiftScheduleModalPr
               Volunteer Type / Role *
             </label>
             <select
+              required
               value={shiftForm.preferred_role}
               onChange={(e) => setShiftForm({ ...shiftForm, preferred_role: e.target.value })}
               style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", background: "#FFF" }}
             >
+              <option value="" disabled>
+                Select volunteer type / role
+              </option>
               {PREFERRED_ROLES.map((r) => (
                 <option key={r} value={r}>
                   {r}
@@ -510,6 +558,7 @@ export const VolunteerShiftScheduleModal: React.FC<VolunteerShiftScheduleModalPr
             <input
               type="date"
               required
+              placeholder="Select date"
               value={shiftForm.date}
               onChange={(e) => setShiftForm({ ...shiftForm, date: e.target.value })}
               style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }}
@@ -525,6 +574,7 @@ export const VolunteerShiftScheduleModal: React.FC<VolunteerShiftScheduleModalPr
             <input
               type="time"
               required
+              placeholder="Select start time"
               value={shiftForm.start_time}
               onChange={(e) => setShiftForm({ ...shiftForm, start_time: e.target.value })}
               style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }}
@@ -537,6 +587,7 @@ export const VolunteerShiftScheduleModal: React.FC<VolunteerShiftScheduleModalPr
             <input
               type="time"
               required
+              placeholder="Select end time"
               value={shiftForm.end_time}
               onChange={(e) => setShiftForm({ ...shiftForm, end_time: e.target.value })}
               style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }}
@@ -708,8 +759,15 @@ export const VolunteerShiftScheduleModal: React.FC<VolunteerShiftScheduleModalPr
               type="number"
               min="1"
               required
+              placeholder="Enter capacity limit (e.g. 5)"
               value={shiftForm.capacity}
-              onChange={(e) => setShiftForm({ ...shiftForm, capacity: Number(e.target.value) })}
+              onChange={(e) => {
+                const val = e.target.value;
+                setShiftForm({
+                  ...shiftForm,
+                  capacity: val === "" ? "" : Number(val),
+                });
+              }}
               style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }}
             />
           </div>
@@ -736,7 +794,7 @@ export const VolunteerShiftScheduleModal: React.FC<VolunteerShiftScheduleModalPr
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" }}>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}
           >
             Cancel
