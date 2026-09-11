@@ -981,8 +981,11 @@ const VolunteerCoordinatorDashboard = () => {
       return;
     }
 
+    const volObj = volunteers.find(
+      (v) => String(v.id || v._id) === String(assignWorkForm.volunteer_id)
+    );
     const volStatus = String(volObj?.status || "").toLowerCase().trim();
-    if (!["approved", "onboarded", "active"].includes(volStatus)) {
+    if (volObj && !["approved", "onboarded", "active"].includes(volStatus)) {
       addToast("Cannot assign work: Volunteer must be approved, onboarded, or active.", "error");
       return;
     }

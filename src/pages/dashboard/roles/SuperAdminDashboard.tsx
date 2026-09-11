@@ -137,7 +137,8 @@ const SuperAdminDashboard = () => {
     finObj.total_donations_amount ??
     finObj.total_amount ??
     finObj.revenue ??
-    430565.0;
+    finObj.total_raised ??
+    0;
 
   const totalDonationAmount = safeNumber(totalIncomeVal);
 
