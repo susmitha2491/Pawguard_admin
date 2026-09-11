@@ -28,17 +28,21 @@ import shelterService from "../../services/shelterService";
 import { notifyDataChanged } from "../../utils/dataSync";
 import { formatDateTime } from "../../utils/dateUtils";
 import { getCurrentUserRole } from "../../utils/roleUtils";
+import { extractErrorMessage } from "../../utils/errorUtils";
 import { VolunteerShiftScheduleModal } from "../../components/volunteers/VolunteerShiftScheduleModal";
 
 type TabKey = "applications" | "active" | "shifts";
 
 const STATUS_OPTIONS = [
   { value: "", label: "All Application Statuses" },
-  { value: "pending", label: "Pending (Action Required)" },
-  { value: "applied", label: "Applied / Pending" },
+  { value: "submitted", label: "Submitted" },
+  { value: "under_review", label: "Under Review" },
   { value: "approved", label: "Approved / Active" },
-  { value: "active", label: "Active Roster" },
   { value: "rejected", label: "Rejected" },
+  { value: "withdrawn", label: "Withdrawn" },
+  { value: "pending", label: "Pending (Legacy)" },
+  { value: "applied", label: "Applied (Legacy)" },
+  { value: "active", label: "Active Roster" },
   { value: "inactive", label: "Inactive" },
 ];
 
@@ -200,13 +204,27 @@ const VolunteerManagement = () => {
       return;
     }
 
+    // Check if an active application already exists for this email
     const duplicate = applications.find((app) => {
-      const em = String(app.user?.email || app.email || "").toLowerCase();
-      const st = String(app.status || "").toLowerCase();
-      return applyForm.email && em === applyForm.email.toLowerCase() && ["applied", "pending"].includes(st);
+      const em = String(app.user?.email || app.email || "").toLowerCase().trim();
+      const st = String(app.status || "").toLowerCase().trim();
+      // Active applications that block duplicates: submitted, under_review, approved, active, onboarded, applied, pending
+      // Re-application is allowed for: rejected, withdrawn
+      return (
+        applyForm.email &&
+        em === applyForm.email.toLowerCase().trim() &&
+        ["submitted", "under_review", "approved", "active", "onboarded", "applied", "pending"].includes(st)
+      );
     });
     if (duplicate) {
-      addToast(`A pending volunteer application already exists for ${applyForm.email}.`, "error");
+      const st = String(duplicate.status || "").toLowerCase().trim();
+      if (st === "under_review") {
+        addToast(`A volunteer application for ${applyForm.email} is currently under review.`, "error");
+      } else if (["approved", "active", "onboarded"].includes(st)) {
+        addToast(`An approved volunteer profile already exists for ${applyForm.email}.`, "error");
+      } else {
+        addToast(`An active volunteer application already exists for ${applyForm.email}.`, "error");
+      }
       return;
     }
 
@@ -218,13 +236,8 @@ const VolunteerManagement = () => {
       fetchApplications();
       notifyDataChanged();
     } catch (err: any) {
-      const errorMsg =
-        typeof err?.response?.data?.detail === "string"
-          ? err.response.data.detail
-          : Array.isArray(err?.response?.data?.detail)
-          ? err.response.data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ")
-          : err?.response?.data?.message || err?.message || "Failed to register application.";
-      addToast(`[HTTP ${err?.response?.status || 422}] ${errorMsg}`, "error");
+      const errorMsg = extractErrorMessage(err, "Failed to register volunteer application.");
+      addToast(errorMsg, "error");
     } finally {
       setIsSubmitting(false);
     }
@@ -275,13 +288,8 @@ const VolunteerManagement = () => {
       fetchShifts();
       notifyDataChanged();
     } catch (err: any) {
-      const errorMsg =
-        typeof err?.response?.data?.detail === "string"
-          ? err.response.data.detail
-          : Array.isArray(err?.response?.data?.detail)
-          ? err.response.data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ")
-          : err?.response?.data?.message || err?.message || "Failed to approve application.";
-      addToast(`[HTTP ${err?.response?.status || 500}] ${errorMsg}`, "error");
+      const errorMsg = extractErrorMessage(err, "Failed to approve application.");
+      addToast(errorMsg, "error");
     } finally {
       setIsSubmitting(false);
     }
@@ -356,13 +364,8 @@ const VolunteerManagement = () => {
       fetchApplications();
       notifyDataChanged();
     } catch (err: any) {
-      const errorMsg =
-        typeof err?.response?.data?.detail === "string"
-          ? err.response.data.detail
-          : Array.isArray(err?.response?.data?.detail)
-          ? err.response.data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ")
-          : err?.response?.data?.message || err?.message || "Failed to reject application.";
-      addToast(`[HTTP ${err?.response?.status || 500}] ${errorMsg}`, "error");
+      const errorMsg = extractErrorMessage(err, "Failed to reject application.");
+      addToast(errorMsg, "error");
     } finally {
       setIsSubmitting(false);
     }
@@ -537,20 +540,15 @@ const VolunteerManagement = () => {
 
       addToast("Volunteer Service Certificate generated!", "success");
     } catch (err: any) {
-      const errorMsg =
-        typeof err?.response?.data?.detail === "string"
-          ? err.response.data.detail
-          : Array.isArray(err?.response?.data?.detail)
-          ? err.response.data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ")
-          : err?.response?.data?.message || err?.message || "Failed to issue certificate.";
+      const errorMsg = extractErrorMessage(err, "Failed to issue certificate.");
       addToast(errorMsg, "error");
     }
   };
 
-  // Helper status check
+  // Helper status checks aligned with backend ApplicationStatus and VolunteerStatus
   const isPendingStatus = (st?: string) => {
     const s = String(st || "").toLowerCase().trim();
-    return s === "submitted" || s === "pending" || s === "applied";
+    return s === "submitted" || s === "under_review" || s === "pending" || s === "applied";
   };
 
   const isApprovedStatus = (st?: string) => {
@@ -561,6 +559,11 @@ const VolunteerManagement = () => {
   const isRejectedStatus = (st?: string) => {
     const s = String(st || "").toLowerCase().trim();
     return s === "rejected";
+  };
+
+  const isWithdrawnStatus = (st?: string) => {
+    const s = String(st || "").toLowerCase().trim();
+    return s === "withdrawn";
   };
 
   // Filtered Roster & Applications
@@ -700,6 +703,8 @@ const VolunteerManagement = () => {
         const isPending = isPendingStatus(v);
         const isApproved = isApprovedStatus(v);
         const isRejected = isRejectedStatus(v);
+        const isWithdrawn = isWithdrawnStatus(v);
+        const s = String(v || "pending").toLowerCase().trim();
 
         let bg = "#F1F5F9";
         let color = "#475569";
@@ -709,6 +714,10 @@ const VolunteerManagement = () => {
           bg = "#D1FAE5";
           color = "#047857";
           label = "APPROVED / ACTIVE";
+        } else if (s === "under_review") {
+          bg = "#E0F2FE";
+          color = "#0369A1";
+          label = "UNDER REVIEW";
         } else if (isPending) {
           bg = "#FEF3C7";
           color = "#B45309";
@@ -717,6 +726,10 @@ const VolunteerManagement = () => {
           bg = "#FEE2E2";
           color = "#B91C1C";
           label = "REJECTED";
+        } else if (isWithdrawn) {
+          bg = "#F1F5F9";
+          color = "#64748B";
+          label = "WITHDRAWN";
         }
 
         return (
@@ -1514,6 +1527,13 @@ const VolunteerManagement = () => {
               <div style={{ background: "#FEF2F2", padding: "12px", borderRadius: "8px", border: "1px solid #FCA5A5", fontSize: "13px" }}>
                 <div style={{ fontSize: "11px", fontWeight: 700, color: "#991B1B", textTransform: "uppercase" }}>Rejection Reason</div>
                 <div style={{ color: "#7F1D1D", marginTop: "4px" }}>{selectedVolunteer.rejection_reason || selectedVolunteer.reason}</div>
+              </div>
+            )}
+
+            {isWithdrawnStatus(selectedVolunteer.status) && (
+              <div style={{ background: "#F8FAFC", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0", fontSize: "13px" }}>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Application Withdrawn</div>
+                <div style={{ color: "#475569", marginTop: "4px" }}>This application was withdrawn by the applicant. Re-application is allowed.</div>
               </div>
             )}
 

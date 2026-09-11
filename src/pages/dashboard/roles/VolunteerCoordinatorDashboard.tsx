@@ -22,6 +22,7 @@ import {
   FaChartBar,
   FaCheckDouble,
   FaEdit,
+  FaBan,
 } from "react-icons/fa";
 import volunteerService from "../../../services/volunteerService";
 import dashboardService from "../../../services/dashboardService";
@@ -30,6 +31,7 @@ import notificationService from "../../../services/notificationService";
 import reportsService from "../../../services/reportsService";
 import { useDataSync, notifyDataChanged } from "../../../utils/dataSync";
 import { formatDateTime } from "../../../utils/dateUtils";
+import { extractErrorMessage } from "../../../utils/errorUtils";
 import { VolunteerShiftScheduleModal } from "../../../components/volunteers/VolunteerShiftScheduleModal";
 
 const PREFERRED_ROLES = [
@@ -68,26 +70,6 @@ const DEFAULT_APPROVAL_MSG =
 
 const DEFAULT_REJECTION_MSG =
   "Thank you for your interest in volunteering with PawGuard. After reviewing your application, we are unable to proceed with your application at this time. We appreciate your interest in supporting animal welfare.";
-
-const extractErrorMessage = (err: any, fallback: string): string => {
-  const detail =
-    err?.response?.data?.error?.message ||
-    err?.response?.data?.error ||
-    err?.response?.data?.detail ||
-    err?.response?.data?.message ||
-    (err?.response?.status === 409
-      ? "An application or volunteer already exists for this email or phone number."
-      : err?.message);
-  if (!detail) return fallback;
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) {
-    return detail.map((item) => (typeof item === "string" ? item : item?.msg || JSON.stringify(item))).join("; ");
-  }
-  if (typeof detail === "object") {
-    return (detail as any).msg || (detail as any).message || JSON.stringify(detail);
-  }
-  return String(detail);
-};
 
 const VOLUNTEER_PAGE_SIZE = 50;
 
@@ -621,12 +603,20 @@ const VolunteerCoordinatorDashboard = () => {
     try {
       setIsSubmitting(true);
       const assignedRole = reviewRole || applicant.preferred_role || applicant.skills || "Shelter Support";
-      await volunteerService.updateVolunteerProfile(applicant.id, {
-        status: "onboarded",
-        background_check_completed: true,
-        background_check_notes: `Completed during volunteer onboarding. Role: ${assignedRole}`,
-        notes: `Approved for role: ${assignedRole}`,
-      });
+      try {
+        await volunteerService.approveApplication(applicant.id, `Approved for role: ${assignedRole}`);
+      } catch (err: any) {
+        if (err?.response?.status === 404 || err?.response?.status === 405 || err?.response?.status === 422) {
+          await volunteerService.updateVolunteerProfile(applicant.id, {
+            status: "onboarded",
+            background_check_completed: true,
+            background_check_notes: `Completed during volunteer onboarding. Role: ${assignedRole}`,
+            notes: `Approved for role: ${assignedRole}`,
+          });
+        } else {
+          throw err;
+        }
+      }
 
       const messageBody = customMessage.trim() || DEFAULT_APPROVAL_MSG;
 
@@ -645,12 +635,7 @@ const VolunteerCoordinatorDashboard = () => {
       fetchDashboardData();
       notifyDataChanged();
     } catch (err: any) {
-      const errorMsg =
-        typeof err?.response?.data?.detail === "string"
-          ? err.response.data.detail
-          : Array.isArray(err?.response?.data?.detail)
-          ? err.response.data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ")
-          : err?.response?.data?.message || err?.message || "Failed to approve application.";
+      const errorMsg = extractErrorMessage(err, "Failed to approve application.");
       addToast(errorMsg, "error");
     } finally {
       setIsSubmitting(false);
@@ -687,12 +672,7 @@ const VolunteerCoordinatorDashboard = () => {
       fetchDashboardData();
       notifyDataChanged();
     } catch (err: any) {
-      const errorMsg =
-        typeof err?.response?.data?.detail === "string"
-          ? err.response.data.detail
-          : Array.isArray(err?.response?.data?.detail)
-          ? err.response.data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ")
-          : err?.response?.data?.message || err?.message || "Failed to reject application.";
+      const errorMsg = extractErrorMessage(err, "Failed to reject application.");
       addToast(errorMsg, "error");
     } finally {
       setIsSubmitting(false);
@@ -1266,8 +1246,8 @@ const VolunteerCoordinatorDashboard = () => {
   // Lists & Derived States
   const pendingApplications = useMemo(() =>
     volunteers.filter((v) => {
-      const s = String(v.status || "applied").toLowerCase();
-      if (s !== "applied" && s !== "pending" && s !== "submitted") return false;
+      const s = String(v.status || "applied").toLowerCase().trim();
+      if (s !== "applied" && s !== "pending" && s !== "submitted" && s !== "under_review") return false;
       if (roleFilter) {
         const role = String(v.preferred_role || v.skills || "").toLowerCase();
         if (!role.includes(roleFilter.toLowerCase())) return false;
@@ -1278,16 +1258,26 @@ const VolunteerCoordinatorDashboard = () => {
   );
 
   const approvedVolunteers = useMemo(() =>
-    volunteers.filter((v) => ["onboarded", "active"].includes(String(v.status || "").toLowerCase())),
+    volunteers.filter((v) => ["approved", "onboarded", "active"].includes(String(v.status || "").toLowerCase().trim())),
+    [volunteers]
+  );
+
+  const rejectedVolunteers = useMemo(() =>
+    volunteers.filter((v) => String(v.status || "").toLowerCase().trim() === "rejected"),
+    [volunteers]
+  );
+
+  const withdrawnVolunteers = useMemo(() =>
+    volunteers.filter((v) => String(v.status || "").toLowerCase().trim() === "withdrawn"),
     [volunteers]
   );
 
   const filteredRoster = useMemo(() =>
     volunteers.filter((v) => {
-      const s = String(v.status || "applied").toLowerCase();
+      const s = String(v.status || "applied").toLowerCase().trim();
       const matchesStatus = statusFilter
-        ? s === statusFilter.toLowerCase()
-        : ["onboarded", "active"].includes(s);
+        ? s === statusFilter.toLowerCase().trim()
+        : ["approved", "onboarded", "active"].includes(s);
       const role = String(v.preferred_role || v.skills || "").toLowerCase();
       const matchesRole = !roleFilter || role.includes(roleFilter.toLowerCase());
       const name = String(v.user?.full_name || v.full_name || v.emergency_contact_name || "").toLowerCase();
@@ -1362,10 +1352,19 @@ const VolunteerCoordinatorDashboard = () => {
       key: "status",
       header: "Status",
       render: (v: string) => {
-        const s = String(v || "applied").toLowerCase();
+        const s = String(v || "submitted").toLowerCase().trim();
+        let bg = "#FEF3C7";
+        let color = "#D97706";
+        if (s === "under_review") {
+          bg = "#E0F2FE";
+          color = "#0369A1";
+        } else if (s === "submitted") {
+          bg = "#FEF3C7";
+          color = "#B45309";
+        }
         return (
-          <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 10px", borderRadius: "999px", background: "#FEF3C7", color: "#D97706", textTransform: "uppercase" }}>
-            {s}
+          <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 10px", borderRadius: "999px", background: bg, color, textTransform: "uppercase" }}>
+            {s.replace("_", " ")}
           </span>
         );
       },
@@ -1410,12 +1409,31 @@ const VolunteerCoordinatorDashboard = () => {
       key: "status",
       header: "Status",
       render: (v: string) => {
-        const s = String(v || "applied").toLowerCase();
-        const color = s === "active" ? "#15803D" : s === "onboarded" ? "#1E3A8A" : s === "applied" ? "#D97706" : "#DC2626";
-        const bg = s === "active" ? "#ECFDF5" : s === "onboarded" ? "#EFF6FF" : s === "applied" ? "#FEF3C7" : "#FEE2E2";
+        const s = String(v || "applied").toLowerCase().trim();
+        let color = "#475569";
+        let bg = "#F1F5F9";
+        if (s === "active" || s === "approved") {
+          color = "#15803D";
+          bg = "#ECFDF5";
+        } else if (s === "onboarded") {
+          color = "#1E3A8A";
+          bg = "#EFF6FF";
+        } else if (s === "under_review") {
+          color = "#0369A1";
+          bg = "#E0F2FE";
+        } else if (s === "applied" || s === "pending" || s === "submitted") {
+          color = "#D97706";
+          bg = "#FEF3C7";
+        } else if (s === "rejected") {
+          color = "#DC2626";
+          bg = "#FEE2E2";
+        } else if (s === "withdrawn") {
+          color = "#64748B";
+          bg = "#F1F5F9";
+        }
         return (
           <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 10px", borderRadius: "999px", background: bg, color, textTransform: "uppercase" }}>
-            {s}
+            {s.replace("_", " ")}
           </span>
         );
       },
@@ -1973,6 +1991,28 @@ const VolunteerCoordinatorDashboard = () => {
                 icon={<FaCheckDouble />}
                 onClick={() => setActiveTab("completed")}
               />
+              <StatCard
+                title="Rejected Applications"
+                value={loading ? "..." : String(rejectedVolunteers.length)}
+                trend="Re-application allowed"
+                color="#DC2626"
+                icon={<FaTimesCircle />}
+                onClick={() => {
+                  setStatusFilter("rejected");
+                  setActiveTab("roster");
+                }}
+              />
+              <StatCard
+                title="Withdrawn Applications"
+                value={loading ? "..." : String(withdrawnVolunteers.length)}
+                trend="Re-application allowed"
+                color="#64748B"
+                icon={<FaBan />}
+                onClick={() => {
+                  setStatusFilter("withdrawn");
+                  setActiveTab("roster");
+                }}
+              />
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "16px" }}>
@@ -2132,10 +2172,14 @@ const VolunteerCoordinatorDashboard = () => {
                     onChange={(e) => setStatusFilter(e.target.value)}
                     style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", background: "#FFF" }}
                   >
-                    <option value="">All Application Statuses</option>
-                    <option value="applied">Applied (Pending)</option>
+                    <option value="">Active Roster (Approved &amp; Active)</option>
+                    <option value="submitted">Submitted</option>
+                    <option value="under_review">Under Review</option>
+                    <option value="approved">Approved</option>
                     <option value="onboarded">Onboarded</option>
                     <option value="active">Active</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="withdrawn">Withdrawn</option>
                     <option value="inactive">Inactive</option>
                   </select>
                 </div>
@@ -3192,7 +3236,7 @@ const VolunteerCoordinatorDashboard = () => {
               const volName = targetVol?.user?.full_name || targetVol?.full_name || targetVol?.emergency_contact_name || "Volunteer Record";
               const volRole = targetVol?.preferred_role || targetVol?.skills || "Shelter Support";
               const volStatus = String(targetVol?.status || "applied").toUpperCase();
-              const isEligible = ["ONBOARDED", "ACTIVE"].includes(volStatus);
+              const isEligible = ["APPROVED", "ONBOARDED", "ACTIVE"].includes(volStatus);
 
               return (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
@@ -3538,7 +3582,7 @@ const VolunteerCoordinatorDashboard = () => {
 
             {/* Status-Dependent Action Footer */}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px", flexWrap: "wrap" }}>
-              {String(selectedVolunteerRecord.status || "").toLowerCase() === "applied" && (
+              {["applied", "pending", "submitted", "under_review"].includes(String(selectedVolunteerRecord.status || "").toLowerCase().trim()) && (
                 <>
                   <button
                     type="button"
@@ -3564,6 +3608,18 @@ const VolunteerCoordinatorDashboard = () => {
                     <FaTimesCircle size={12} /> Reject
                   </button>
                 </>
+              )}
+
+              {String(selectedVolunteerRecord.status || "").toLowerCase().trim() === "rejected" && (selectedVolunteerRecord.rejection_reason || selectedVolunteerRecord.notes) && (
+                <div style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", background: "#FEF2F2", border: "1px solid #FECACA", color: "#991B1B", fontSize: "12px" }}>
+                  <strong>Rejection Reason:</strong> {selectedVolunteerRecord.rejection_reason || selectedVolunteerRecord.notes}
+                </div>
+              )}
+
+              {String(selectedVolunteerRecord.status || "").toLowerCase().trim() === "withdrawn" && (
+                <div style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", background: "#F8FAFC", border: "1px solid #E2E8F0", color: "#64748B", fontSize: "12px" }}>
+                  <strong>Application Withdrawn:</strong> This applicant withdrew their application and may re-apply at any time.
+                </div>
               )}
 
               {String(selectedVolunteerRecord.status || "").toLowerCase() === "onboarded" && (
