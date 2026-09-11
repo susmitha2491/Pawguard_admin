@@ -31,6 +31,7 @@ import petService from "../../../services/petService";
 import userService from "../../../services/userService";
 import dashboardService from "../../../services/dashboardService";
 import storageService from "../../../services/storageService";
+import shelterService, { type ShelterVetRequestListResponse } from "../../../services/shelterService";
 import { useDataSync, notifyDataChanged } from "../../../utils/dataSync";
 import { getStoredUser } from "../../../utils/authStorage";
 import api from "../../../api/axios";
@@ -46,6 +47,9 @@ const pick = (row: Row, ...keys: string[]): unknown => {
   }
   return undefined;
 };
+
+const isUuid = (v: unknown): boolean =>
+  typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
 
 import { formatDateTime } from "../../../utils/dateUtils";
 
@@ -98,6 +102,9 @@ const VeterinarianDashboard = () => {
   const [clinics, setClinics] = useState<Row[]>([]);
   const [vetSummary, setVetSummary] = useState<Row | null>(null);
   const [selectedPublicAppt, setSelectedPublicAppt] = useState<Row | null>(null);
+  const [shelterRequests, setShelterRequests] = useState<ShelterVetRequestListResponse[]>([]);
+  const [isUpdatingRequestStatus, setIsUpdatingRequestStatus] = useState<string | null>(null);
+  const [shelterSubTab, setShelterSubTab] = useState<"requests" | "all_dogs">("requests");
 
   // Filters
   const [statusFilter, setStatusFilter] = useState("all");
@@ -380,12 +387,13 @@ const VeterinarianDashboard = () => {
       setLoading(true);
       setError(null);
 
-      const [apptsRes, recordsRes, dogsRes, clinicsRes, dashSummaryRes] = await Promise.all([
+      const [apptsRes, recordsRes, dogsRes, clinicsRes, dashSummaryRes, shelterReqsRes] = await Promise.all([
         vetService.getAppointments({ page: 1, page_size: 50 }).catch(() => ({ data: [] })),
         medicalService.getMedicalRecords().catch(() => ({ data: [] })),
         petService.getAllDogs().catch(() => ({ data: [] })),
         vetService.getClinics({ page: 1, page_size: 50 }).catch(() => ({ data: [] })),
         dashboardService.getVeterinarianDashboard().catch(() => null),
+        shelterService.getMedicalRequests().catch(() => ({ data: [] })),
       ]);
 
       const apptList = Array.isArray(apptsRes?.data) ? apptsRes.data : [];
@@ -393,12 +401,18 @@ const VeterinarianDashboard = () => {
       const dogList = Array.isArray(dogsRes?.data) ? dogsRes.data : [];
       const clinicList = Array.isArray(clinicsRes?.data) ? clinicsRes.data : [];
       const summaryObj = (dashSummaryRes?.data ?? dashSummaryRes) as Row | null;
+      const rawShelterReqs = Array.isArray(shelterReqsRes?.data)
+        ? shelterReqsRes.data
+        : Array.isArray(shelterReqsRes)
+        ? shelterReqsRes
+        : [];
 
       setAppointments(apptList);
       setMedicalRecords(recordList);
       setDogs(dogList);
       setClinics(clinicList);
       setVetSummary(summaryObj);
+      setShelterRequests(rawShelterReqs);
 
       const cMap = new Map<string, Row>();
       clinicList.forEach((c: Row) => {
@@ -467,9 +481,6 @@ const VeterinarianDashboard = () => {
   useEffect(() => {
     fetchDashboardData();
   }, [fetchDashboardData]);
-
-  const isUuid = (v: unknown): boolean =>
-    typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
 
   const formatApptId = (v: unknown, r?: Row): string => {
     const code = pick(r || {}, "reference_code", "appointment_number", "code");
@@ -1104,6 +1115,162 @@ const VeterinarianDashboard = () => {
     },
   ];
 
+  const handleShelterRequestStatusUpdate = async (requestId: string, nextStatus: string) => {
+    try {
+      setIsUpdatingRequestStatus(requestId);
+      await shelterService.updateMedicalRequestStatus(requestId, nextStatus);
+      addToast(`Shelter veterinary request updated to ${nextStatus.replace("_", " ")}!`, "success");
+      await fetchDashboardData();
+      notifyDataChanged();
+    } catch (err: any) {
+      const data = err?.response?.data;
+      const msg = data?.error?.message || data?.detail || data?.message || `Failed to update request status to ${nextStatus}.`;
+      addToast(`Server response: ${msg}`, "error");
+      // Re-fetch live request state from backend to truthfully reflect actual database status
+      await fetchDashboardData().catch(() => {});
+      notifyDataChanged();
+    } finally {
+      setIsUpdatingRequestStatus(null);
+    }
+  };
+
+  const shelterRequestRows = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return shelterRequests.filter((r) => {
+      const status = str(r.status).toLowerCase();
+      const dogNameStr = str(r.dog_name).toLowerCase();
+      const facilityName = str(r.shelter_facility_name).toLowerCase();
+      const requester = str(r.requester_name).toLowerCase();
+      const reason = str(r.reason).toLowerCase();
+      const notes = str(r.notes).toLowerCase();
+      const id = str(r.id).toLowerCase();
+      const dogId = str(r.dog_id).toLowerCase();
+
+      const matchesQuery =
+        !q ||
+        dogNameStr.includes(q) ||
+        facilityName.includes(q) ||
+        requester.includes(q) ||
+        reason.includes(q) ||
+        notes.includes(q) ||
+        id.includes(q) ||
+        dogId.includes(q);
+
+      let matchesStatus = true;
+      if (shelterMedicalStatusFilter !== "all") {
+        matchesStatus = status === shelterMedicalStatusFilter.toLowerCase();
+      }
+
+      return matchesQuery && matchesStatus;
+    });
+  }, [shelterRequests, searchQuery, shelterMedicalStatusFilter]);
+
+  const shelterRequestColumns = [
+    {
+      key: "dog_name",
+      title: "Dog & Reg #",
+      render: (_: unknown, r: Row) => {
+        const dName = str(r.dog_name || r.name || "Dog Patient");
+        const dogIdStr = str(r.dog_id);
+        const matchingDog = dogs.find((d) => str(d.id || d.dog_id) === dogIdStr);
+        const reg = matchingDog ? str(matchingDog.registration_number) : dogIdStr;
+        return (
+          <div>
+            <div style={{ fontWeight: 700, color: "#0F172A" }}>{dName}</div>
+            <div style={{ fontSize: "12px", color: "#64748B", fontFamily: "monospace" }}>
+              {reg ? `Reg: ${reg}` : `ID: ${dogIdStr.slice(0, 8)}`}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      key: "shelter_facility_name",
+      title: "Facility",
+      render: (_: unknown, r: Row) => (
+        <div style={{ fontWeight: 600, color: "#334155" }}>
+          {str(r.shelter_facility_name || r.shelter_name || "Shelter Facility")}
+        </div>
+      ),
+    },
+    {
+      key: "requester_name",
+      title: "Requested By",
+      render: (_: unknown, r: Row) => (
+        <div style={{ fontSize: "13px", color: "#334155" }}>
+          {str(r.requester_name || "Shelter Staff")}
+        </div>
+      ),
+    },
+    {
+      key: "reason",
+      title: "Reason & Notes",
+      render: (_: unknown, r: Row) => (
+        <div>
+          <div style={{ fontWeight: 600, color: "#0F172A" }}>{str(r.reason)}</div>
+          {Boolean(r.notes) && (
+            <div style={{ fontSize: "12px", color: "#64748B", maxWidth: "260px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {str(r.notes)}
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "urgency",
+      title: "Urgency",
+      render: (_: unknown, r: Row) => {
+        const u = str(r.urgency).toLowerCase();
+        let bg = "#EFF6FF";
+        let color = "#2563EB";
+        if (u === "emergency") {
+          bg = "#FEF2F2";
+          color = "#DC2626";
+        } else if (u === "urgent") {
+          bg = "#FFFBEB";
+          color = "#D97706";
+        }
+        return (
+          <span style={badgeStyle(bg, color)}>
+            {u.toUpperCase()}
+          </span>
+        );
+      },
+    },
+    {
+      key: "status",
+      title: "Status",
+      render: (_: unknown, r: Row) => {
+        const s = str(r.status).toLowerCase();
+        let bg = "#FEF3C7";
+        let color = "#B45309";
+        if (s === "in_progress") {
+          bg = "#E0E7FF";
+          color = "#4338CA";
+        } else if (s === "completed") {
+          bg = "#ECFDF5";
+          color = "#059669";
+        } else if (s === "rejected") {
+          bg = "#FEF2F2";
+          color = "#DC2626";
+        } else if (s === "cancelled") {
+          bg = "#F1F5F9";
+          color = "#64748B";
+        }
+        return (
+          <span style={badgeStyle(bg, color)}>
+            {s.replace("_", " ").toUpperCase()}
+          </span>
+        );
+      },
+    },
+    {
+      key: "created_at",
+      title: "Requested At",
+      render: (_: unknown, r: Row) => formatDate(r.created_at),
+    },
+  ];
+
   return (
     <div>
       {/* Hero Header */}
@@ -1195,112 +1362,394 @@ const VeterinarianDashboard = () => {
 
         {/* TAB 1: SHELTER MEDICAL REQUESTS */}
         {activeSourceTab === "shelter_requests" && (
-          <DataTable
-            columns={shelterColumns}
-            data={shelterDogRows}
-            loading={loading}
-            hideSearch={true}
-            onRowClick={(row) => setSelectedShelterRequest(row)}
-            onView={(row) => setSelectedShelterRequest(row)}
-            leftHeaderControls={
-              <>
-                <div style={{ position: "relative" }}>
-                  <FaSearch size={13} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }} />
-                  <input
-                    type="text"
-                    placeholder="Search dog, ID, diagnosis..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    style={{ padding: "8px 12px 8px 32px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", width: "220px" }}
-                  />
-                </div>
+          <div>
+            {/* Sub-Navigation between Assigned Requests & All Dogs */}
+            <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+              <button
+                type="button"
+                onClick={() => setShelterSubTab("requests")}
+                style={{
+                  padding: "7px 16px",
+                  borderRadius: "8px",
+                  border: shelterSubTab === "requests" ? "2px solid #1E3A8A" : "1px solid #CBD5E1",
+                  background: shelterSubTab === "requests" ? "#EFF6FF" : "#FFFFFF",
+                  color: shelterSubTab === "requests" ? "#1E3A8A" : "#475569",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <FaStethoscope /> Assigned Veterinary Requests ({shelterRequestRows.length})
+              </button>
 
-                <select
-                  value={shelterMedicalStatusFilter}
-                  onChange={(e) => setShelterMedicalStatusFilter(e.target.value)}
-                  style={{
-                    padding: "8px 12px",
-                    borderRadius: "8px",
-                    border: "1px solid #CBD5E1",
-                    fontSize: "13px",
-                    background: "#FFF",
-                    color: "#334155",
-                    fontWeight: 500,
-                  }}
-                  aria-label="Filter by Medical Status"
-                >
-                  <option value="all">All Medical Statuses</option>
-                  <option value="pending">Pending</option>
-                  <option value="assigned to vet">Assigned to Vet</option>
-                  <option value="under treatment">Under Treatment</option>
-                  <option value="examined - pending clearance">Examined - Pending Clearance</option>
-                  <option value="medically cleared">Medically Cleared</option>
-                </select>
+              <button
+                type="button"
+                onClick={() => setShelterSubTab("all_dogs")}
+                style={{
+                  padding: "7px 16px",
+                  borderRadius: "8px",
+                  border: shelterSubTab === "all_dogs" ? "2px solid #1E3A8A" : "1px solid #CBD5E1",
+                  background: shelterSubTab === "all_dogs" ? "#EFF6FF" : "#FFFFFF",
+                  color: shelterSubTab === "all_dogs" ? "#1E3A8A" : "#475569",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <FaHome /> All Housed Shelter Dogs ({shelterDogRows.length})
+              </button>
+            </div>
 
-                <select
-                  value={shelterAdoptionFilter}
-                  onChange={(e) => setShelterAdoptionFilter(e.target.value)}
-                  style={{
-                    padding: "8px 12px",
-                    borderRadius: "8px",
-                    border: "1px solid #CBD5E1",
-                    fontSize: "13px",
-                    background: "#FFF",
-                    color: "#334155",
-                    fontWeight: 500,
-                  }}
-                  aria-label="Filter by Adoption Readiness"
-                >
-                  <option value="all">All Adoption Readiness</option>
-                  <option value="ready">Ready for Adoption</option>
-                  <option value="not_ready">Not Ready</option>
-                </select>
-              </>
-            }
-            emptyMessage="No shelter medical requests found matching current filter."
-            renderRowActions={(row: Row) => {
-              const isCleared = Boolean(row.is_fit_for_adoption || row.is_adoptable || str(row.medical_status).toLowerCase().includes("clear"));
-              return (
-                <div style={{ display: "flex", gap: "6px" }}>
-                  <button
-                    type="button"
-                    title="View Dog Master Profile"
-                    onClick={() => handleOpenDogProfile(row)}
-                    style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #1E3A8A", background: "#EFF6FF", color: "#1E3A8A", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
-                  >
-                    <FaEye /> View Dog
-                  </button>
+            {shelterSubTab === "requests" ? (
+              <DataTable
+                columns={shelterRequestColumns}
+                data={shelterRequestRows}
+                loading={loading}
+                hideSearch={true}
+                onRowClick={(row) => setSelectedShelterRequest(row)}
+                onView={(row) => setSelectedShelterRequest(row)}
+                leftHeaderControls={
+                  <>
+                    <div style={{ position: "relative" }}>
+                      <FaSearch size={13} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }} />
+                      <input
+                        type="text"
+                        placeholder="Search dog, ID, reason, facility..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        style={{ padding: "8px 12px 8px 32px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", width: "240px" }}
+                      />
+                    </div>
 
-                  <button
-                    type="button"
-                    title="Perform Examination & Record Findings"
-                    onClick={() => handleOpenConsultation(row)}
-                    style={{ padding: "6px 10px", borderRadius: "6px", border: "none", background: "#1E3A8A", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
-                  >
-                    <FaStethoscope /> {isCleared ? "Re-examine" : "Start Exam"}
-                  </button>
-
-                  {isCleared ? (
-                    <span
-                      style={{ padding: "6px 10px", borderRadius: "6px", background: "#ECFDF5", color: "#15803D", fontSize: "12px", fontWeight: 800, border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                    <select
+                      value={shelterMedicalStatusFilter}
+                      onChange={(e) => setShelterMedicalStatusFilter(e.target.value)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid #CBD5E1",
+                        fontSize: "13px",
+                        background: "#FFF",
+                        color: "#334155",
+                        fontWeight: 500,
+                      }}
+                      aria-label="Filter by Request Status"
                     >
-                      <FaCheckCircle /> Cleared
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      title="Issue Medical Clearance & Adoption Readiness"
-                      onClick={() => handleIssueMedicalClearance(row)}
-                      disabled={isClearingAdoption}
-                      style={{ padding: "6px 10px", borderRadius: "6px", border: "none", background: "#16A34A", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      <option value="all">All Request Statuses</option>
+                      <option value="pending">Pending</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="completed">Completed</option>
+                      <option value="rejected">Rejected</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </>
+                }
+                emptyMessage="No assigned shelter veterinary requests found matching current filter."
+                renderRowActions={(row: Row) => {
+                  const s = str(row.status).toLowerCase();
+                  const reqId = str(row.id);
+                  const isUpdating = isUpdatingRequestStatus === reqId;
+
+                  return (
+                    <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+                      {s === "pending" && (
+                        <>
+                          <button
+                            type="button"
+                            title="Accept request & start medical examination"
+                            disabled={isUpdating}
+                            onClick={() => handleShelterRequestStatusUpdate(reqId, "in_progress")}
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: "6px",
+                              border: "none",
+                              background: "#1E3A8A",
+                              color: "#FFF",
+                              fontSize: "12px",
+                              fontWeight: 700,
+                              cursor: isUpdating ? "not-allowed" : "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                            }}
+                          >
+                            <FaStethoscope /> {isUpdating ? "Updating..." : "Start Exam"}
+                          </button>
+                          <button
+                            type="button"
+                            title="Reject request"
+                            disabled={isUpdating}
+                            onClick={() => handleShelterRequestStatusUpdate(reqId, "rejected")}
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: "6px",
+                              border: "1px solid #FCA5A5",
+                              background: "#FEF2F2",
+                              color: "#DC2626",
+                              fontSize: "12px",
+                              fontWeight: 700,
+                              cursor: isUpdating ? "not-allowed" : "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                            }}
+                          >
+                            <FaBan /> Reject
+                          </button>
+                        </>
+                      )}
+
+                      {s === "in_progress" && (
+                        <>
+                          <button
+                            type="button"
+                            title="Record findings and consultation"
+                            onClick={() => {
+                              const matchingDog = dogs.find((d) => str(d.id || d.dog_id) === str(row.dog_id));
+                              handleOpenConsultation(matchingDog || { id: row.dog_id, pet_id: row.dog_id, name: row.dog_name, reason: row.reason });
+                            }}
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: "6px",
+                              border: "1px solid #1E3A8A",
+                              background: "#EFF6FF",
+                              color: "#1E3A8A",
+                              fontSize: "12px",
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                            }}
+                          >
+                            <FaStethoscope /> Consult / Exam
+                          </button>
+                          <button
+                            type="button"
+                            title="Mark examination as completed"
+                            disabled={isUpdating}
+                            onClick={() => handleShelterRequestStatusUpdate(reqId, "completed")}
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: "6px",
+                              border: "none",
+                              background: "#16A34A",
+                              color: "#FFF",
+                              fontSize: "12px",
+                              fontWeight: 700,
+                              cursor: isUpdating ? "not-allowed" : "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                            }}
+                          >
+                            <FaCheckCircle /> {isUpdating ? "Updating..." : "Complete Exam"}
+                          </button>
+                        </>
+                      )}
+
+                      {s === "completed" && (
+                        <span
+                          style={{
+                            padding: "6px 10px",
+                            borderRadius: "6px",
+                            background: "#ECFDF5",
+                            color: "#15803D",
+                            fontSize: "12px",
+                            fontWeight: 800,
+                            border: "1px solid #A7F3D0",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          <FaCheckCircle /> Completed
+                        </span>
+                      )}
+
+                      {s === "rejected" && (
+                        <span
+                          style={{
+                            padding: "6px 10px",
+                            borderRadius: "6px",
+                            background: "#FEF2F2",
+                            color: "#DC2626",
+                            fontSize: "12px",
+                            fontWeight: 800,
+                            border: "1px solid #FCA5A5",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          <FaBan /> Rejected
+                        </span>
+                      )}
+
+                      <button
+                        type="button"
+                        title="View Details"
+                        onClick={() => setSelectedShelterRequest(row)}
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: "6px",
+                          border: "1px solid #CBD5E1",
+                          background: "#FFF",
+                          color: "#334155",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
+                      >
+                        <FaEye /> Details
+                      </button>
+
+                      <button
+                        type="button"
+                        title="View Dog Master Profile"
+                        onClick={() => {
+                          const matchingDog = dogs.find((d) => str(d.id || d.dog_id) === str(row.dog_id));
+                          if (matchingDog) handleOpenDogProfile(matchingDog);
+                          else handleOpenDogProfile({ id: row.dog_id, name: row.dog_name, shelter_name: row.shelter_facility_name });
+                        }}
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: "6px",
+                          border: "1px solid #1E3A8A",
+                          background: "#EFF6FF",
+                          color: "#1E3A8A",
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
+                      >
+                        <FaEye /> Dog Profile
+                      </button>
+                    </div>
+                  );
+                }}
+              />
+            ) : (
+              <DataTable
+                columns={shelterColumns}
+                data={shelterDogRows}
+                loading={loading}
+                hideSearch={true}
+                onRowClick={(row) => setSelectedShelterRequest(row)}
+                onView={(row) => setSelectedShelterRequest(row)}
+                leftHeaderControls={
+                  <>
+                    <div style={{ position: "relative" }}>
+                      <FaSearch size={13} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }} />
+                      <input
+                        type="text"
+                        placeholder="Search dog, ID, diagnosis..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        style={{ padding: "8px 12px 8px 32px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", width: "220px" }}
+                      />
+                    </div>
+
+                    <select
+                      value={shelterMedicalStatusFilter}
+                      onChange={(e) => setShelterMedicalStatusFilter(e.target.value)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid #CBD5E1",
+                        fontSize: "13px",
+                        background: "#FFF",
+                        color: "#334155",
+                        fontWeight: 500,
+                      }}
+                      aria-label="Filter by Medical Status"
                     >
-                      <FaCheckCircle /> Issue Clearance
-                    </button>
-                  )}
-                </div>
-              );
-            }}
-          />
+                      <option value="all">All Medical Statuses</option>
+                      <option value="pending">Pending</option>
+                      <option value="assigned to vet">Assigned to Vet</option>
+                      <option value="under treatment">Under Treatment</option>
+                      <option value="examined - pending clearance">Examined - Pending Clearance</option>
+                      <option value="medically cleared">Medically Cleared</option>
+                    </select>
+
+                    <select
+                      value={shelterAdoptionFilter}
+                      onChange={(e) => setShelterAdoptionFilter(e.target.value)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid #CBD5E1",
+                        fontSize: "13px",
+                        background: "#FFF",
+                        color: "#334155",
+                        fontWeight: 500,
+                      }}
+                      aria-label="Filter by Adoption Readiness"
+                    >
+                      <option value="all">All Adoption Readiness</option>
+                      <option value="ready">Ready for Adoption</option>
+                      <option value="not_ready">Not Ready</option>
+                    </select>
+                  </>
+                }
+                emptyMessage="No shelter dogs found matching current filter."
+                renderRowActions={(row: Row) => {
+                  const isCleared = Boolean(row.is_fit_for_adoption || row.is_adoptable || str(row.medical_status).toLowerCase().includes("clear"));
+                  return (
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <button
+                        type="button"
+                        title="View Dog Master Profile"
+                        onClick={() => handleOpenDogProfile(row)}
+                        style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #1E3A8A", background: "#EFF6FF", color: "#1E3A8A", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      >
+                        <FaEye /> View Dog
+                      </button>
+
+                      <button
+                        type="button"
+                        title="Perform Examination & Record Findings"
+                        onClick={() => handleOpenConsultation(row)}
+                        style={{ padding: "6px 10px", borderRadius: "6px", border: "none", background: "#1E3A8A", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      >
+                        <FaStethoscope /> {isCleared ? "Re-examine" : "Start Exam"}
+                      </button>
+
+                      {isCleared ? (
+                        <span
+                          style={{ padding: "6px 10px", borderRadius: "6px", background: "#ECFDF5", color: "#15803D", fontSize: "12px", fontWeight: 800, border: "1px solid #A7F3D0", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                        >
+                          <FaCheckCircle /> Cleared
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          title="Issue Medical Clearance & Adoption Readiness"
+                          onClick={() => handleIssueMedicalClearance(row)}
+                          disabled={isClearingAdoption}
+                          style={{ padding: "6px 10px", borderRadius: "6px", border: "none", background: "#16A34A", color: "#FFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                        >
+                          <FaCheckCircle /> Issue Clearance
+                        </button>
+                      )}
+                    </div>
+                  );
+                }}
+              />
+            )}
+          </div>
         )}
 
         {/* TAB 2: PUBLIC WEBSITE APPOINTMENTS */}

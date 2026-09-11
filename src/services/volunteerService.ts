@@ -30,9 +30,26 @@ const getMyProfile = async (): Promise<{ id: string; preferred_role: string } | 
 };
 
 
+export interface VolunteerAdminIntakePayload {
+  full_name: string;
+  email: string;
+  phone: string;
+  preferred_role?: string | null;
+  applied_role?: string | null;
+  availability?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  skills?: string | null;
+  notes?: string | null;
+  medical_conditions?: string | null;
+  animal_handling?: string | null;
+  animal_handling_experience?: string | null;
+  [key: string]: unknown;
+}
+
 export interface VolunteerApplicationPayload {
-  emergency_contact_name: string;
-  emergency_contact_phone: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
   full_name?: string;
   email?: string;
   phone?: string;
@@ -136,8 +153,40 @@ export const volunteerService = {
     return response.data;
   },
 
-  // POST /volunteers/apply - Submit application
+  // POST /volunteers/admin/intake - Administrative intake for new applicant
+  adminIntakeVolunteer: async (data: VolunteerAdminIntakePayload) => {
+    const payload = {
+      full_name: data.full_name?.trim(),
+      email: data.email?.trim(),
+      phone: data.phone?.trim(),
+      preferred_role: data.preferred_role || null,
+      applied_role: data.applied_role || data.preferred_role || null,
+      availability: data.availability || null,
+      emergency_contact_name: data.emergency_contact_name || data.full_name || null,
+      emergency_contact_phone: data.emergency_contact_phone || data.phone || null,
+      skills: data.skills || null,
+      notes: data.notes || null,
+      medical_conditions: data.medical_conditions || null,
+      animal_handling_experience: data.animal_handling_experience || null,
+    };
+    const response = await api.post("/volunteers/admin/intake", payload);
+    return response.data;
+  },
+
+  // POST /volunteers/apply - Submit application (routes to admin intake if administrative applicant details are provided)
   applyVolunteer: async (data: VolunteerApplicationPayload) => {
+    // If called with applicant identity in an administrative intake context, route to the coordinator intake endpoint
+    if (data.email && data.full_name && data.phone) {
+      try {
+        return await volunteerService.adminIntakeVolunteer(data as VolunteerAdminIntakePayload);
+      } catch (err: any) {
+        // If the admin intake endpoint returned 404 (e.g. older backend version), fallback to /volunteers/apply
+        if (err?.response?.status !== 404) {
+          throw err;
+        }
+      }
+    }
+
     const payload = {
       ...data,
       applied_role: data.applied_role || data.preferred_role,

@@ -39,6 +39,30 @@ const PREFERRED_ROLES = [
   "Shelter Support",
 ];
 
+export interface VolunteerApplyFormState {
+  full_name: string;
+  email: string;
+  phone: string;
+  preferred_role: string;
+  availability: string;
+  emergency_contact_name: string;
+  emergency_contact_phone: string;
+  skills: string;
+  notes: string;
+}
+
+const getInitialApplyFormState = (): VolunteerApplyFormState => ({
+  full_name: "",
+  email: "",
+  phone: "",
+  preferred_role: "",
+  availability: "",
+  emergency_contact_name: "",
+  emergency_contact_phone: "",
+  skills: "",
+  notes: "",
+});
+
 const DEFAULT_APPROVAL_MSG =
   "Thank you for applying to volunteer with PawGuard. Your volunteer application has been approved. We will contact you when a suitable volunteer opportunity becomes available based on your preferred role and availability.";
 
@@ -205,18 +229,24 @@ const VolunteerCoordinatorDashboard = () => {
   const [customMessage, setCustomMessage] = useState<string>("");
   const [reviewRole, setReviewRole] = useState<string>("Shelter Support");
 
-  // Application Intake Form
-  const [applyForm, setApplyForm] = useState({
-    full_name: "",
-    email: "",
-    phone: "",
-    preferred_role: "Shelter Support",
-    availability: "Weekends & Mornings",
-    emergency_contact_name: "",
-    emergency_contact_phone: "",
-    skills: "Dog Walking, Grooming",
-    notes: "",
-  });
+  // Application Intake Form State
+  const [applyForm, setApplyForm] = useState(getInitialApplyFormState);
+
+  const handleOpenApplyModal = () => {
+    setApplyForm(getInitialApplyFormState());
+    setIsApplyModalOpen(true);
+  };
+
+  const handleCloseApplyModal = () => {
+    setApplyForm(getInitialApplyFormState());
+    setIsApplyModalOpen(false);
+  };
+
+  useEffect(() => {
+    if (isApplyModalOpen) {
+      setApplyForm(getInitialApplyFormState());
+    }
+  }, [isApplyModalOpen]);
 
   // Selected Volunteer for Direct Shift Scheduling from Profile
   const [selectedVolunteerForShift, setSelectedVolunteerForShift] = useState<string>("");
@@ -555,37 +585,26 @@ const VolunteerCoordinatorDashboard = () => {
   // Handle Application Submit
   const handleApplySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!applyForm.full_name || !applyForm.email || !applyForm.phone) {
-      addToast("Full Name, Email, and Phone are required.", "error");
+    if (!applyForm.full_name.trim() || !applyForm.email.trim() || !applyForm.phone.trim() || !applyForm.preferred_role) {
+      addToast("Full Name, Email, Phone, and Preferred Role are required.", "error");
       return;
     }
     try {
       setIsSubmitting(true);
       await volunteerService.applyVolunteer({
-        full_name: applyForm.full_name,
-        email: applyForm.email,
-        phone: applyForm.phone,
+        full_name: applyForm.full_name.trim(),
+        email: applyForm.email.trim(),
+        phone: applyForm.phone.trim(),
         preferred_role: applyForm.preferred_role,
         applied_role: applyForm.preferred_role,
-        availability: applyForm.availability,
-        emergency_contact_name: applyForm.emergency_contact_name || applyForm.full_name,
-        emergency_contact_phone: applyForm.emergency_contact_phone || applyForm.phone,
-        skills: applyForm.skills,
-        notes: applyForm.notes,
+        availability: applyForm.availability.trim() || undefined,
+        emergency_contact_name: applyForm.emergency_contact_name?.trim() || applyForm.full_name.trim(),
+        emergency_contact_phone: applyForm.emergency_contact_phone?.trim() || applyForm.phone.trim(),
+        skills: applyForm.skills?.trim() || undefined,
+        notes: applyForm.notes?.trim() || undefined,
       });
       addToast("Volunteer application submitted successfully!", "success");
-      setIsApplyModalOpen(false);
-      setApplyForm({
-        full_name: "",
-        email: "",
-        phone: "",
-        preferred_role: "Shelter Support",
-        availability: "Weekends & Mornings",
-        emergency_contact_name: "",
-        emergency_contact_phone: "",
-        skills: "Dog Walking, Grooming",
-        notes: "",
-      });
+      handleCloseApplyModal();
       fetchDashboardData();
       notifyDataChanged();
     } catch (err: any) {
@@ -1701,7 +1720,10 @@ const VolunteerCoordinatorDashboard = () => {
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
             <button
               type="button"
-              onClick={() => setIsShiftModalOpen(true)}
+              onClick={() => {
+                setSelectedVolunteerForShift("");
+                setIsShiftModalOpen(true);
+              }}
               style={{
                 padding: "9px 16px",
                 borderRadius: "10px",
@@ -1958,13 +1980,16 @@ const VolunteerCoordinatorDashboard = () => {
                 <h4 style={{ margin: "0 0 10px 0", fontSize: "14px", color: "#0F172A", fontWeight: 700 }}>Quick Actions</h4>
                 <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                   <button
-                    onClick={() => setIsApplyModalOpen(true)}
+                    onClick={handleOpenApplyModal}
                     style={{ padding: "8px 12px", background: "#1E3A8A", color: "#fff", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
                   >
                     + New Application (Intake)
                   </button>
                   <button
-                    onClick={() => setIsShiftModalOpen(true)}
+                    onClick={() => {
+                      setSelectedVolunteerForShift("");
+                      setIsShiftModalOpen(true);
+                    }}
                     style={{ padding: "8px 12px", background: "#16A34A", color: "#fff", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
                   >
                     + Schedule New Shift
@@ -2509,27 +2534,61 @@ const VolunteerCoordinatorDashboard = () => {
       </div>
 
       {/* MODAL 1: Public / Intake Application Submission */}
-      <Modal isOpen={isApplyModalOpen} onClose={() => setIsApplyModalOpen(false)} title="Volunteer Public Application Intake">
-        <form onSubmit={handleApplySubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+      <Modal isOpen={isApplyModalOpen} onClose={handleCloseApplyModal} title="Volunteer Public Application Intake">
+        <form onSubmit={handleApplySubmit} autoComplete="off" style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div>
               <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Full Name *</label>
-              <input type="text" required placeholder="e.g. Jane Doe" value={applyForm.full_name} onChange={(e) => setApplyForm({ ...applyForm, full_name: e.target.value })} style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }} />
+              <input
+                type="text"
+                name="applicant_full_name"
+                autoComplete="off"
+                required
+                placeholder="e.g. Jane Doe"
+                value={applyForm.full_name}
+                onChange={(e) => setApplyForm({ ...applyForm, full_name: e.target.value })}
+                style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }}
+              />
             </div>
             <div>
               <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Email Address *</label>
-              <input type="email" required placeholder="jane@example.com" value={applyForm.email} onChange={(e) => setApplyForm({ ...applyForm, email: e.target.value })} style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }} />
+              <input
+                type="email"
+                name="applicant_email"
+                autoComplete="off"
+                required
+                placeholder="jane@example.com"
+                value={applyForm.email}
+                onChange={(e) => setApplyForm({ ...applyForm, email: e.target.value })}
+                style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }}
+              />
             </div>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div>
               <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Phone Number *</label>
-              <input type="text" required placeholder="+91-9876543210" value={applyForm.phone} onChange={(e) => setApplyForm({ ...applyForm, phone: e.target.value })} style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }} />
+              <input
+                type="text"
+                name="applicant_phone"
+                autoComplete="off"
+                required
+                placeholder="+91-9876543210"
+                value={applyForm.phone}
+                onChange={(e) => setApplyForm({ ...applyForm, phone: e.target.value })}
+                style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }}
+              />
             </div>
             <div>
               <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Preferred Volunteer Role *</label>
-              <select value={applyForm.preferred_role} onChange={(e) => setApplyForm({ ...applyForm, preferred_role: e.target.value })} style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", background: "#FFF" }}>
+              <select
+                required
+                name="applicant_role"
+                value={applyForm.preferred_role}
+                onChange={(e) => setApplyForm({ ...applyForm, preferred_role: e.target.value })}
+                style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", background: "#FFF" }}
+              >
+                <option value="" disabled>Select preferred role...</option>
                 {PREFERRED_ROLES.map((r) => (
                   <option key={r} value={r}>{r}</option>
                 ))}
@@ -2539,17 +2598,42 @@ const VolunteerCoordinatorDashboard = () => {
 
           <div>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Availability &amp; Preferred Timings</label>
-            <input type="text" placeholder="e.g. Weekends & Morning shifts" value={applyForm.availability} onChange={(e) => setApplyForm({ ...applyForm, availability: e.target.value })} style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }} />
+            <input
+              type="text"
+              name="applicant_availability"
+              autoComplete="off"
+              placeholder="e.g. Weekends & Morning shifts"
+              value={applyForm.availability}
+              onChange={(e) => setApplyForm({ ...applyForm, availability: e.target.value })}
+              style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }}
+            />
           </div>
 
           <div>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Application Message / Experience Notes</label>
-            <textarea rows={3} placeholder="Tell us about your background and interest in supporting animal welfare..." value={applyForm.notes} onChange={(e) => setApplyForm({ ...applyForm, notes: e.target.value })} style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", resize: "vertical" }} />
+            <textarea
+              rows={3}
+              name="applicant_notes"
+              placeholder="Tell us about your background and interest in supporting animal welfare..."
+              value={applyForm.notes}
+              onChange={(e) => setApplyForm({ ...applyForm, notes: e.target.value })}
+              style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", resize: "vertical" }}
+            />
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" }}>
-            <button type="button" onClick={() => setIsApplyModalOpen(false)} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}>Cancel</button>
-            <button type="submit" disabled={isSubmitting} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700 }}>
+            <button
+              type="button"
+              onClick={handleCloseApplyModal}
+              style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#1E3A8A", color: "#FFF", fontWeight: 700 }}
+            >
               {isSubmitting ? "Submitting..." : "Submit Volunteer Application"}
             </button>
           </div>

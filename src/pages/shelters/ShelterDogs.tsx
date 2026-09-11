@@ -23,7 +23,6 @@ import {
 import petService from "../../services/petService";
 import rescueService from "../../services/rescueService";
 import shelterService from "../../services/shelterService";
-import vetService from "../../services/vetService";
 import medicalService from "../../services/medicalService";
 import userService from "../../services/userService";
 import adoptionService from "../../services/adoptionService";
@@ -338,54 +337,33 @@ const ShelterDogs = () => {
     setVetsLoading(true);
 
     try {
-      const [clinicsRes, partnerVetsRes, usersRes] = await Promise.all([
-        vetService.getClinics().catch(() => ({ data: [] })),
-        vetService.getPartnerVeterinaryNetwork().catch(() => ({ data: [] })),
-        userService.getUsers().catch(() => ({ data: [] })),
-      ]);
+      const usersRes = await userService.getUsers().catch(() => ({ data: [] }));
+      const rawUsers = Array.isArray(usersRes?.data?.users)
+        ? usersRes.data.users
+        : Array.isArray(usersRes?.data)
+        ? usersRes.data
+        : Array.isArray(usersRes)
+        ? usersRes
+        : [];
 
-      const clinics = Array.isArray(clinicsRes?.data) ? clinicsRes.data : [];
-      const partners = Array.isArray(partnerVetsRes?.data) ? partnerVetsRes.data : [];
-      const users = Array.isArray(usersRes?.data) ? usersRes.data : Array.isArray(usersRes) ? usersRes : [];
+      const isUuid = (val: unknown) =>
+        typeof val === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
-      const vetUsers = users.filter((u: any) => {
-        const roles = Array.isArray(u.role_names) ? u.role_names : Array.isArray(u.roles) ? u.roles : [u.role];
-        return roles.some((r: any) => String(r).toLowerCase().includes("vet"));
+      const vetUsers = rawUsers.filter((u: any) => {
+        const roles = Array.isArray(u.roles) ? u.roles : Array.isArray(u.role_names) ? u.role_names : [u.role];
+        return roles.some((r: any) => String(r).toLowerCase().includes("vet")) && isUuid(u.id);
       });
 
-      const combinedVets = [
-        ...partners.map((p: any) => ({
-          id: p.id || p.vet_id,
-          name: p.name || p.vet_name || p.doctor_name || "Partner Vet Clinic",
-          clinic: p.clinic_name || "Partner Clinic Network",
-        })),
-        ...clinics.map((c: any) => ({
-          id: c.id || c.clinic_id,
-          name: c.name || "Veterinary Clinic",
-          clinic: c.address || "On-Duty Vet Team",
-        })),
-        ...vetUsers.map((u: any) => ({
-          id: u.id,
-          name: u.full_name || u.name || u.email,
-          clinic: "Staff Veterinarian",
-        })),
-      ];
+      const uniqueVets = vetUsers.map((u: any) => ({
+        id: String(u.id),
+        name: u.full_name || u.name || u.email,
+        clinic: u.email || "Veterinary Staff",
+      }));
 
-      const uniqueVets = Array.from(new Map(combinedVets.map((v) => [v.name, v])).values());
-      if (uniqueVets.length === 0) {
-        uniqueVets.push(
-          { id: "vet-on-duty-1", name: "Dr. Sarah Jenkins (Senior Veterinarian)", clinic: "Central Vet Clinic" },
-          { id: "vet-on-duty-2", name: "Dr. Alex Rivera (Veterinary Surgeon)", clinic: "City Vet Care" }
-        );
-      }
       setVetsList(uniqueVets);
       if (uniqueVets.length > 0) setSelectedVetId(String(uniqueVets[0].id));
     } catch {
-      setVetsList([
-        { id: "vet-on-duty-1", name: "Dr. Sarah Jenkins (Senior Veterinarian)", clinic: "Central Vet Clinic" },
-        { id: "vet-on-duty-2", name: "Dr. Alex Rivera (Veterinary Surgeon)", clinic: "City Vet Care" }
-      ]);
-      setSelectedVetId("vet-on-duty-1");
+      setVetsList([]);
     } finally {
       setVetsLoading(false);
     }
@@ -416,7 +394,7 @@ const ShelterDogs = () => {
     }
 
     if (!selectedVetId) {
-      addToast("Please select a veterinarian to assign.", "error");
+      addToast("Please select a registered veterinarian to assign.", "error");
       return;
     }
 
@@ -444,6 +422,9 @@ const ShelterDogs = () => {
       });
 
       addToast(`Medical check requested and assigned to ${vetName}!`, "success");
+      setDogs((prev) =>
+        prev.map((d) => (dogId(d) === id ? { ...d, medical_status: "Pending Vet Check" } : d))
+      );
       notifyDataChanged();
       setIsMedicalModalOpen(false);
       fetchShelterDogsData();
@@ -453,14 +434,18 @@ const ShelterDogs = () => {
       let errMsg = "Failed to submit medical check request.";
 
       if (status === 404) {
-        errMsg = `Backend endpoint not found: POST /api/v1/shelter/dogs/${id}/request-vet-check is not yet implemented on the server. Cannot persist medical check request.`;
+        errMsg = data?.error?.message || data?.message || data?.detail || "Dog profile or assigned veterinarian not found.";
+      } else if (status === 409) {
+        errMsg = data?.error?.message || data?.message || data?.detail || "An active veterinary request already exists for this dog.";
       } else if (status === 403) {
         errMsg = data?.error?.message || data?.message || data?.detail || "Authorization failed: You do not have permission to request veterinary checks.";
       } else if (status === 422) {
-        if (Array.isArray(data?.detail)) {
+        if (data?.error?.details?.constraint === "check_violation" || data?.error?.message?.includes("constraint")) {
+          errMsg = "Cannot request vet check: Animal must be housed in an active shelter facility with a registered shelter ID.";
+        } else if (Array.isArray(data?.detail)) {
           errMsg = `Validation failed: ${data.detail.map((d: any) => `${d.loc ? d.loc.slice(1).join(".") + ": " : ""}${d.msg}`).join("; ")}`;
         } else {
-          errMsg = data?.error?.message || data?.message || data?.detail || "Invalid request parameters.";
+          errMsg = data?.error?.message || data?.message || data?.detail || "Invalid request parameters. Please verify dog and veterinarian details.";
         }
       } else if (data?.error?.message) {
         errMsg = data.error.message;

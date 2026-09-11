@@ -29,6 +29,15 @@ export const auditService = {
     });
     return response.data;
   },
+
+  // POST /admin/audit-logs/export - Export audit logs as CSV or JSON via POST
+  exportAuditLogsPost: async (format: "csv" | "json" = "csv", params?: AuditLogQueryParams) => {
+    const response = await api.post("/admin/audit-logs/export", null, {
+      params: { ...params, format },
+      responseType: format === "csv" ? "blob" : "json",
+    });
+    return response.data;
+  },
 };
 
 export default auditService;

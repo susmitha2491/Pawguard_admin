@@ -4,19 +4,103 @@ export const dashboardService = {
   // GET /admin/dashboard/summary (Exact OpenAPI endpoint for Super Admin Dashboard)
   getSuperAdminDashboard: async () => {
     const response = await api.get("/admin/dashboard/summary");
-    return response.data;
+    return response.data?.data ?? response.data;
   },
 
   // Backwards compatibility alias for Super Admin Dashboard
   getDashboardStats: async () => {
     const response = await api.get("/admin/dashboard/summary");
-    return response.data;
+    return response.data?.data ?? response.data;
+  },
+
+  // GET /admin/dashboard/kpis (Exact OpenAPI endpoint)
+  getDashboardKpis: async () => {
+    const response = await api.get("/admin/dashboard/kpis");
+    return response.data?.data ?? response.data;
+  },
+
+  // GET /admin/dashboard/charts (Exact OpenAPI endpoint)
+  getDashboardCharts: async () => {
+    const response = await api.get("/admin/dashboard/charts");
+    return response.data?.data ?? response.data;
+  },
+
+  // GET /admin/dashboard/metrics (Exact OpenAPI endpoint)
+  getDashboardMetrics: async () => {
+    const response = await api.get("/admin/dashboard/metrics");
+    return response.data?.data ?? response.data;
   },
 
   // GET /admin/dashboard/recent-activity (Exact OpenAPI endpoint)
   getRecentActivities: async (limit: number = 20) => {
     const response = await api.get("/admin/dashboard/recent-activity", { params: { limit } });
-    return response.data;
+    return response.data?.data ?? response.data;
+  },
+
+  // GET /admin/dashboard/inventory-alerts (Exact OpenAPI endpoint)
+  getInventoryAlerts: async () => {
+    const response = await api.get("/admin/dashboard/inventory-alerts");
+    return response.data?.data ?? response.data;
+  },
+
+  // GET /admin/dashboard/donation-summary (Exact OpenAPI endpoint)
+  getDonationSummary: async () => {
+    const response = await api.get("/admin/dashboard/donation-summary");
+    return response.data?.data ?? response.data;
+  },
+
+  // GET /admin/dashboard/rescue-stats (Exact OpenAPI endpoint)
+  getRescueStats: async () => {
+    const response = await api.get("/admin/dashboard/rescue-stats");
+    return response.data?.data ?? response.data;
+  },
+
+  // GET /admin/dashboard/medical-stats (Exact OpenAPI endpoint)
+  getMedicalStats: async () => {
+    const response = await api.get("/admin/dashboard/medical-stats");
+    return response.data?.data ?? response.data;
+  },
+
+  // GET /admin/dashboard/adoption-stats (Exact OpenAPI endpoint)
+  getAdoptionStats: async () => {
+    const response = await api.get("/admin/dashboard/adoption-stats");
+    return response.data?.data ?? response.data;
+  },
+
+  // GET /admin/dashboard/volunteer-stats (Exact OpenAPI endpoint)
+  getVolunteerStats: async () => {
+    const response = await api.get("/admin/dashboard/volunteer-stats");
+    return response.data?.data ?? response.data;
+  },
+
+  // GET /admin/dashboard/notification-summary (Exact OpenAPI endpoint)
+  getNotificationSummary: async () => {
+    const response = await api.get("/admin/dashboard/notification-summary");
+    return response.data?.data ?? response.data;
+  },
+
+  // GET /admin/dashboard/shelter-stats (Exact OpenAPI endpoint)
+  getShelterStats: async () => {
+    const response = await api.get("/admin/dashboard/shelter-stats");
+    return response.data?.data ?? response.data;
+  },
+
+  // GET /admin/dashboard/foster-stats (Exact OpenAPI endpoint)
+  getFosterStats: async () => {
+    const response = await api.get("/admin/dashboard/foster-stats");
+    return response.data?.data ?? response.data;
+  },
+
+  // GET /admin/dashboard/lost-found-stats (Exact OpenAPI endpoint)
+  getLostFoundStats: async () => {
+    const response = await api.get("/admin/dashboard/lost-found-stats");
+    return response.data?.data ?? response.data;
+  },
+
+  // GET /admin/dashboard/grievance-stats (Exact OpenAPI endpoint)
+  getGrievanceStats: async () => {
+    const response = await api.get("/admin/dashboard/grievance-stats");
+    return response.data?.data ?? response.data;
   },
 
   // GET /admin/audit-logs (Exact OpenAPI endpoint)

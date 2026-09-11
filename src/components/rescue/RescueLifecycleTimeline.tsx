@@ -62,6 +62,7 @@ export const RescueLifecycleTimeline: React.FC<RescueLifecycleTimelineProps> = (
   // Extract Timestamps safely
   const createdAt = (rescue.created_at || rawItem.created_at) as string | undefined;
   const dispatchedAt = (rescue.dispatched_at || rawItem.dispatched_at || dispatchObj?.dispatched_at) as string | undefined;
+  const enRouteAt = (rescue.en_route_at || rawItem.en_route_at || dispatchObj?.en_route_at) as string | undefined;
   const locatedAt = (rescue.located_at || rawItem.located_at || dispatchObj?.located_at) as string | undefined;
   const rescuedAt = (rescue.rescued_at || rawItem.rescued_at || dispatchObj?.rescued_at || rawItem.secured_at) as string | undefined;
   const admittedAt = (rescue.admitted_at || rawItem.admitted_at || dispatchObj?.admitted_at) as string | undefined;
@@ -110,7 +111,7 @@ export const RescueLifecycleTimeline: React.FC<RescueLifecycleTimelineProps> = (
       subtitle: "Agent In Transit",
       icon: <FaAmbulance size={11} />,
       done: effectivePriority >= 5,
-      time: dispatchedAt ? formatDateTime(dispatchedAt) : "-",
+      time: enRouteAt ? formatDateTime(enRouteAt) : (dispatchedAt ? formatDateTime(dispatchedAt) : "-"),
     },
     {
       id: "located",

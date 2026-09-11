@@ -52,22 +52,14 @@ const unwrapList = (v: unknown): Record<string, unknown>[] => {
   return [];
 };
 
-const formatAssigned = (c: Record<string, unknown>, localStatuses: Record<string, string> = {}) => {
+const formatAssigned = (c: Record<string, unknown>) => {
   const rawStatus = String(c.status || "-").toLowerCase();
   const dispatchObj = c.dispatch ? { ...(c.dispatch as Record<string, unknown>) } : null;
   const assignedAgentId = String(c.assigned_agent_id || c.agent_id || dispatchObj?.assigned_driver_id || dispatchObj?.agent_id || c.assigned_agent || "");
   const hasAssignment = !!(c.coordinator_id || assignedAgentId || dispatchObj);
   
   const caseId = String(c.id || c.ticket_number || "");
-  const localStatus = localStatuses[caseId];
-
-  let displayStatus = (rawStatus === "verified" && hasAssignment) ? "accepted" : rawStatus;
-  if (localStatus) {
-    displayStatus = localStatus;
-  }
-  if (dispatchObj && localStatus) {
-    dispatchObj.status = localStatus;
-  }
+  const displayStatus = (rawStatus === "verified" && hasAssignment) ? "accepted" : rawStatus;
 
   return {
     id: caseId,
@@ -109,37 +101,6 @@ const RescueAgentDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Local statuses persistence for en route / accepted states
-  const [localStatuses, setLocalStatuses] = useState<Record<string, string>>(() => {
-    try {
-      const saved = localStorage.getItem("pg_rescue_local_statuses");
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  const updateLocalStatus = (caseId: string, status: string) => {
-    setLocalStatuses((prev) => {
-      const next = { ...prev, [caseId]: status };
-      try {
-        localStorage.setItem("pg_rescue_local_statuses", JSON.stringify(next));
-      } catch {}
-      return next;
-    });
-  };
-
-  const clearLocalStatus = (caseId: string) => {
-    setLocalStatuses((prev) => {
-      const next = { ...prev };
-      delete next[caseId];
-      try {
-        localStorage.setItem("pg_rescue_local_statuses", JSON.stringify(next));
-      } catch {}
-      return next;
-    });
-  };
-
   // Real GPS Telemetry State
   const [watchId, setWatchId] = useState<number | null>(null);
   const [currentGps, setCurrentGps] = useState<{
@@ -168,7 +129,9 @@ const RescueAgentDashboard = () => {
       const next = [...prev, { ...action, timestamp: new Date().toISOString() }];
       try {
         localStorage.setItem("pg_rescue_offline_queue", JSON.stringify(next));
-      } catch {}
+      } catch (err) {
+        void err;
+      }
       return next;
     });
     addToast(`Offline mode: Action queued locally (${action.type}). Will sync when online.`, "info");
@@ -279,11 +242,11 @@ const RescueAgentDashboard = () => {
   const fetchAssignedCases = useCallback(async () => {
     try {
       const response = await rescueService.getRescueCases({ assigned_to_me: true });
-      setAssignedCases(unwrapList(response).map((c) => formatAssigned(c, localStatuses)));
+      setAssignedCases(unwrapList(response).map((c) => formatAssigned(c)));
     } catch {
       setAssignedCases([]);
     }
-  }, [localStatuses]);
+  }, []);
 
   const syncOfflineQueue = useCallback(async () => {
     const queue = [...offlineQueue];
@@ -311,7 +274,9 @@ const RescueAgentDashboard = () => {
     setOfflineQueue(remaining);
     try {
       localStorage.setItem("pg_rescue_offline_queue", JSON.stringify(remaining));
-    } catch {}
+    } catch (err) {
+      void err;
+    }
 
     if (remaining.length === 0) {
       addToast("All offline field actions synced successfully!", "success");
@@ -432,8 +397,6 @@ const RescueAgentDashboard = () => {
       await rescueService.acceptDispatch(caseId);
       addToast("Rescue assignment accepted successfully!", "success");
       
-      updateLocalStatus(caseId, "accepted");
-      
       // Update local row status in assignedCases state
       setAssignedCases((prev) =>
         prev.map((c) => {
@@ -475,13 +438,20 @@ const RescueAgentDashboard = () => {
     }
   };
 
-  const handleMarkEnRoute = async (_dispatchId: string, caseId: string) => {
+  const handleMarkEnRoute = async (dispatchId: string, caseId: string) => {
     try {
       setIsSubmitting(true);
-      await rescueService.startTracking(caseId);
-      addToast("Field status updated to En Route!", "info");
-      
-      updateLocalStatus(caseId, "en_route");
+      const target = assignedCases.find((c) => String(c.id) === caseId);
+      const effectiveDispatchId = dispatchId || String((target?.raw as any)?.dispatch?.id || target?.dispatch_id || "");
+
+      if (effectiveDispatchId) {
+        await rescueService.markEnRoute(effectiveDispatchId);
+      } else {
+        await rescueService.updateRescueStatus(caseId, "en_route");
+      }
+
+      await rescueService.startTracking(caseId).catch(() => {});
+      addToast("Field status updated to En Route on live backend!", "info");
       
       // Update local row status in assignedCases state
       setAssignedCases((prev) =>
@@ -516,8 +486,8 @@ const RescueAgentDashboard = () => {
       });
 
       setIsViewModalOpen(false);
-      fetchAssignedCases();
-      fetchDashboard();
+      await fetchAssignedCases();
+      await fetchDashboard();
       notifyDataChanged();
     } catch (err: any) {
       addToast(err?.response?.data?.detail || err?.response?.data?.message || "Failed to update status to En Route.", "error");
@@ -537,8 +507,6 @@ const RescueAgentDashboard = () => {
       }
       await rescueService.markRescueLocated(caseId);
       addToast("Animal marked as located on scene!", "info");
-      
-      clearLocalStatus(caseId);
       
       setIsViewModalOpen(false);
       fetchAssignedCases();
@@ -562,8 +530,6 @@ const RescueAgentDashboard = () => {
       }
       await rescueService.markRescueSecured(caseId);
       addToast("Animal marked as secured!", "info");
-      
-      clearLocalStatus(caseId);
       
       setIsViewModalOpen(false);
       fetchAssignedCases();
@@ -620,8 +586,6 @@ const RescueAgentDashboard = () => {
       }
       await rescueService.markRescueAdmitted(caseId);
       addToast("🐕 Dog rescued and admitted successfully!", "success");
-      
-      clearLocalStatus(caseId);
       
       setIsViewModalOpen(false);
       setIsDeliveryModalOpen(false);
