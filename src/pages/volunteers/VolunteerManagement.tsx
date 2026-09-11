@@ -325,9 +325,9 @@ const VolunteerManagement = () => {
         // Standard backend endpoint: POST /api/v1/volunteers/applications/{id}/reject
         result = await volunteerService.rejectApplication(appId, rejectionReason.trim());
       } catch (err: any) {
-        if (err?.response?.status === 404 || err?.response?.status === 405) {
+        if (err?.response?.status === 404 || err?.response?.status === 405 || err?.response?.status === 422) {
           result = await volunteerService.updateVolunteerProfile(appId, {
-            status: "inactive",
+            status: "rejected",
             notes: `Rejected: ${rejectionReason.trim()}`,
           });
         } else {
@@ -1482,7 +1482,23 @@ const VolunteerManagement = () => {
                 Email: {selectedVolunteer.email || selectedVolunteer.user?.email || "N/A"} &bull; Phone: {selectedVolunteer.phone || selectedVolunteer.emergency_contact_phone || "N/A"}
               </div>
               <div style={{ fontSize: "12px", marginTop: "6px" }}>
-                Status: <strong style={{ textTransform: "uppercase", color: isApprovedStatus(selectedVolunteer.status) ? "#10B981" : isRejectedStatus(selectedVolunteer.status) ? "#EF4444" : "#F59E0B" }}>{selectedVolunteer.status || "PENDING"}</strong>
+                Status:{" "}
+                <strong
+                  style={{
+                    textTransform: "uppercase",
+                    color: isApprovedStatus(selectedVolunteer.status)
+                      ? "#10B981"
+                      : isRejectedStatus(selectedVolunteer.status)
+                      ? "#EF4444"
+                      : isWithdrawnStatus(selectedVolunteer.status)
+                      ? "#64748B"
+                      : String(selectedVolunteer.status || "").toLowerCase().trim() === "under_review"
+                      ? "#0284C7"
+                      : "#F59E0B",
+                  }}
+                >
+                  {String(selectedVolunteer.status || "submitted").replace("_", " ")}
+                </strong>
               </div>
             </div>
 

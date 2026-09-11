@@ -938,8 +938,8 @@ const VolunteerCoordinatorDashboard = () => {
   // Handle Open Assign Work Modal for specific volunteer
   const handleOpenAssignWorkModal = (vol: any) => {
     const volId = String(vol?.id || vol?._id || "");
-    const volStatus = String(vol?.status || "").toLowerCase();
-    if (volStatus === "applied") {
+    const volStatus = String(vol?.status || "").toLowerCase().trim();
+    if (["submitted", "under_review", "applied", "pending"].includes(volStatus)) {
       addToast("Cannot assign work: Volunteer application is pending approval.", "error");
       return;
     }
@@ -981,10 +981,9 @@ const VolunteerCoordinatorDashboard = () => {
       return;
     }
 
-    const volObj = volunteers.find((v) => String(v.id) === String(assignWorkForm.volunteer_id));
-    const volStatus = String(volObj?.status || "").toLowerCase();
-    if (volStatus === "applied") {
-      addToast("Cannot assign work: Volunteer must be onboarded or active.", "error");
+    const volStatus = String(volObj?.status || "").toLowerCase().trim();
+    if (!["approved", "onboarded", "active"].includes(volStatus)) {
+      addToast("Cannot assign work: Volunteer must be approved, onboarded, or active.", "error");
       return;
     }
 
@@ -3460,9 +3459,35 @@ const VolunteerCoordinatorDashboard = () => {
               <div style={{ background: "#F8FAFC", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
                 <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Account Status</div>
                 <div style={{ marginTop: "4px" }}>
-                  <span style={{ fontSize: "11px", fontWeight: 800, padding: "4px 10px", borderRadius: "999px", background: selectedVolunteerRecord.status === "active" ? "#ECFDF5" : selectedVolunteerRecord.status === "onboarded" ? "#EFF6FF" : "#FEF3C7", color: selectedVolunteerRecord.status === "active" ? "#15803D" : selectedVolunteerRecord.status === "onboarded" ? "#1E3A8A" : "#D97706", textTransform: "uppercase" }}>
-                    {selectedVolunteerRecord.status || "Applied"}
-                  </span>
+                  {(() => {
+                    const s = String(selectedVolunteerRecord.status || "submitted").toLowerCase().trim();
+                    let color = "#475569";
+                    let bg = "#F1F5F9";
+                    if (s === "active" || s === "approved") {
+                      color = "#15803D";
+                      bg = "#ECFDF5";
+                    } else if (s === "onboarded") {
+                      color = "#1E3A8A";
+                      bg = "#EFF6FF";
+                    } else if (s === "under_review") {
+                      color = "#0369A1";
+                      bg = "#E0F2FE";
+                    } else if (s === "applied" || s === "pending" || s === "submitted") {
+                      color = "#D97706";
+                      bg = "#FEF3C7";
+                    } else if (s === "rejected") {
+                      color = "#DC2626";
+                      bg = "#FEE2E2";
+                    } else if (s === "withdrawn") {
+                      color = "#64748B";
+                      bg = "#F1F5F9";
+                    }
+                    return (
+                      <span style={{ fontSize: "11px", fontWeight: 800, padding: "4px 10px", borderRadius: "999px", background: bg, color, textTransform: "uppercase" }}>
+                        {s.replace("_", " ")}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
