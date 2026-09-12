@@ -8,12 +8,16 @@ export interface NotificationResponse {
   title: string;
   body: string;
   notification_type?: string | null;
+  module?: string | null;
+  role?: string | null;
   is_read?: boolean;
   is_broadcast?: boolean;
   created_at?: string;
   sent_at?: string;
   action_url?: string | null;
   user_id?: string;
+  data?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 export interface NotificationsListResponse {
@@ -106,6 +110,8 @@ export const isInventoryNotification = (notif: NotificationItem): boolean => {
     type === "inventory" ||
     type === "inventory_changed" ||
     type === "inventory_low_stock" ||
+    type === "inventory_alert" ||
+    type === "expiry_alert" ||
     title.includes("inventory") ||
     title.includes("stock") ||
     title.includes("reorder") ||
@@ -124,7 +130,7 @@ export const isRescueNotification = (notif: NotificationItem): boolean => {
   const eventType = String(notif.event_type || "").toLowerCase().trim();
   const notifData = notif.data || {};
   const moduleName = String(
-    notifData.module || notifData.category || (notif as any).module || (notif as any).category || ""
+    notifData.module || notifData.category || notif.module || (notif as any).category || ""
   ).toLowerCase().trim();
 
   // Known rescue operation types, event types, or modules
@@ -176,8 +182,178 @@ export const isRescueNotification = (notif: NotificationItem): boolean => {
 };
 
 /**
+ * Check if a notification is strictly relevant to the authenticated Donor.
+ * Enforces strict donor isolation:
+ * - Allows: donations, sponsorships, 80G tax receipts, contributions, donor profile updates,
+ *   sponsored dog updates, and broadcasts explicitly targeted to donors.
+ * - Prohibits: rescue dispatches, shelter operations, inventory alerts, internal veterinary reminders,
+ *   admin governance alerts, volunteer shifts, and untargeted internal staff broadcasts.
+ */
+export const isDonorNotification = (notif: NotificationItem, user: any): boolean => {
+  // 1. Hard exclusions for non-donor operational domains
+  if (isRescueNotification(notif)) return false;
+  if (isInventoryNotification(notif)) return false;
+
+  const type = String(notif.type || "").toLowerCase().trim();
+  const eventType = String(notif.event_type || "").toLowerCase().trim();
+  const notifData = notif.data || {};
+  const moduleName = String(
+    notifData.module || notifData.category || notif.module || (notif as any).category || ""
+  ).toLowerCase().trim();
+  const actionUrl = String(notifData.action_url || notif.action_url || "").toLowerCase().trim();
+  const title = String(notif.title || "").toLowerCase().trim();
+  const message = String(notif.message || "").toLowerCase().trim();
+
+  // Internal staff routes
+  if (
+    actionUrl.startsWith("/dashboard/rescue") ||
+    actionUrl.startsWith("/dashboard/shelter") ||
+    actionUrl.startsWith("/shelter") ||
+    actionUrl.startsWith("/inventory") ||
+    actionUrl.startsWith("/admin") ||
+    actionUrl.startsWith("/settings")
+  ) {
+    return false;
+  }
+
+  // Internal shelter/kennel operations
+  if (
+    type === "shelter" ||
+    type === "shelter_transfer" ||
+    type === "transfer_requested" ||
+    type === "placement_requested" ||
+    type === "kennel" ||
+    moduleName === "shelter"
+  ) {
+    return false;
+  }
+
+  // Internal administrative & staff governance
+  const adminStaffTypes = new Set([
+    "system",
+    "user_created",
+    "user_updated",
+    "user_deleted",
+    "role_permission_changed",
+    "certificate_generated",
+    "governance_push",
+    "settings",
+    "backup",
+    "volunteer",
+    "volunteer_shift",
+  ]);
+  if (adminStaffTypes.has(type) || adminStaffTypes.has(eventType)) {
+    return false;
+  }
+
+  // Internal medical/veterinary reminders: only allow if explicitly linked to a sponsored animal
+  const medicalTypes = new Set(["medical", "medical_reminder", "medical_updated", "medical_checkup"]);
+  if (medicalTypes.has(type) || medicalTypes.has(eventType) || moduleName === "medical") {
+    const isSponsored = Boolean(
+      notifData.is_sponsored ||
+      notifData.sponsored ||
+      notifData.sponsorship_id ||
+      (notifData.donor_id && String(notifData.donor_id) === String(user?.id))
+    );
+    if (!isSponsored) {
+      return false;
+    }
+    return true;
+  }
+
+  // Broadcasts: must be explicitly targeted to donors
+  const isBroadcast = Boolean(notif.is_broadcast || type === "broadcast" || type === "info");
+  if (isBroadcast) {
+    const targetRoles = Array.isArray(notif.role_required)
+      ? notif.role_required
+      : Array.isArray(notifData.target_roles)
+      ? notifData.target_roles
+      : typeof (notif as any).role === "string" && (notif as any).role
+      ? [(notif as any).role]
+      : [];
+    const audience = String(notifData.audience || notifData.target_role || "").toLowerCase();
+    const hasDonorTarget =
+      targetRoles.some(
+        (r) => String(r).toLowerCase() === "donor" || String(r).toLowerCase() === "all"
+      ) ||
+      audience === "donor" ||
+      audience === "all" ||
+      audience === "donors";
+
+    return hasDonorTarget;
+  }
+
+  // Check if it's explicitly a donor/donation/sponsorship/tax/profile notification
+  const donorAllowedTypes = new Set([
+    "donation",
+    "donation_completed",
+    "donation_received",
+    "donation_pending",
+    "donation_failed",
+    "donation_refunded",
+    "donation_receipt",
+    "receipt",
+    "80g_receipt",
+    "tax_receipt",
+    "tax",
+    "sponsorship",
+    "sponsorship_created",
+    "sponsorship_payment",
+    "sponsorship_reminder",
+    "sponsorship_renewal",
+    "sponsorship_cancelled",
+    "sponsorship_expired",
+    "sponsored_dog_update",
+    "sponsored_dog_medical",
+    "donor_profile",
+    "contribution",
+    "contribution_update",
+  ]);
+
+  if (donorAllowedTypes.has(type) || donorAllowedTypes.has(eventType)) return true;
+  if (["donations", "donor", "sponsorship", "sponsorships", "contributions"].includes(moduleName)) return true;
+  if (
+    notifData.donation_id ||
+    notifData.sponsorship_id ||
+    notifData.receipt_id ||
+    notifData.tax_id ||
+    notifData["80g_number"] ||
+    notifData.is_sponsored
+  ) {
+    return true;
+  }
+
+  // Title / semantic check for donor events
+  if (
+    title.includes("donation") ||
+    title.includes("sponsorship") ||
+    title.includes("80g") ||
+    title.includes("tax receipt") ||
+    title.includes("contribution") ||
+    title.includes("donor profile")
+  ) {
+    return true;
+  }
+
+  // If general message has staff content, reject
+  if (
+    message.includes("rescues") ||
+    message.includes("medical logs") ||
+    message.includes("cleaning shift") ||
+    message.includes("kennel") ||
+    message.includes("stock level")
+  ) {
+    return false;
+  }
+
+  return false;
+};
+
+/**
  * Filter notifications based on role and shelter operational assignment.
  * Enforces strict recipient rules:
+ * - Super Admin receives all notifications.
+ * - Donor receives ONLY donor-scoped notifications (donations, sponsorships, 80G, contributions, sponsored dogs).
  * - Rescue Centre Admin MUST receive ONLY rescue-operation-related notifications.
  * - Inventory Low Stock alerts MUST NOT be sent/displayed to Vets, Rescue Team, or Adopter/Public users.
  * - Primary recipients: Shelter Manager for the specific shelter, Inventory Manager, Admin.
@@ -189,6 +365,16 @@ export const shouldUserReceiveNotification = (
   role: UserRole | null
 ): boolean => {
   if (!role) return false;
+
+  // Super Admin receives all notifications
+  if (role === "super_admin") {
+    return true;
+  }
+
+  // Strict role scoping for Donor: only donor-relevant notifications
+  if (role === "donor") {
+    return isDonorNotification(notif, user);
+  }
 
   // Strict role scoping for Rescue Centre Admin: only rescue-operation-related notifications
   if (role === "rescue_centre_admin") {
@@ -242,7 +428,7 @@ export const shouldUserReceiveNotification = (
 };
 
 /**
- * Deduplicate notifications to prevent duplicate low-stock alerts
+ * Deduplicate notifications to prevent duplicate alerts
  */
 export const deduplicateNotifications = (list: NotificationItem[]): NotificationItem[] => {
   const seen = new Set<string>();
@@ -274,6 +460,14 @@ const transformNotification = (notif: NotificationResponse & Record<string, any>
     ? rawData
     : undefined;
 
+  const targetRoles = Array.isArray(notif.role_required)
+    ? notif.role_required
+    : Array.isArray(notif.target_roles)
+    ? notif.target_roles
+    : typeof notif.role === "string" && notif.role
+    ? [notif.role]
+    : undefined;
+
   return {
     id: notif.id,
     title: notif.title,
@@ -284,8 +478,11 @@ const transformNotification = (notif: NotificationResponse & Record<string, any>
     user_id: notif.user_id,
     time: createdTime,
     event_type: notif.event_type || notif.trigger || notif.action,
-    role_required: notif.role_required || notif.target_roles,
+    role_required: targetRoles,
     data: mergedData,
+    module: notif.module || undefined,
+    is_broadcast: Boolean(notif.is_broadcast),
+    action_url: notif.action_url || null,
   };
 };
 
@@ -355,8 +552,8 @@ export const notificationService = {
   // GET /api/v1/notifications/unread-count
   getUnreadCount: async (): Promise<number> => {
     try {
-      const response = await api.get<{ unread_count: number }>("/notifications/unread-count");
-      return response.data?.unread_count || 0;
+      const notifications = await notificationService.getNotifications();
+      return notifications.filter((n) => !n.read).length;
     } catch {
       return 0;
     }

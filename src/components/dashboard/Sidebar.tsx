@@ -132,8 +132,26 @@ const Sidebar = ({
 
   const isPathActive = (menuPath: string): boolean => {
     const current = location.pathname;
+    if (menuPath.includes("?")) {
+      const [basePath, search] = menuPath.split("?");
+      if (current === basePath) {
+        const currentParams = new URLSearchParams(location.search);
+        const targetParams = new URLSearchParams(search);
+        const targetTab = targetParams.get("tab");
+        if (targetTab) {
+          return currentParams.get("tab") === targetTab;
+        }
+      }
+      return false;
+    }
     if (menuPath.startsWith("/dashboard")) {
       if (current === "/dashboard") return true;
+      if (location.search && current === menuPath) {
+        const currentParams = new URLSearchParams(location.search);
+        if (currentParams.get("tab")) {
+          return false;
+        }
+      }
       return current === menuPath || current.startsWith(`${menuPath}/`);
     }
     if (current === menuPath) return true;
@@ -146,7 +164,7 @@ const Sidebar = ({
     if (activeElement) {
       activeElement.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
-  }, [location.pathname, menus.length]);
+  }, [location.pathname, location.search, menus.length]);
 
   const isMobile = Boolean(isMobileScreen);
   const showCollapsed = collapsed && !isMobile;

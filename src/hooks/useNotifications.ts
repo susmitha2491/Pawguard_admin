@@ -163,7 +163,7 @@ export const useNotifications = (options: UseNotificationsOptions = {}) => {
       sharedNotificationsCache = sharedNotificationsCache.map((n) =>
         n.id === notificationId ? { ...n, read: true } : n
       );
-      sharedUnreadCountCache = Math.max(0, sharedUnreadCountCache - 1);
+      sharedUnreadCountCache = sharedNotificationsCache.filter((n) => !n.read).length;
 
       setNotifications(sharedNotificationsCache);
       setUnreadCount(sharedUnreadCountCache);
@@ -199,12 +199,8 @@ export const useNotifications = (options: UseNotificationsOptions = {}) => {
   const deleteNotification = useCallback(async (notificationId: string) => {
     try {
       await notificationService.deleteNotification(notificationId);
-      const wasUnread = sharedNotificationsCache.some((n) => n.id === notificationId && !n.read);
-
       sharedNotificationsCache = sharedNotificationsCache.filter((n) => n.id !== notificationId);
-      if (wasUnread) {
-        sharedUnreadCountCache = Math.max(0, sharedUnreadCountCache - 1);
-      }
+      sharedUnreadCountCache = sharedNotificationsCache.filter((n) => !n.read).length;
 
       setNotifications(sharedNotificationsCache);
       setUnreadCount(sharedUnreadCountCache);

@@ -190,23 +190,86 @@ export const donationsService = {
     return normalizeDonationRow(raw);
   },
 
-  // POST /donations (DonationCreate)
+  // POST /donations (DonationCreate) or /donations/checkout (Donor self-service)
   createDonation: async (payload: DonationCreatePayload) => {
-    const response = await api.post("/donations", {
+    const donationType =
+      payload.donation_type === "recurring"
+        ? "recurring"
+        : payload.donation_type === "sponsorship"
+        ? "sponsorship"
+        : "one_time";
+
+    try {
+      const response = await api.post("/donations", {
+        amount: Number(payload.amount),
+        currency: payload.currency || "INR",
+        donation_type: donationType,
+        notes: payload.notes || payload.purpose || null,
+        dog_id: payload.dog_id || null,
+        campaign_id: payload.campaign_id || null,
+      });
+      await publishActionEvent({
+        module: "finance",
+        action: "create",
+        title: "Donation Recorded",
+        message: `Donation of ₹${Number(payload.amount).toFixed(2)} logged.`,
+        targetRoles: ["super_admin", "finance_user"],
+      });
+      return response.data?.data ?? response.data;
+    } catch (err: any) {
+      // If 403 Forbidden (donor role without staff donation:manage permission), route to self-service checkout
+      if (err?.response?.status === 403) {
+        const checkoutRes = await api.post("/donations/checkout", {
+          amount: Number(payload.amount),
+          currency: payload.currency || "INR",
+          donation_type: donationType,
+          notes: payload.notes || payload.purpose || null,
+          dog_id: payload.dog_id || null,
+          campaign_id: payload.campaign_id || null,
+        });
+
+        await publishActionEvent({
+          module: "finance",
+          action: "create",
+          title: "Donation Recorded",
+          message: `Donation of ₹${Number(payload.amount).toFixed(2)} submitted.`,
+          targetRoles: ["super_admin", "finance_user"],
+        });
+
+        return checkoutRes.data?.data ?? checkoutRes.data;
+      }
+      throw err;
+    }
+  },
+
+  // POST /donations/checkout - Self-service donor contribution checkout
+  checkoutDonation: async (payload: DonationCreatePayload) => {
+    const donationType =
+      payload.donation_type === "recurring"
+        ? "recurring"
+        : payload.donation_type === "sponsorship"
+        ? "sponsorship"
+        : "one_time";
+
+    const response = await api.post("/donations/checkout", {
       amount: Number(payload.amount),
       currency: payload.currency || "INR",
-      donation_type: payload.donation_type || "one_time",
-      notes: payload.notes || null,
+      donation_type: donationType,
+      notes: payload.notes || payload.purpose || null,
       dog_id: payload.dog_id || null,
       campaign_id: payload.campaign_id || null,
     });
-    await publishActionEvent({
-      module: "finance",
-      action: "create",
-      title: "Donation Recorded",
-      message: `Donation of ₹${Number(payload.amount).toFixed(2)} logged.`,
-      targetRoles: ["super_admin", "finance_user"],
-    });
+    return response.data?.data ?? response.data;
+  },
+
+  // POST /donations/verify - Verify gateway payment
+  verifyDonation: async (payload: {
+    donation_id: string;
+    gateway_order_id: string;
+    gateway_payment_id: string;
+    gateway_signature: string;
+  }) => {
+    const response = await api.post("/donations/verify", payload);
     return response.data?.data ?? response.data;
   },
 
@@ -375,6 +438,40 @@ export const donationsService = {
   cancelCampaign: async (campaignId: string) => {
     const response = await api.post(`/donations/campaigns/${campaignId}/cancel`);
     return response.data?.data ?? response.data;
+  },
+
+  // GET /donations/sponsorships/my - Authenticated donor's own sponsorships
+  getMySponsorships: async () => {
+    const response = await api.get("/donations/sponsorships/my");
+    const body = response.data;
+    const raw = extractArray(body);
+    return raw;
+  },
+
+  // GET /donations/donors/me - Authenticated donor's own profile (80G details, PAN, tax status)
+  getMyDonorProfile: async () => {
+    const response = await api.get("/donations/donors/me");
+    return response.data?.data ?? response.data;
+  },
+
+  // GET /donations/recurring - Authenticated donor's recurring subscriptions
+  getMyRecurringSubscriptions: async () => {
+    const response = await api.get("/donations/recurring");
+    const body = response.data;
+    return extractArray(body);
+  },
+
+  // Download Donation Receipt
+  downloadReceiptFile: async (donationId: string) => {
+    try {
+      const response = await api.get(`/donations/${donationId}/receipt/download`, {
+        responseType: "blob",
+      });
+      return response.data;
+    } catch {
+      const fallback = await api.get(`/donations/${donationId}/receipt`);
+      return fallback.data?.data ?? fallback.data;
+    }
   },
 
   // POST /donations/bulk/status-update

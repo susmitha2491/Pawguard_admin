@@ -624,7 +624,10 @@ export const getMenusForRole = (role?: string | UserRole | null): RoleMenuItem[]
 
     case "donor":
       return [
-        { name: "Dashboard", path: dashboardPath, iconType: "dashboard" },
+        { name: "Overview", path: dashboardPath, iconType: "dashboard" },
+        { name: "My Donations", path: `${dashboardPath}?tab=donations`, iconType: "finance" },
+        { name: "My Sponsorships", path: `${dashboardPath}?tab=sponsorships`, iconType: "pets" },
+        { name: "Tax Receipts", path: `${dashboardPath}?tab=receipts`, iconType: "certificates" },
       ];
 
     case "general_public_user":

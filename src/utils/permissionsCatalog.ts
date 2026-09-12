@@ -205,6 +205,14 @@ const MODULE_ALIASES: Record<string, string> = {
   "lost-found": "lost_found",
   lost_and_found: "lost_found",
   audit: "audit_logs",
+  vet_clinic: "medical",
+  vet_clinics: "medical",
+  "vet-clinic": "medical",
+  "vet-clinics": "medical",
+  clinic: "medical",
+  clinics: "medical",
+  appointment: "medical",
+  appointments: "medical",
   safety_tag: "animals",
   safety_tags: "animals",
   safetytag: "animals",
@@ -357,6 +365,8 @@ export const extractUserPermissions = (user: unknown): string[] => {
   if (!user || typeof user !== "object") return [];
   const obj = user as Record<string, unknown>;
   const sources = [
+    obj.direct_permissions,
+    obj.directPermissions,
     obj.permission_codes,
     obj.permissionCodes,
     obj.permissions,

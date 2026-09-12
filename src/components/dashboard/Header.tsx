@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   FaSignOutAlt,
@@ -140,6 +141,7 @@ const Header = ({
     country: "",
     address: "",
   });
+  const [phoneError, setPhoneError] = useState<string | null>(null);
 
   // Change Password Sub-state
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -161,7 +163,7 @@ const Header = ({
   const roleTitle = getRoleTitle(currentRole);
   const pageTitle = getPageTitle(location.pathname);
 
-  const handleOpenProfileModal = async () => {
+  const handleOpenProfileModal = useCallback(async () => {
     setIsProfileModalOpen(true);
     setIsEditingProfile(false);
     setIsChangingPassword(false);
@@ -169,23 +171,68 @@ const Header = ({
     setShowCurrentPassword(false);
     setShowNewPassword(false);
     setIsProfileLoading(true);
+    setPhoneError(null);
 
     try {
       const res = await authService.getMe();
       const profileData = ((res?.data || res) ?? {}) as Record<string, unknown>;
       setMyProfile(profileData);
+      const rawPhone = String(profileData.phone || profileData.phone_number || "");
+      const cleanedPhone = rawPhone.replace(/\D/g, "").slice(0, 10);
       setEditProfileForm({
         full_name: String(profileData.full_name || user?.name || ""),
-        phone: String(profileData.phone || ""),
+        phone: cleanedPhone,
         city: String(profileData.city || ""),
         state: String(profileData.state || ""),
         country: String(profileData.country || ""),
         address: String(profileData.address || profileData.address_line || ""),
       });
+      if (cleanedPhone.length > 0 && cleanedPhone.length !== 10) {
+        setPhoneError("Phone number must be exactly 10 digits.");
+      } else {
+        setPhoneError(null);
+      }
     } catch {
       setMyProfile(null);
     } finally {
       setIsProfileLoading(false);
+    }
+  }, [user?.name]);
+
+  useEffect(() => {
+    const handleOpenModalEvent = () => {
+      handleOpenProfileModal();
+      setIsEditingProfile(true);
+    };
+    window.addEventListener("pawguard:open-profile-modal", handleOpenModalEvent);
+    return () => {
+      window.removeEventListener("pawguard:open-profile-modal", handleOpenModalEvent);
+    };
+  }, [handleOpenProfileModal]);
+
+
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawVal = e.target.value;
+    const digitsOnly = rawVal.replace(/\D/g, "").slice(0, 10);
+    setEditProfileForm((prev) => ({ ...prev, phone: digitsOnly }));
+
+    if (digitsOnly.length > 0 && digitsOnly.length !== 10) {
+      setPhoneError("Phone number must be exactly 10 digits.");
+    } else {
+      setPhoneError(null);
+    }
+  };
+
+  const handlePhonePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pastedText = e.clipboardData.getData("text") || "";
+    const digitsOnly = pastedText.replace(/\D/g, "").slice(0, 10);
+    setEditProfileForm((prev) => ({ ...prev, phone: digitsOnly }));
+
+    if (digitsOnly.length > 0 && digitsOnly.length !== 10) {
+      setPhoneError("Phone number must be exactly 10 digits.");
+    } else {
+      setPhoneError(null);
     }
   };
 
@@ -196,11 +243,20 @@ const Header = ({
       return;
     }
 
+    const trimmedPhone = editProfileForm.phone.trim();
+    if (trimmedPhone.length > 0) {
+      if (trimmedPhone.length !== 10 || !/^\d{10}$/.test(trimmedPhone)) {
+        setPhoneError("Phone number must be exactly 10 digits.");
+        addToast("Phone number must be exactly 10 digits.", "error");
+        return;
+      }
+    }
+
     try {
       setIsSubmitting(true);
       const payload: Record<string, unknown> = {
         full_name: editProfileForm.full_name.trim(),
-        phone: editProfileForm.phone.trim() || null,
+        phone: trimmedPhone || null,
         city: editProfileForm.city.trim() || null,
         state: editProfileForm.state.trim() || null,
         country: editProfileForm.country.trim() || null,
@@ -218,7 +274,7 @@ const Header = ({
           ...stored,
           full_name: editProfileForm.full_name.trim(),
           name: editProfileForm.full_name.trim(),
-          phone: editProfileForm.phone.trim() || null,
+          phone: trimmedPhone || null,
         };
         try {
           sessionStorage.setItem(AUTH_STORAGE_KEYS.user, JSON.stringify(nextUser));
@@ -238,6 +294,7 @@ const Header = ({
       setIsSubmitting(false);
     }
   };
+
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -572,11 +629,22 @@ const Header = ({
                   <label style={labelStyle}>Phone Number</label>
                   <input
                     type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
                     value={editProfileForm.phone}
-                    onChange={(e) => setEditProfileForm({ ...editProfileForm, phone: e.target.value })}
-                    style={inputStyle}
-                    placeholder="e.g. +1-555-0100"
+                    onChange={handlePhoneChange}
+                    onPaste={handlePhonePaste}
+                    style={{
+                      ...inputStyle,
+                      borderColor: phoneError ? "#EF4444" : "#CBD5E1",
+                    }}
+                    placeholder="10-digit mobile number"
                   />
+                  {phoneError && (
+                    <span style={{ display: "block", color: "#EF4444", fontSize: "11.5px", marginTop: "4px", fontWeight: 600 }}>
+                      {phoneError}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <label style={labelStyle}>City</label>
@@ -627,15 +695,36 @@ const Header = ({
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
                 <button
                   type="button"
-                  onClick={() => setIsEditingProfile(false)}
+                  onClick={() => {
+                    setIsEditingProfile(false);
+                    setPhoneError(null);
+                  }}
                   style={cancelButtonStyle}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
-                  style={primaryButtonStyle}
+                  disabled={
+                    isSubmitting ||
+                    Boolean(phoneError) ||
+                    (editProfileForm.phone.trim().length > 0 && editProfileForm.phone.trim().length !== 10)
+                  }
+                  style={{
+                    ...primaryButtonStyle,
+                    opacity:
+                      isSubmitting ||
+                      Boolean(phoneError) ||
+                      (editProfileForm.phone.trim().length > 0 && editProfileForm.phone.trim().length !== 10)
+                        ? 0.6
+                        : 1,
+                    cursor:
+                      isSubmitting ||
+                      Boolean(phoneError) ||
+                      (editProfileForm.phone.trim().length > 0 && editProfileForm.phone.trim().length !== 10)
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
                 >
                   {isSubmitting ? "Saving..." : "Save Changes"}
                 </button>

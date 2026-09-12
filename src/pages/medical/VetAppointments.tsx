@@ -42,8 +42,47 @@ const pick = (row: Row, ...keys: string[]): unknown => {
 const str = (v: unknown): string => (v === undefined || v === null ? "" : String(v));
 
 const toErrorMessage = (err: unknown, fallback: string): string => {
-  const e = err as { response?: { data?: { detail?: string; message?: string } } };
-  return e?.response?.data?.detail || e?.response?.data?.message || fallback;
+  const e = err as {
+    response?: {
+      status?: number;
+      data?: {
+        detail?: string | Array<{ msg?: string; loc?: string[] }>;
+        message?: string;
+        error?: string | { message?: string; details?: unknown };
+      };
+    };
+    message?: string;
+  };
+
+  const res = e?.response;
+  if (res?.status === 403) {
+    const backendMsg =
+      (typeof res.data?.error === "object" ? res.data?.error?.message : undefined) ||
+      (typeof res.data?.error === "string" ? res.data?.error : undefined) ||
+      (typeof res.data?.detail === "string" ? res.data?.detail : undefined) ||
+      res.data?.message;
+    if (backendMsg) return backendMsg;
+    return "You do not have permission to manage veterinary clinics.";
+  }
+
+  if (res?.data) {
+    if (typeof res.data.error === "object" && res.data.error?.message) {
+      return res.data.error.message;
+    }
+    if (typeof res.data.error === "string") {
+      return res.data.error;
+    }
+    if (typeof res.data.detail === "string") {
+      return res.data.detail;
+    }
+    if (Array.isArray(res.data.detail) && res.data.detail[0]?.msg) {
+      return res.data.detail.map((d) => d.msg).join(", ");
+    }
+    if (res.data.message) {
+      return res.data.message;
+    }
+  }
+  return e?.message || fallback;
 };
 
 const formatDate = (v: unknown): string => formatDateTime(v as string);
@@ -104,14 +143,20 @@ const VetAppointments = () => {
     role === "veterinarian" ||
     can("create", "medical") ||
     can("edit", "medical") ||
+    can("manage", "medical") ||
     has("create_medical") ||
-    has("edit_medical");
+    has("edit_medical") ||
+    has("manage_medical") ||
+    has("vet_clinic:manage");
 
   const canDeleteClinics =
     role === "super_admin" ||
     role === "rescue_centre_admin" ||
     can("delete", "medical") ||
-    has("delete_medical");
+    can("manage", "medical") ||
+    has("delete_medical") ||
+    has("manage_medical") ||
+    has("vet_clinic:manage");
 
   // Vet directory state
   const [clinics, setClinics] = useState<Row[]>([]);
@@ -588,7 +633,7 @@ const VetAppointments = () => {
         addToast("Veterinary clinic updated successfully.", "success");
       } else {
         await vetService.createClinic(payload);
-        addToast("Veterinary clinic registered successfully.", "success");
+        addToast("Veterinary clinic added successfully.", "success");
       }
 
       setIsAddEditModalOpen(false);
@@ -1453,7 +1498,7 @@ const VetAppointments = () => {
                   <span>Saving to Database...</span>
                 ) : editingClinic ? (
                   <>
-                    <FaCheck /> Update Clinic
+                    <FaCheck /> Save Changes
                   </>
                 ) : (
                   <>

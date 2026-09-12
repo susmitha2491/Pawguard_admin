@@ -239,6 +239,30 @@ const NOTIFICATION_TYPE_ACCESS: Record<string, UserRole[]> = {
     "veterinarian",
     "shelter_manager",
   ],
+
+  // Donation / Sponsorship / 80G / Contribution notifications
+  donation: ["super_admin", "donor", "finance_user"],
+  donation_completed: ["super_admin", "donor", "finance_user"],
+  donation_received: ["super_admin", "donor", "finance_user"],
+  donation_pending: ["super_admin", "donor", "finance_user"],
+  donation_failed: ["super_admin", "donor", "finance_user"],
+  donation_refunded: ["super_admin", "donor", "finance_user"],
+  donation_receipt: ["super_admin", "donor", "finance_user"],
+  receipt: ["super_admin", "donor", "finance_user"],
+  "80g_receipt": ["super_admin", "donor", "finance_user"],
+  tax_receipt: ["super_admin", "donor", "finance_user"],
+  sponsorship: ["super_admin", "donor"],
+  sponsorship_created: ["super_admin", "donor"],
+  sponsorship_payment: ["super_admin", "donor"],
+  sponsorship_reminder: ["super_admin", "donor"],
+  sponsorship_renewal: ["super_admin", "donor"],
+  sponsorship_cancelled: ["super_admin", "donor"],
+  sponsorship_expired: ["super_admin", "donor"],
+  sponsored_dog_update: ["super_admin", "donor"],
+  sponsored_dog_medical: ["super_admin", "donor"],
+  donor_profile: ["super_admin", "donor"],
+  contribution: ["super_admin", "donor"],
+  contribution_update: ["super_admin", "donor"],
 };
 
 /**

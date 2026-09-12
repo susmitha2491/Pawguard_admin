@@ -1303,13 +1303,14 @@ const VeterinarianDashboard = () => {
       {/* VETERINARY QUEUE & WORKSPACE (DUAL SOURCES) */}
       <div id="appointments-queue" className="soft-card" style={{ padding: "20px", marginBottom: "24px" }}>
         {/* Source Navigation Tabs */}
-        <div style={{ borderBottom: "2px solid #E2E8F0", paddingBottom: "12px", marginBottom: "16px" }}>
-          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+        <div style={{ borderBottom: "2px solid #E2E8F0", paddingBottom: "14px", marginBottom: "16px" }}>
+          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
             <button
               type="button"
               onClick={() => setActiveSourceTab("shelter_requests")}
               style={{
-                padding: "9px 16px",
+                minHeight: "42px",
+                padding: "9px 18px",
                 borderRadius: "10px",
                 border: activeSourceTab === "shelter_requests" ? "2px solid #1E3A8A" : "1px solid #CBD5E1",
                 background: activeSourceTab === "shelter_requests" ? "#EFF6FF" : "#FFFFFF",
@@ -1320,6 +1321,8 @@ const VeterinarianDashboard = () => {
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "8px",
+                boxSizing: "border-box",
+                transition: "all 0.15s ease-in-out",
               }}
             >
               <FaHome /> Shelter Medical Requests ({shelterDogRows.length})
@@ -1329,7 +1332,8 @@ const VeterinarianDashboard = () => {
               type="button"
               onClick={() => setActiveSourceTab("public_appts")}
               style={{
-                padding: "9px 16px",
+                minHeight: "42px",
+                padding: "9px 18px",
                 borderRadius: "10px",
                 border: activeSourceTab === "public_appts" ? "2px solid #1E3A8A" : "1px solid #CBD5E1",
                 background: activeSourceTab === "public_appts" ? "#EFF6FF" : "#FFFFFF",
@@ -1340,9 +1344,11 @@ const VeterinarianDashboard = () => {
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "8px",
+                boxSizing: "border-box",
+                transition: "all 0.15s ease-in-out",
               }}
             >
-              <FaCalendarAlt /> ðŸŒ Public Website Appointments ({filteredAppointments.length})
+              <FaCalendarAlt /> Public Website Appointments ({filteredAppointments.length})
             </button>
           </div>
         </div>
@@ -1351,13 +1357,14 @@ const VeterinarianDashboard = () => {
         {activeSourceTab === "shelter_requests" && (
           <div>
             {/* Sub-Navigation between Assigned Requests & All Dogs */}
-            <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "16px" }}>
               <button
                 type="button"
                 onClick={() => setShelterSubTab("requests")}
                 style={{
-                  padding: "7px 16px",
-                  borderRadius: "8px",
+                  minHeight: "42px",
+                  padding: "9px 18px",
+                  borderRadius: "10px",
                   border: shelterSubTab === "requests" ? "2px solid #1E3A8A" : "1px solid #CBD5E1",
                   background: shelterSubTab === "requests" ? "#EFF6FF" : "#FFFFFF",
                   color: shelterSubTab === "requests" ? "#1E3A8A" : "#475569",
@@ -1366,7 +1373,9 @@ const VeterinarianDashboard = () => {
                   cursor: "pointer",
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: "6px",
+                  gap: "8px",
+                  boxSizing: "border-box",
+                  transition: "all 0.15s ease-in-out",
                 }}
               >
                 <FaStethoscope /> Assigned Veterinary Requests ({shelterRequestRows.length})
@@ -1376,8 +1385,9 @@ const VeterinarianDashboard = () => {
                 type="button"
                 onClick={() => setShelterSubTab("all_dogs")}
                 style={{
-                  padding: "7px 16px",
-                  borderRadius: "8px",
+                  minHeight: "42px",
+                  padding: "9px 18px",
+                  borderRadius: "10px",
                   border: shelterSubTab === "all_dogs" ? "2px solid #1E3A8A" : "1px solid #CBD5E1",
                   background: shelterSubTab === "all_dogs" ? "#EFF6FF" : "#FFFFFF",
                   color: shelterSubTab === "all_dogs" ? "#1E3A8A" : "#475569",
@@ -1386,7 +1396,9 @@ const VeterinarianDashboard = () => {
                   cursor: "pointer",
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: "6px",
+                  gap: "8px",
+                  boxSizing: "border-box",
+                  transition: "all 0.15s ease-in-out",
                 }}
               >
                 <FaHome /> All Housed Shelter Dogs ({shelterDogRows.length})

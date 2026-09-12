@@ -1,6 +1,17 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaBell, FaCheckDouble, FaExclamationTriangle, FaStethoscope, FaHeart, FaUserCheck, FaSpinner, FaTimesCircle } from "react-icons/fa";
+import {
+  FaBell,
+  FaCheckDouble,
+  FaExclamationTriangle,
+  FaStethoscope,
+  FaHeart,
+  FaUserCheck,
+  FaSpinner,
+  FaTimesCircle,
+  FaDollarSign,
+  FaPaw,
+} from "react-icons/fa";
 import useNotifications from "../../hooks/useNotifications";
 import type { NotificationItem } from "../../types/auth";
 import { formatDateTime } from "../../utils/dateUtils";
@@ -40,12 +51,31 @@ const NotificationDropdown = () => {
     const targetUrl = item.data?.action_url || (item as any).action_url;
     if (targetUrl) {
       navigate(targetUrl);
-    } else if (item.type === "medical") {
+    } else if (item.type === "medical" || item.type === "medical_reminder") {
       navigate("/veterinarian-dashboard?tab=shelter_requests");
     } else if (item.type === "adoption") {
       navigate("/adoptions");
     } else if ((item.type as string) === "shelter") {
       navigate("/shelter-dogs");
+    } else if (
+      item.type === "donation" ||
+      item.type === "donation_completed" ||
+      item.type === "donation_received" ||
+      item.type === "tax_receipt" ||
+      item.type === "80g_receipt" ||
+      item.type === "receipt" ||
+      item.type === "contribution"
+    ) {
+      navigate("/dashboard/donor");
+    } else if (
+      item.type === "sponsorship" ||
+      item.type === "sponsorship_created" ||
+      item.type === "sponsored_dog_update" ||
+      item.type === "sponsored_dog_medical"
+    ) {
+      navigate("/dashboard/donor");
+    } else if (item.type === "donor_profile") {
+      navigate("/dashboard/donor");
     }
   };
 
@@ -72,6 +102,7 @@ const NotificationDropdown = () => {
         return <FaExclamationTriangle style={{ color: "#DC2626" }} />;
       case "medical":
       case "medical_updated":
+      case "medical_reminder":
         return <FaStethoscope style={{ color: "#1E3A8A" }} />;
       case "adoption":
       case "adoption_submitted":
@@ -80,6 +111,19 @@ const NotificationDropdown = () => {
         return <FaHeart style={{ color: "#F59E0B" }} />;
       case "volunteer":
         return <FaUserCheck style={{ color: "#16A34A" }} />;
+      case "donation":
+      case "donation_completed":
+      case "donation_received":
+      case "tax_receipt":
+      case "80g_receipt":
+      case "receipt":
+      case "contribution":
+        return <FaDollarSign style={{ color: "#10B981" }} />;
+      case "sponsorship":
+      case "sponsorship_created":
+      case "sponsored_dog_update":
+      case "sponsored_dog_medical":
+        return <FaPaw style={{ color: "#8B5CF6" }} />;
       case "system":
       case "user_created":
       case "user_updated":
@@ -88,6 +132,7 @@ const NotificationDropdown = () => {
       case "animal_registered":
       case "animal_updated":
       case "inventory_changed":
+      case "inventory_alert":
       case "certificate_generated":
       case "finance_action":
       case "role_permission_changed":

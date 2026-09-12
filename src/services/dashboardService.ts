@@ -185,6 +185,12 @@ export const dashboardService = {
     return response.data;
   },
 
+  // GET /dashboards/donor (Exact OpenAPI endpoint)
+  getDonorDashboard: async () => {
+    const response = await api.get("/dashboards/donor");
+    return response.data?.data ?? response.data;
+  },
+
   // GET /dashboards/operations (Exact OpenAPI endpoint)
   getOperationsDashboard: async () => {
     const response = await api.get("/dashboards/operations");
