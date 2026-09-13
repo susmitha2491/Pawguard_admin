@@ -239,7 +239,11 @@ function DataTable<T = any>({
   const formatLabel = (key: string) => {
     const col = columns.find((c) => c.key === key);
     if (col) return col.title || col.header || key;
-    return key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+    return key
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/_/g, " ")
+      .trim()
+      .replace(/\b\w/g, (l) => l.toUpperCase());
   };
 
   return (
@@ -697,12 +701,19 @@ function DataTable<T = any>({
                       if (id) return String(id);
                       return "—";
                     }
+                    if (
+                      typeof v === "string" &&
+                      (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v) ||
+                        /date|time|timestamp/i.test(key))
+                    ) {
+                      return formatDateTime(v);
+                    }
                     return String(v);
                   };
 
                   return (
                     <div key={key} style={{ background: "#F8FAFC", padding: "12px 14px", borderRadius: "10px", border: "1px solid #F1F5F9" }}>
-                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", marginBottom: "4px" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", marginBottom: "4px" }}>
                         {formatLabel(key)}
                       </div>
                       <div style={{ fontSize: "14px", fontWeight: 600, color: "#0F172A", wordBreak: "break-word" }}>

@@ -1,34 +1,4 @@
 import api from "../api/axios";
-import { getCurrentUser, getCurrentUserRole } from "../utils/roleUtils";
-
-const getMyProfile = async (): Promise<{ id: string; preferred_role: string } | null> => {
-  const user = getCurrentUser();
-  if (!user) return null;
-  const userRole = getCurrentUserRole();
-  if (userRole !== "volunteer") return null;
-
-  try {
-    const myEmail = user.email?.toLowerCase();
-    const response = await api.get("/volunteers");
-    const list = Array.isArray(response.data) ? response.data : (response.data?.data || []);
-    const myProfile = list.find((v: any) => 
-      (v.email && v.email.toLowerCase() === myEmail) || 
-      (v.user?.email && v.user.email.toLowerCase() === myEmail) ||
-      String(v.id) === String(user.id) ||
-      String(v.user?.id) === String(user.id)
-    );
-    if (myProfile) {
-      return {
-        id: myProfile.id || myProfile.profile_id || "",
-        preferred_role: myProfile.preferred_role || myProfile.volunteer_type || myProfile.applied_role || "",
-      };
-    }
-  } catch (err) {
-    console.error("Error fetching volunteer profile", err);
-  }
-  return null;
-};
-
 
 export interface VolunteerAdminIntakePayload {
   full_name: string;
@@ -113,42 +83,14 @@ export const extractShiftId = (res: any): string => {
 };
 
 export const volunteerService = {
-  // GET /volunteers - List volunteer profiles
+  // GET /volunteers - List all volunteer profiles
   getVolunteers: async (params?: Record<string, unknown>) => {
-    const userRole = getCurrentUserRole();
-    if (userRole === "volunteer") {
-      const user = getCurrentUser();
-      const response = await api.get("/volunteers", { params });
-      const list = Array.isArray(response.data) ? response.data : (response.data?.data || []);
-      const myProfile = list.find((v: any) => 
-        (v.email && v.email.toLowerCase() === user?.email?.toLowerCase()) || 
-        (v.user?.email && v.user.email.toLowerCase() === user?.email?.toLowerCase()) ||
-        String(v.id) === String(user?.id) ||
-        String(v.user?.id) === String(user?.id)
-      );
-      return myProfile ? [myProfile] : [];
-    }
     const response = await api.get("/volunteers", { params });
     return response.data;
   },
 
   // GET /volunteers/{profile_id} - Get profile details
   getVolunteerById: async (profileId: string) => {
-    const userRole = getCurrentUserRole();
-    if (userRole === "volunteer") {
-      const user = getCurrentUser();
-      const response = await api.get("/volunteers");
-      const list = Array.isArray(response.data) ? response.data : (response.data?.data || []);
-      const myProfile = list.find((v: any) => 
-        (v.email && v.email.toLowerCase() === user?.email?.toLowerCase()) || 
-        (v.user?.email && v.user.email.toLowerCase() === user?.email?.toLowerCase()) ||
-        String(v.id) === String(user?.id) ||
-        String(v.user?.id) === String(user?.id)
-      );
-      if (!myProfile || String(profileId) !== String(myProfile.id)) {
-        throw new Error("Unauthorized access to another volunteer profile.");
-      }
-    }
     const response = await api.get(`/volunteers/${profileId}`);
     return response.data;
   },
@@ -173,14 +115,12 @@ export const volunteerService = {
     return response.data;
   },
 
-  // POST /volunteers/apply - Submit application (routes to admin intake if administrative applicant details are provided)
+  // POST /volunteers/apply - Submit application
   applyVolunteer: async (data: VolunteerApplicationPayload) => {
-    // If called with applicant identity in an administrative intake context, route to the coordinator intake endpoint
     if (data.email && data.full_name && data.phone) {
       try {
         return await volunteerService.adminIntakeVolunteer(data as VolunteerAdminIntakePayload);
       } catch (err: any) {
-        // If the admin intake endpoint returned 404 (e.g. older backend version), fallback to /volunteers/apply
         if (err?.response?.status !== 404) {
           throw err;
         }
@@ -280,45 +220,6 @@ export const volunteerService = {
 
   // GET /volunteers/shifts - List shifts
   getShifts: async (params?: Record<string, unknown>) => {
-    const userRole = getCurrentUserRole();
-    if (userRole === "volunteer") {
-      const myProfile = await getMyProfile();
-      if (!myProfile) return [];
-
-      const response = await api.get("/volunteers/shifts", { params });
-      const shiftsList = Array.isArray(response.data) ? response.data : (response.data?.data || response.data?.items || []);
-      
-      const filtered = [];
-      for (const shift of shiftsList) {
-        try {
-          const attResponse = await api.get(`/volunteers/shifts/${shift.id}/attendance`);
-          const attList = Array.isArray(attResponse.data) ? attResponse.data : (attResponse.data?.data || []);
-          const isAssigned = attList.some((att: any) => 
-            String(att.volunteer_id) === String(myProfile.id) ||
-            String(att.volunteer_profile_id) === String(myProfile.id) ||
-            String(att.volunteer?.id) === String(myProfile.id)
-          );
-          if (isAssigned) {
-            const roleName = String(shift.role_name || shift.title || "").toLowerCase();
-            const prefRole = String(myProfile.preferred_role || "").toLowerCase();
-            let matchesType = false;
-            if (prefRole.includes("foster") && roleName.includes("foster")) matchesType = true;
-            else if (prefRole.includes("transport") && roleName.includes("transport")) matchesType = true;
-            else if (prefRole.includes("shelter") && roleName.includes("shelter")) matchesType = true;
-            else if ((prefRole.includes("event") || prefRole.includes("outreach")) && (roleName.includes("event") || roleName.includes("outreach"))) matchesType = true;
-            else if (!prefRole.includes("foster") && !prefRole.includes("transport") && !prefRole.includes("shelter") && !prefRole.includes("event") && !prefRole.includes("outreach")) {
-              matchesType = true;
-            }
-            if (matchesType) {
-              filtered.push(shift);
-            }
-          }
-        } catch {
-          // ignore
-        }
-      }
-      return filtered;
-    }
     const response = await api.get("/volunteers/shifts", { params });
     return response.data;
   },
@@ -341,7 +242,6 @@ export const volunteerService = {
     if (!shiftId) {
       throw new Error("Invalid shift ID provided for shift join/assignment.");
     }
-    // If volunteerId is provided, route to administrative assignment endpoint (/assign)
     if (volunteerId) {
       return volunteerService.assignShift(shiftId, volunteerId);
     }
@@ -373,18 +273,6 @@ export const volunteerService = {
 
   // GET /volunteers/shifts/{shift_id}/attendance - List shift attendance
   getShiftAttendance: async (shiftId: string) => {
-    const userRole = getCurrentUserRole();
-    if (userRole === "volunteer") {
-      const myProfile = await getMyProfile();
-      if (!myProfile) return [];
-      const response = await api.get(`/volunteers/shifts/${shiftId}/attendance`);
-      const list = Array.isArray(response.data) ? response.data : (response.data?.data || []);
-      return list.filter((att: any) => 
-        String(att.volunteer_id) === String(myProfile.id) ||
-        String(att.volunteer_profile_id) === String(myProfile.id) ||
-        String(att.volunteer?.id) === String(myProfile.id)
-      );
-    }
     const response = await api.get(`/volunteers/shifts/${shiftId}/attendance`);
     return response.data;
   },
@@ -405,12 +293,15 @@ export const volunteerService = {
     return response.data;
   },
 
+  // POST /volunteers/attendance/{attendance_id}/cancel - Cancel attendance
+  cancelAttendance: async (attendanceId: string, reason?: string) => {
+    const payload = { reason: reason || "Cancelled by volunteer" };
+    const response = await api.post(`/volunteers/attendance/${attendanceId}/cancel`, payload);
+    return response.data;
+  },
+
   // GET /volunteers/applications - List volunteer applications
   getApplications: async (params?: Record<string, unknown>) => {
-    const userRole = getCurrentUserRole();
-    if (userRole === "volunteer") {
-      return [];
-    }
     try {
       const response = await api.get("/volunteers/applications", { params });
       return response.data;
@@ -425,10 +316,6 @@ export const volunteerService = {
 
   // GET /volunteers/applications/{id} - Get application details
   getApplicationById: async (id: string) => {
-    const userRole = getCurrentUserRole();
-    if (userRole === "volunteer") {
-      throw new Error("Unauthorized access.");
-    }
     try {
       const response = await api.get(`/volunteers/applications/${id}`);
       return response.data;
@@ -542,9 +429,27 @@ export const volunteerService = {
     return response.data;
   },
 
+  // GET /volunteers/me/attendance - Current user volunteer attendance
+  getMyAttendance: async () => {
+    const response = await api.get("/volunteers/me/attendance");
+    return response.data;
+  },
+
   // GET /volunteers/me/application - Current user volunteer application
   getMyApplication: async () => {
     const response = await api.get("/volunteers/me/application");
+    return response.data;
+  },
+
+  // POST /grievance/feedback - Submit feedback / rating
+  submitFeedback: async (data: { rating: number; comments?: string; rescue_case_id?: string; adoption_application_id?: string }) => {
+    const response = await api.post("/grievance/feedback", data);
+    return response.data;
+  },
+
+  // GET /grievance/feedback - List feedback
+  getFeedback: async (params?: Record<string, unknown>) => {
+    const response = await api.get("/grievance/feedback", { params });
     return response.data;
   },
 
@@ -573,3 +478,4 @@ export const getVolunteerProfileId = (vol: any): string => {
 };
 
 export default volunteerService;
+

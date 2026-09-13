@@ -614,21 +614,37 @@ export const getMenusForRole = (role?: string | UserRole | null): RoleMenuItem[]
 
     case "volunteer":
       return [
-        { name: "Dashboard", path: dashboardPath, iconType: "dashboard" },
+        { name: "Overview", path: dashboardPath, iconType: "dashboard" },
+        { name: "All Volunteers", path: `${dashboardPath}?tab=volunteers`, iconType: "volunteers" },
+        { name: "Shifts & Duties", path: `${dashboardPath}?tab=shifts`, iconType: "tasks" },
+        { name: "Attendance & Check-in", path: `${dashboardPath}?tab=attendance`, iconType: "reports" },
+        { name: "Shelter Feedback", path: `${dashboardPath}?tab=feedback`, iconType: "heart" },
+        { name: "Notifications", path: `${dashboardPath}?tab=notifications`, iconType: "notifications" },
       ];
 
     case "foster_family":
       return [
-        { name: "Dashboard", path: dashboardPath, iconType: "dashboard" },
-        { name: "Daily Progress Portal", path: `${dashboardPath}?tab=progress`, iconType: "tasks" },
+        { name: "Overview", path: dashboardPath, iconType: "dashboard" },
+        { name: "Foster Families", path: `${dashboardPath}?tab=families`, iconType: "users" },
+        { name: "Foster Placements", path: `${dashboardPath}?tab=placements`, iconType: "fosters" },
+        { name: "Foster Dogs", path: `${dashboardPath}?tab=dogs`, iconType: "pets" },
+        { name: "Daily Progress", path: `${dashboardPath}?tab=progress`, iconType: "tasks" },
+        { name: "Medical & Symptoms", path: `${dashboardPath}?tab=medical`, iconType: "medical" },
+        { name: "Supply Requests", path: `${dashboardPath}?tab=supplies`, iconType: "inventory" },
+        { name: "Veterinary Support", path: `${dashboardPath}?tab=vet_support`, iconType: "medical" },
+        { name: "Notifications", path: `${dashboardPath}?tab=notifications`, iconType: "notifications" },
       ];
 
     case "donor":
       return [
         { name: "Overview", path: dashboardPath, iconType: "dashboard" },
-        { name: "My Donations", path: `${dashboardPath}?tab=donations`, iconType: "finance" },
-        { name: "My Sponsorships", path: `${dashboardPath}?tab=sponsorships`, iconType: "pets" },
+        { name: "All Donors", path: `${dashboardPath}?tab=donors`, iconType: "users" },
+        { name: "Donations", path: `${dashboardPath}?tab=donations`, iconType: "finance" },
+        { name: "Dog Sponsorships", path: `${dashboardPath}?tab=sponsorships`, iconType: "pets" },
+        { name: "Sponsorship History", path: `${dashboardPath}?tab=sponsorship_history`, iconType: "tasks" },
+        { name: "Campaigns", path: `${dashboardPath}?tab=campaigns`, iconType: "heart" },
         { name: "Tax Receipts", path: `${dashboardPath}?tab=receipts`, iconType: "certificates" },
+        { name: "Donor Analytics", path: `${dashboardPath}?tab=analytics`, iconType: "reports" },
       ];
 
     case "general_public_user":

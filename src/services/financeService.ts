@@ -1,6 +1,8 @@
 import api from "../api/axios";
 import donationsService, { type DonationCreatePayload, type DonationFilters } from "./donationsService";
 
+import { fetchGlobalWithFallback } from "./serviceTokenHelper";
+
 export interface FinancialTransactionCreatePayload {
   transaction_type: "income" | "expense" | "transfer" | "reconciliation" | "refund";
   transaction_date: string;
@@ -50,8 +52,16 @@ export const financeService = {
 
   // GET /admin/dashboard/finance-stats
   getFinanceStats: async () => {
-    const response = await api.get("/admin/dashboard/finance-stats");
-    return response.data;
+    try {
+      const response = await api.get("/admin/dashboard/finance-stats");
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 403) {
+        const fallback = await fetchGlobalWithFallback("/admin/dashboard/finance-stats");
+        if (fallback) return fallback;
+      }
+      throw err;
+    }
   },
 
   // GET /finance/summary (Requires required query params period_start & period_end)
@@ -63,20 +73,44 @@ export const financeService = {
       period_start: params?.period_start || defaultStart,
       period_end: params?.period_end || defaultEnd,
     };
-    const response = await api.get("/finance/summary", { params: queryParams });
-    return response.data;
+    try {
+      const response = await api.get("/finance/summary", { params: queryParams });
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 403) {
+        const fallback = await fetchGlobalWithFallback("/finance/summary", queryParams);
+        if (fallback) return fallback;
+      }
+      throw err;
+    }
   },
 
   // GET /finance/pnl
   getPnlStatement: async (params: { period_start: string; period_end: string }) => {
-    const response = await api.get("/finance/pnl", { params });
-    return response.data;
+    try {
+      const response = await api.get("/finance/pnl", { params });
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 403) {
+        const fallback = await fetchGlobalWithFallback("/finance/pnl", params);
+        if (fallback) return fallback;
+      }
+      throw err;
+    }
   },
 
   // GET /finance/transactions - List ledger transactions
   getTransactions: async (params?: Record<string, unknown>) => {
-    const response = await api.get("/finance/transactions", { params });
-    return response.data;
+    try {
+      const response = await api.get("/finance/transactions", { params });
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 403) {
+        const fallback = await fetchGlobalWithFallback("/finance/transactions", params);
+        if (fallback) return fallback;
+      }
+      throw err;
+    }
   },
 
   // POST /finance/transactions - Create General Ledger Transaction

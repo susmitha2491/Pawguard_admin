@@ -350,10 +350,103 @@ export const isDonorNotification = (notif: NotificationItem, user: any): boolean
 };
 
 /**
+ * Check if a notification is strictly relevant to the authenticated Foster Family.
+ * Enforces strict foster family isolation:
+ * - Allows: foster placement updates, progress/daily log reminders, vet check confirmations/updates,
+ *   supply request updates, foster-to-adopt updates, and broadcasts targeted to foster families.
+ * - Prohibits: rescue dispatches, shelter operations, warehouse inventory alerts, financial audits.
+ */
+export const isFosterNotification = (notif: NotificationItem, _user: any): boolean => {
+  // Hard exclusions for unrelated internal staff modules
+  if (isRescueNotification(notif)) return false;
+  if (isInventoryNotification(notif)) return false;
+
+  const type = String(notif.type || "").toLowerCase().trim();
+  const eventType = String(notif.event_type || "").toLowerCase().trim();
+  const notifData = notif.data || {};
+  const moduleName = String(
+    notifData.module || notifData.category || notif.module || (notif as any).category || ""
+  ).toLowerCase().trim();
+  const title = String(notif.title || "").toLowerCase().trim();
+  const message = String(notif.message || "").toLowerCase().trim();
+
+  // Foster-specific allowed types & modules
+  const fosterAllowedTypes = new Set([
+    "foster",
+    "foster_placement",
+    "foster_update",
+    "foster_vet_check",
+    "vet_check",
+    "vet_response",
+    "foster_progress",
+    "daily_log",
+    "foster_supplies",
+    "supply_dispatch",
+    "supply_request",
+    "foster_adoption",
+    "adoption_application",
+  ]);
+
+  if (fosterAllowedTypes.has(type) || fosterAllowedTypes.has(eventType)) return true;
+  if (["fosters", "foster", "foster_placements", "supplies"].includes(moduleName)) return true;
+
+  if (
+    notifData.placement_id ||
+    notifData.foster_id ||
+    notifData.vet_check_id ||
+    notifData.supply_id ||
+    notifData.dispatch_id
+  ) {
+    return true;
+  }
+
+  // Check broadcast targeting foster parents
+  const isBroadcast = Boolean(notif.is_broadcast || type === "broadcast" || type === "info");
+  if (isBroadcast) {
+    const targetRoles = Array.isArray(notif.role_required)
+      ? notif.role_required
+      : Array.isArray(notifData.target_roles)
+      ? notifData.target_roles
+      : typeof (notif as any).role === "string" && (notif as any).role
+      ? [(notif as any).role]
+      : [];
+    const audience = String(notifData.audience || notifData.target_role || "").toLowerCase();
+    const hasFosterTarget =
+      targetRoles.some(
+        (r) =>
+          String(r).toLowerCase() === "foster_family" ||
+          String(r).toLowerCase() === "all" ||
+          String(r).toLowerCase() === "foster"
+      ) ||
+      audience === "foster_family" ||
+      audience === "foster" ||
+      audience === "all";
+
+    return hasFosterTarget;
+  }
+
+  if (
+    title.includes("foster") ||
+    title.includes("vet check") ||
+    title.includes("daily report") ||
+    title.includes("supplies") ||
+    title.includes("placement") ||
+    message.includes("foster placement") ||
+    message.includes("vet check") ||
+    message.includes("daily progress")
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+/**
  * Filter notifications based on role and shelter operational assignment.
  * Enforces strict recipient rules:
  * - Super Admin receives all notifications.
  * - Donor receives ONLY donor-scoped notifications (donations, sponsorships, 80G, contributions, sponsored dogs).
+ * - Foster Family receives ONLY foster-scoped notifications (foster placements, vet checks, supplies, daily logs).
  * - Rescue Centre Admin MUST receive ONLY rescue-operation-related notifications.
  * - Inventory Low Stock alerts MUST NOT be sent/displayed to Vets, Rescue Team, or Adopter/Public users.
  * - Primary recipients: Shelter Manager for the specific shelter, Inventory Manager, Admin.
@@ -374,6 +467,11 @@ export const shouldUserReceiveNotification = (
   // Strict role scoping for Donor: only donor-relevant notifications
   if (role === "donor") {
     return isDonorNotification(notif, user);
+  }
+
+  // Strict role scoping for Foster Family: only foster-relevant notifications
+  if (role === "foster_family") {
+    return isFosterNotification(notif, user);
   }
 
   // Strict role scoping for Rescue Centre Admin: only rescue-operation-related notifications
