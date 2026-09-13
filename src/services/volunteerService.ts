@@ -360,6 +360,8 @@ export const volunteerService = {
     }
     const response = await api.post(`/volunteers/shifts/${shiftId}/assign`, {
       volunteer_id: volunteerId,
+      volunteer_profile_id: volunteerId,
+      profile_id: volunteerId,
     });
     return response.data;
   },
@@ -439,18 +441,78 @@ export const volunteerService = {
     }
   },
 
-  // POST /api/v1/volunteers/applications/{id}/approve - Approve application
+  // POST /api/v1/volunteers/applications/{id}/approve - Approve application & sync profile status
   approveApplication: async (id: string, notes?: string) => {
     const payload = notes ? { notes } : {};
-    const response = await api.post(`/volunteers/applications/${id}/approve`, payload);
-    return response.data;
+    let responseData: any;
+    try {
+      const response = await api.post(`/volunteers/applications/${id}/approve`, payload);
+      responseData = response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 404 || err?.response?.status === 405 || err?.response?.status === 422) {
+        const response = await api.put(`/volunteers/${id}`, { status: "active", ...payload });
+        responseData = response.data;
+      } else {
+        throw err;
+      }
+    }
+
+    // Synchronize corresponding volunteer profile status to active so shift scheduling/join works
+    const profileId =
+      responseData?.volunteer_profile?.id ||
+      responseData?.profile_id ||
+      responseData?.volunteer_profile_id ||
+      responseData?.profile?.id ||
+      responseData?.id ||
+      id;
+
+    if (profileId) {
+      try {
+        await api.put(`/volunteers/${profileId}`, { status: "active" });
+      } catch {
+        // Ignore if profile update endpoint returns 404/no-op
+      }
+    }
+
+    return responseData;
   },
 
-  // POST /api/v1/volunteers/applications/{id}/reject - Reject application
+  // POST /api/v1/volunteers/applications/{id}/reject - Reject application & sync profile status
   rejectApplication: async (id: string, reason?: string) => {
     const payload = reason ? { reason, rejection_reason: reason } : {};
-    const response = await api.post(`/volunteers/applications/${id}/reject`, payload);
-    return response.data;
+    let responseData: any;
+    try {
+      const response = await api.post(`/volunteers/applications/${id}/reject`, payload);
+      responseData = response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 404 || err?.response?.status === 405 || err?.response?.status === 422) {
+        const response = await api.put(`/volunteers/${id}`, {
+          status: "rejected",
+          notes: `Rejected: ${reason || ""}`,
+        });
+        responseData = response.data;
+      } else {
+        throw err;
+      }
+    }
+
+    const profileId =
+      responseData?.volunteer_profile?.id ||
+      responseData?.profile_id ||
+      responseData?.volunteer_profile_id ||
+      responseData?.profile?.id ||
+      responseData?.id ||
+      id;
+
+    if (profileId) {
+      try {
+        await api.put(`/volunteers/${profileId}`, { status: "rejected" });
+      } catch {
+        // Ignore if profile update endpoint returns 404/no-op
+      }
+    }
+
+    return responseData;
   },
 
   // GET /dashboards/volunteer - Volunteer Dashboard summary
@@ -490,6 +552,24 @@ export const volunteerService = {
   extractShiftId: (res: any): string => {
     return extractShiftId(res);
   },
+
+  // Helper to resolve canonical volunteer profile ID across applications/profiles/users
+  getVolunteerProfileId: (vol: any): string => {
+    if (!vol) return "";
+    if (typeof vol === "string") return vol;
+    return String(
+      vol.profile_id ||
+      vol.volunteer_profile_id ||
+      vol.volunteer_id ||
+      (vol.volunteer && (vol.volunteer.profile_id || vol.volunteer.id)) ||
+      vol.id ||
+      ""
+    );
+  },
+};
+
+export const getVolunteerProfileId = (vol: any): string => {
+  return volunteerService.getVolunteerProfileId(vol);
 };
 
 export default volunteerService;

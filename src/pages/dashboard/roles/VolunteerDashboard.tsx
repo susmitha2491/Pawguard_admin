@@ -21,6 +21,7 @@ import { fetchSharedNotifications } from "../../../hooks/useNotifications";
 import { getCurrentUser } from "../../../utils/roleUtils";
 import { useDataSync, notifyDataChanged } from "../../../utils/dataSync";
 import { formatDateTime } from "../../../utils/dateUtils";
+import { extractErrorMessage } from "../../../utils/errorUtils";
 
 type TabKey = "available" | "my_shifts" | "summary" | "notifications";
 
@@ -138,7 +139,8 @@ const VolunteerDashboard = () => {
       fetchVolunteerPortalData();
       notifyDataChanged();
     } catch (err: any) {
-      addToast(err?.response?.data?.detail || err?.message || "Failed to join shift.", "error");
+      const errorMsg = extractErrorMessage(err, "Failed to join shift.");
+      addToast(errorMsg, "error");
     } finally {
       setIsSubmitting(false);
     }

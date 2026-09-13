@@ -194,7 +194,7 @@ export function useExecutiveDashboard() {
     const fostersList = unwrapList(fostersRes.status === "fulfilled" ? fostersRes.value : []);
     const volunteersList = unwrapList(volunteersRes.status === "fulfilled" ? volunteersRes.value : []);
     const donationsList = unwrapList(donationsRes.status === "fulfilled" ? donationsRes.value : []);
-    const inventoryVal = inventoryRes.status === "fulfilled" ? inventoryRes.value : [];
+    const inventoryVal: any = inventoryRes.status === "fulfilled" ? inventoryRes.value : [];
     const inventoryList = unwrapList(inventoryVal?.data ?? inventoryVal);
     const medicalList = unwrapList(medicalRes.status === "fulfilled" ? medicalRes.value : []);
     const financeVal = financeExpensesRes.status === "fulfilled" ? financeExpensesRes.value : [];

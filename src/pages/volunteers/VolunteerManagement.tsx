@@ -388,7 +388,7 @@ const VolunteerManagement = () => {
         ["active", "approved", "onboarded"].includes(String(v.status || "").toLowerCase())
       );
       const targetVol = applications.find(
-        (v) => String(v.id || v.application_id || v.profile_id) === String(volunteerId)
+        (v) => volunteerService.getVolunteerProfileId(v) === String(volunteerId) || String(v.id || v.application_id || v.profile_id) === String(volunteerId)
       );
 
       if (volunteerId && targetVol) {
@@ -399,14 +399,14 @@ const VolunteerManagement = () => {
         }
       }
 
-      const targetVolId = volunteerId || activeVols[0]?.id || activeVols[0]?.profile_id;
+      const resolvedTargetId = volunteerId ? (targetVol ? volunteerService.getVolunteerProfileId(targetVol) : volunteerId) : (activeVols[0] ? volunteerService.getVolunteerProfileId(activeVols[0]) : "");
 
-      if (!targetVolId) {
+      if (!resolvedTargetId) {
         addToast("No active or approved volunteers available to assign to shift.", "error");
         return;
       }
 
-      await volunteerService.joinShift(shiftId, targetVolId);
+      await volunteerService.joinShift(shiftId, resolvedTargetId);
       addToast("Volunteer assigned to shift successfully!", "success");
       fetchShifts();
       notifyDataChanged();

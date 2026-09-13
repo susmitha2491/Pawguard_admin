@@ -15,6 +15,7 @@ import {
 import useNotifications from "../../hooks/useNotifications";
 import type { NotificationItem } from "../../types/auth";
 import { formatDateTime } from "../../utils/dateUtils";
+import { resolveNotificationRoute } from "../../utils/notificationUtils";
 
 const NotificationDropdown = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -48,34 +49,12 @@ const NotificationDropdown = () => {
       void markAsRead(item.id);
     }
     setIsOpen(false);
-    const targetUrl = item.data?.action_url || (item as any).action_url;
-    if (targetUrl) {
-      navigate(targetUrl);
-    } else if (item.type === "medical" || item.type === "medical_reminder") {
-      navigate("/veterinarian-dashboard?tab=shelter_requests");
-    } else if (item.type === "adoption") {
-      navigate("/adoptions");
-    } else if ((item.type as string) === "shelter") {
-      navigate("/shelter-dogs");
-    } else if (
-      item.type === "donation" ||
-      item.type === "donation_completed" ||
-      item.type === "donation_received" ||
-      item.type === "tax_receipt" ||
-      item.type === "80g_receipt" ||
-      item.type === "receipt" ||
-      item.type === "contribution"
-    ) {
-      navigate("/dashboard/donor");
-    } else if (
-      item.type === "sponsorship" ||
-      item.type === "sponsorship_created" ||
-      item.type === "sponsored_dog_update" ||
-      item.type === "sponsored_dog_medical"
-    ) {
-      navigate("/dashboard/donor");
-    } else if (item.type === "donor_profile") {
-      navigate("/dashboard/donor");
+
+    const { route, isValid } = resolveNotificationRoute(item);
+    if (isValid && route) {
+      navigate(route);
+    } else {
+      navigate(`/notifications?id=${item.id}`);
     }
   };
 

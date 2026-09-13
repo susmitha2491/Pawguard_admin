@@ -1074,17 +1074,25 @@ const FosterManagement = () => {
       const formatted: FosterProfileRow[] = list.map((item: any) => {
         const user = item.user || {};
         const name = user.full_name || user.name || user.email || item.foster_name || item.id || "Foster Parent";
+        const statusRaw = String(item.status || item.approval_status || item.foster_status || item.state || "applied").toLowerCase();
+        const bgPassed = item.background_check_passed !== undefined
+          ? Boolean(item.background_check_passed)
+          : String(item.background_check_status || "").toLowerCase() === "cleared" || String(item.background_check_status || "").toLowerCase() === "passed";
+        const homePassed = item.home_inspection_passed !== undefined
+          ? Boolean(item.home_inspection_passed)
+          : String(item.home_inspection_status || "").toLowerCase() === "approved" || String(item.home_inspection_status || "").toLowerCase() === "passed";
+
         return {
-          id: String(item.id || item.profile_id || ""),
+          id: String(item.profile_id || item.foster_profile_id || item.id || ""),
           foster_family: String(name),
-          status: String(item.status || "applied"),
+          status: statusRaw,
           active_count: Number(item.active_count ?? item.placements_count ?? 0),
           max_capacity: Number(item.max_capacity ?? 1),
           is_available: item.is_available !== undefined ? Boolean(item.is_available) : true,
           preferences: item.preferences || "",
           notes: item.notes || "",
-          background_check_passed: Boolean(item.background_check_passed),
-          home_inspection_passed: Boolean(item.home_inspection_passed),
+          background_check_passed: bgPassed,
+          home_inspection_passed: homePassed,
           created_at: item.created_at || item.date || item.updated_at || "",
           user,
           raw: item,
@@ -1340,7 +1348,7 @@ const FosterManagement = () => {
       setIsPlaceModalOpen(false);
       setPlaceForm({ dog_id: "", notes: "" });
       setPlaceTargetProfileId("");
-      fetchFosters();
+      await fetchFosters();
       notifyDataChanged();
     } catch (err: any) {
       const msg = err?.response?.data?.detail || err?.response?.data?.message || "Failed to place dog in foster care.";

@@ -27,6 +27,7 @@ import {
   FaCalendarAlt,
   FaEye,
   FaAward,
+  FaSync,
 } from "react-icons/fa";
 
 const inputStyle: React.CSSProperties = {
@@ -72,26 +73,50 @@ const Certificates = () => {
   const { addToast } = useToast();
   const { has, can } = usePermissions();
 
-  // Authenticated user / veterinarian info
+  // Authenticated user & RBAC permissions
   const currentUser = useMemo(() => getStoredUser<Record<string, unknown>>(), []);
-  const isVeterinarian = useMemo(() => normalizeRole(currentUser) === "veterinarian", [currentUser]);
+  const currentUserRole = useMemo(() => normalizeRole(currentUser), [currentUser]);
+  const isVeterinarian = currentUserRole === "veterinarian";
+  const isSuperAdmin = currentUserRole === "super_admin";
+  const isRescueCentreAdmin = currentUserRole === "rescue_centre_admin";
+
+  const canExportMedicalReport =
+    isSuperAdmin ||
+    isVeterinarian ||
+    isRescueCentreAdmin ||
+    has("export_medical") ||
+    has("manage_medical") ||
+    can("export", "medical") ||
+    can("export", "reports");
 
   const canCreateAdoptionCert =
-    !isVeterinarian &&
-    (has("create_adoptions") ||
-      has("manage_adoptions") ||
-      has("create_adoption") ||
-      has("approve_adoptions") ||
-      can("create", "adoptions") ||
-      can("approve", "adoptions"));
+    isSuperAdmin ||
+    (!isVeterinarian &&
+      (has("create_adoptions") ||
+        has("manage_adoptions") ||
+        has("create_adoption") ||
+        has("approve_adoptions") ||
+        can("create", "adoptions") ||
+        can("approve", "adoptions")));
 
   const canCreateHealthCert =
+    isSuperAdmin ||
     isVeterinarian ||
     has("create_medical") ||
     has("manage_medical") ||
     has("create_certificates") ||
     can("create", "medical") ||
     can("create", "certificates");
+
+  // Data & Export states
+  const [certData, setCertData] = useState<CertificateRecord[]>([]);
+  const [dogs, setDogs] = useState<any[]>([]);
+  const [exams, setExams] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
   const vetDisplayName = useMemo(() => {
     if (!currentUser) return "Dr. Authenticated Veterinarian";
     const firstName = currentUser.first_name ? String(currentUser.first_name).trim() : "";
@@ -108,13 +133,6 @@ const Certificates = () => {
     }
     return "Dr. Attending Veterinarian";
   }, [currentUser]);
-
-  // Data states
-  const [certData, setCertData] = useState<CertificateRecord[]>([]);
-  const [dogs, setDogs] = useState<any[]>([]);
-  const [exams, setExams] = useState<any[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Modals state
   const [isAdoptionModalOpen, setIsAdoptionModalOpen] = useState(false);
@@ -283,13 +301,6 @@ const Certificates = () => {
       addToast("Please select an eligible dog.", "error");
       return;
     }
-    if (selectedDogExams.length === 0) {
-      addToast(
-        "Cannot issue certificate: Dog must have a completed Medical Assessment first.",
-        "error"
-      );
-      return;
-    }
 
     try {
       setIsSubmitting(true);
@@ -364,12 +375,29 @@ const Certificates = () => {
   };
 
   const handlePrintCertificates = async () => {
+    if (!canExportMedicalReport) {
+      addToast("You do not have permission to export medical clearance reports.", "error");
+      return;
+    }
+    if (isExporting) return;
+
     try {
-      addToast("Exporting medical clearance report (PDF)...", "info");
-      await reportsService.generateAndDownloadReport({ report_type: "medical", format: "pdf" });
-      addToast("Certificates report exported!", "success");
+      setIsExporting(true);
+      setExportError(null);
+      addToast("Generating medical clearance summary PDF...", "info");
+
+      await reportsService.generateAndDownloadReport({
+        report_type: "medical",
+        format: "pdf",
+      });
+
+      addToast("Medical Clearance Summary PDF downloaded successfully!", "success");
     } catch (err: any) {
-      addToast(err?.message || "Failed to export certificates.", "error");
+      const msg = err?.message || "Failed to export medical clearance report.";
+      setExportError(msg);
+      addToast(msg, "error");
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -608,14 +636,57 @@ const Certificates = () => {
             onClick={() => setIsHealthModalOpen(true)}
           />
         )}
-        <QuickActionCard
-          icon={<FaPrint />}
-          title="Export Medical Report"
-          subtitle="Download clearance summary PDF"
-          color="#6366F1"
-          onClick={handlePrintCertificates}
-        />
+        {canExportMedicalReport && (
+          <QuickActionCard
+            icon={isExporting ? <FaSync className="fa-spin" /> : <FaPrint />}
+            title={isExporting ? "Exporting PDF..." : "Export Medical Report"}
+            subtitle={exportError ? "Export Failed — Click to Retry" : "Download clearance summary PDF"}
+            color={exportError ? "#DC2626" : "#6366F1"}
+            onClick={handlePrintCertificates}
+          />
+        )}
       </div>
+
+      {exportError && (
+        <div
+          style={{
+            marginBottom: "20px",
+            padding: "12px 16px",
+            borderRadius: "10px",
+            background: "#FEF2F2",
+            border: "1px solid #FCA5A5",
+            color: "#991B1B",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            fontSize: "13px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <FaExclamationTriangle color="#DC2626" />
+            <span>
+              <strong>Medical Report Export Failed:</strong> {exportError}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handlePrintCertificates}
+            disabled={isExporting}
+            style={{
+              padding: "6px 14px",
+              borderRadius: "6px",
+              background: "#DC2626",
+              color: "#FFF",
+              border: "none",
+              fontWeight: 600,
+              fontSize: "12px",
+              cursor: "pointer",
+            }}
+          >
+            {isExporting ? "Retrying..." : "Retry Export"}
+          </button>
+        </div>
+      )}
 
       {/* Summary Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "24px" }}>
@@ -894,16 +965,16 @@ const Certificates = () => {
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || !healthForm.dogId || selectedDogExams.length === 0}
+                disabled={isSubmitting || !healthForm.dogId}
                 style={{
                   padding: "10px 20px",
                   borderRadius: "8px",
                   border: "none",
-                  background: !healthForm.dogId || selectedDogExams.length === 0 ? "#94A3B8" : "#10B981",
+                  background: !healthForm.dogId ? "#94A3B8" : "#10B981",
                   color: "#FFF",
                   fontWeight: 700,
                   fontSize: "14px",
-                  cursor: !healthForm.dogId || selectedDogExams.length === 0 ? "not-allowed" : "pointer",
+                  cursor: !healthForm.dogId ? "not-allowed" : "pointer",
                   display: "inline-flex",
                   alignItems: "center",
                   gap: "8px",

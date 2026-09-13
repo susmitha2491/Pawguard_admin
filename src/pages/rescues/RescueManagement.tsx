@@ -931,13 +931,6 @@ const RescueManagement = () => {
     e.preventDefault();
     if (!selectedCase || !statusForm.status) return;
 
-    // If user selected "dispatched", route to the existing dispatch team assignment workflow
-    if (statusForm.status === "dispatched") {
-      setIsStatusUpdateOpen(false);
-      handleOpenAssignModal(selectedCase);
-      return;
-    }
-
     try {
       setIsSubmitting(true);
       await rescueService.updateRescueStatus(selectedCase.id, statusForm.status, {

@@ -305,7 +305,7 @@ const Finance = () => {
       setSponsorships(sponRes.status === "fulfilled" ? sponRes.value?.data || sponRes.value || [] : []);
       setCampaigns(campRes.status === "fulfilled" ? campRes.value?.data || campRes.value || [] : []);
       setExpenses(expRes.status === "fulfilled" ? expRes.value?.data || expRes.value || [] : []);
-      setRequisitions(reqRes.status === "fulfilled" ? (Array.isArray(reqRes.value) ? reqRes.value : reqRes.value?.data || []) : []);
+      setRequisitions(reqRes.status === "fulfilled" ? (Array.isArray(reqRes.value) ? reqRes.value : (reqRes.value as any)?.data || []) : []);
       setDonors(donorsRes.status === "fulfilled" ? donorsRes.value?.data || donorsRes.value || [] : []);
 
       // Unpack aggregate KPIs from authoritative backend response

@@ -21,7 +21,9 @@ import {
 import { useNotifications } from "../../hooks/useNotifications";
 import { useToast } from "../../context/ToastContext";
 import SendNotificationModal from "../../components/notifications/SendNotificationModal";
+import NotificationDetailModal from "../../components/notifications/NotificationDetailModal";
 import { formatDateTime } from "../../utils/dateUtils";
+import type { NotificationItem } from "../../types/auth";
 
 const typeIcon: Record<string, React.ReactNode> = {
   emergency: <FaExclamationTriangle />,
@@ -64,6 +66,9 @@ const Notifications = () => {
   const navigate = useNavigate();
 
   const [isSendModalOpen, setIsSendModalOpen] = useState(() => searchParams.get("action") === "send");
+  const [selectedNotification, setSelectedNotification] = useState<NotificationItem | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+
   const { addToast } = useToast();
 
   // Inbox Notifications state
@@ -82,27 +87,32 @@ const Notifications = () => {
     if (searchParams.get("action") === "send") {
       window.history.replaceState({}, "", window.location.pathname);
     }
-  }, [searchParams]);
+    const notifId = searchParams.get("id");
+    if (notifId && notifications.length > 0) {
+      const match = notifications.find((n) => n.id === notifId);
+      if (match) {
+        setSelectedNotification(match);
+        setIsDetailModalOpen(true);
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+    }
+  }, [searchParams, notifications]);
 
   // Handle Inbox Notification Actions
-  const handleOpenInboxItem = async (n: any) => {
+  const handleOpenInboxItem = async (n: NotificationItem) => {
     try {
       if (!n.read) {
         await markAsRead(n.id);
       }
-      const targetUrl = n.data?.action_url || n.action_url;
-      if (targetUrl) {
-        navigate(targetUrl);
-      } else if (n.type === "medical") {
-        navigate("/veterinarian-dashboard?tab=shelter_requests");
-      } else if (n.type === "adoption") {
-        navigate("/adoptions");
-      } else if (n.type === "shelter") {
-        navigate("/shelter-dogs");
-      }
     } catch {
-      /* ignore */
+      /* ignore mark error */
     }
+    setSelectedNotification(n);
+    setIsDetailModalOpen(true);
+  };
+
+  const handleNavigateToEntity = (route: string) => {
+    navigate(route);
   };
 
   const handleDeleteInboxItem = async (id: string) => {
@@ -279,6 +289,24 @@ const Notifications = () => {
 
       {/* Send Notification Modal */}
       <SendNotificationModal isOpen={isSendModalOpen} onClose={() => setIsSendModalOpen(false)} />
+
+      {/* Notification Detail Modal */}
+      <NotificationDetailModal
+        isOpen={isDetailModalOpen}
+        onClose={() => setIsDetailModalOpen(false)}
+        notification={selectedNotification}
+        onNavigateToEntity={handleNavigateToEntity}
+        onMarkAsRead={async (id) => {
+          try {
+            await markAsRead(id);
+            if (selectedNotification && selectedNotification.id === id) {
+              setSelectedNotification({ ...selectedNotification, read: true });
+            }
+          } catch {
+            /* ignore */
+          }
+        }}
+      />
     </div>
   );
 };

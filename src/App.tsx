@@ -31,6 +31,7 @@ import VolunteerManagement from "./pages/volunteers/VolunteerManagement";
 import LostAndFound from "./pages/lostfound/LostAndFound";
 import VehicleManagement from "./pages/vehicles/VehicleManagement";
 import Notifications from "./pages/notifications/Notifications";
+import NotFoundFallback from "./pages/common/NotFoundFallback";
 
 import CmsLayout from "./pages/cms/CmsLayout";
 import CmsHomeView from "./pages/cms/CmsHomeView";
@@ -465,6 +466,9 @@ function App() {
             >
               <Route path="/certificates" element={<Certificates />} />
             </Route>
+
+            {/* Catch-all fallback route inside AdminLayout */}
+            <Route path="*" element={<NotFoundFallback />} />
           </Route>
         </Route>
       </Routes>

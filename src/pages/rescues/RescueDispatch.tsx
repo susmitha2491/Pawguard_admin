@@ -80,8 +80,8 @@ const RescueDispatch = () => {
   const isRescueCoordinator = currentUserRole === "rescue_coordinator";
   const isRescueAgent = currentUserRole === "rescue_agent";
 
-  const canManageDispatch = isSuperAdmin || isRescueCoordinator;
-  const canUpdateStatus = isSuperAdmin || isRescueCoordinator || isRescueAgent;
+  const canManageDispatch = isSuperAdmin || isRescueCoordinator || isRescueCentreAdmin;
+  const canUpdateStatus = isSuperAdmin || isRescueCentreAdmin || isRescueCoordinator || isRescueAgent;
 
   const [dispatches, setDispatches] = useState<EnrichedDispatch[]>([]);
   const [rescueCases, setRescueCases] = useState<Record<string, unknown>[]>([]);
@@ -259,10 +259,6 @@ const RescueDispatch = () => {
   // Create New Dispatch Action
   const handleCreateDispatch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isRescueCentreAdmin) {
-      addToast("Dispatch creation and team assignment are reserved for Rescue Coordinators.", "error");
-      return;
-    }
     if (!newDispatchForm.case_id) {
       addToast("Please select a verified rescue case to dispatch.", "error");
       return;
@@ -300,13 +296,23 @@ const RescueDispatch = () => {
   };
 
   // Status Change Action (Start, En Route, Arrived, Complete)
-  const handleStatusChange = async (dispatchId: string, nextStatus: string, successMessage: string) => {
-    if (isRescueCentreAdmin) {
-      addToast("Field operation status updates are performed by Rescue Agents and Rescue Coordinators.", "error");
-      return;
-    }
+  const handleStatusChange = async (dispatchId: string, nextStatus: string, successMessage: string, caseId?: string) => {
     try {
-      const res = await rescueService.updateDispatchStatus(dispatchId, nextStatus);
+      setIsSubmitting(true);
+      let res: any;
+      if (nextStatus === "en_route") {
+        res = await rescueService.markEnRoute(dispatchId);
+        if (caseId) {
+          await rescueService.updateRescueStatus(caseId, "en_route").catch(() => {});
+          await rescueService.startTracking(caseId).catch(() => {});
+        }
+      } else {
+        res = await rescueService.updateDispatchStatus(dispatchId, nextStatus);
+        if (caseId) {
+          await rescueService.updateRescueStatus(caseId, nextStatus).catch(() => {});
+        }
+      }
+
       const resObj = res?.data || res || {};
       const dogId = resObj.dog_id || resObj.id || resObj.pet_id;
 
@@ -321,11 +327,13 @@ const RescueDispatch = () => {
         addToast(successMessage, "success");
       }
 
-      fetchAll();
+      await fetchAll();
       notifyDataChanged();
     } catch (err: unknown) {
       const errMsg = extractErrorMessage(err, "Failed to update dispatch status");
       addToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -523,14 +531,13 @@ const RescueDispatch = () => {
             style={{ width: "100%", padding: "6px 12px", borderRadius: "6px", border: "1px solid #93C5FD", background: "#EFF6FF", color: "#1D4ED8", fontSize: "12px", fontWeight: 700, cursor: "pointer", textAlign: "center" }}
           >
             View Details
-          </button>
-
-          {/* Operational Status Actions */}
+          </button>          {/* Operational Status Actions */}
           {canUpdateStatus && ["awaiting_dispatch", "pending", "created"].includes(row.dispatch_status) && (
             <button
               type="button"
-              onClick={() => handleStatusChange(row.id, "dispatched", "Dispatch started! Team notified.")}
-              style={{ width: "100%", padding: "6px 12px", borderRadius: "6px", border: "none", background: "#2563EB", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", textAlign: "center" }}
+              disabled={isSubmitting}
+              onClick={() => handleStatusChange(row.id, "dispatched", "Dispatch started! Team notified.", row.case_id)}
+              style={{ width: "100%", padding: "6px 12px", borderRadius: "6px", border: "none", background: "#2563EB", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: isSubmitting ? "not-allowed" : "pointer", textAlign: "center" }}
             >
               Start Dispatch
             </button>
@@ -539,8 +546,9 @@ const RescueDispatch = () => {
           {canUpdateStatus && row.dispatch_status === "dispatched" && (
             <button
               type="button"
-              onClick={() => handleStatusChange(row.id, "en_route", "Team marked as En Route.")}
-              style={{ width: "100%", padding: "6px 12px", borderRadius: "6px", border: "none", background: "#7C3AED", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", textAlign: "center" }}
+              disabled={isSubmitting}
+              onClick={() => handleStatusChange(row.id, "en_route", "Team marked as En Route.", row.case_id)}
+              style={{ width: "100%", padding: "6px 12px", borderRadius: "6px", border: "none", background: "#7C3AED", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: isSubmitting ? "not-allowed" : "pointer", textAlign: "center" }}
             >
               Mark En Route
             </button>
@@ -549,8 +557,9 @@ const RescueDispatch = () => {
           {canUpdateStatus && row.dispatch_status === "en_route" && (
             <button
               type="button"
-              onClick={() => handleStatusChange(row.id, "arrived", "Team marked as Arrived at Scene.")}
-              style={{ width: "100%", padding: "6px 12px", borderRadius: "6px", border: "none", background: "#0891B2", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", textAlign: "center" }}
+              disabled={isSubmitting}
+              onClick={() => handleStatusChange(row.id, "arrived", "Team marked as Arrived at Scene.", row.case_id)}
+              style={{ width: "100%", padding: "6px 12px", borderRadius: "6px", border: "none", background: "#0891B2", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: isSubmitting ? "not-allowed" : "pointer", textAlign: "center" }}
             >
               Mark Arrived
             </button>
@@ -559,8 +568,9 @@ const RescueDispatch = () => {
           {canUpdateStatus && ["arrived", "located", "secured", "in_progress", "on_scene"].includes(row.dispatch_status) && (
             <button
               type="button"
-              onClick={() => handleStatusChange(row.id, "completed", "Rescue operation marked Completed!")}
-              style={{ width: "100%", padding: "6px 12px", borderRadius: "6px", border: "none", background: "#10B981", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: "pointer", textAlign: "center" }}
+              disabled={isSubmitting}
+              onClick={() => handleStatusChange(row.id, "completed", "Rescue operation marked Completed!", row.case_id)}
+              style={{ width: "100%", padding: "6px 12px", borderRadius: "6px", border: "none", background: "#10B981", color: "#FFFFFF", fontSize: "12px", fontWeight: 700, cursor: isSubmitting ? "not-allowed" : "pointer", textAlign: "center" }}
             >
               Mark Completed
             </button>
@@ -954,6 +964,22 @@ const RescueDispatch = () => {
                   <FaInfoCircle size={12} style={{ marginRight: "6px" }} /> Dispatch Notes / Equipment:
                 </strong>
                 <span style={{ fontSize: "13px", color: "#475569" }}>{selectedDispatch.notes}</span>
+              </div>
+            )}
+
+            {canUpdateStatus && selectedDispatch.dispatch_status === "dispatched" && (
+              <div style={{ marginTop: "12px", display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={async () => {
+                    await handleStatusChange(selectedDispatch.id, "en_route", "Team marked as En Route.", selectedDispatch.case_id);
+                    setIsViewModalOpen(false);
+                  }}
+                  style={{ padding: "8px 16px", borderRadius: "6px", background: "#7C3AED", color: "#FFF", border: "none", fontWeight: 700, fontSize: "13px", cursor: isSubmitting ? "not-allowed" : "pointer" }}
+                >
+                  Mark En Route
+                </button>
               </div>
             )}
           </div>

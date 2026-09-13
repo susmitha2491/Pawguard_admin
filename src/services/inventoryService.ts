@@ -1,5 +1,9 @@
+import axios from "axios";
 import api from "../api/axios";
 import { publishActionEvent } from "../utils/eventSystem";
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 
 export type ItemCategory = "pharmaceutical" | "vaccine" | "food" | "consumable" | "gear" | "office";
 export type MovementType = "check_in" | "check_out" | "consumption" | "adjustment";
@@ -127,13 +131,44 @@ export const inventoryService = {
     return response.data?.data ?? response.data;
   },
 
-  // GET /inventory/items - List inventory (paginated)
-  getInventory: async (params?: InventoryFilters) => {
-    const response = await api.get("/inventory/items", { params });
-    const body = response.data;
-    const raw = Array.isArray(body) ? body : body?.data ?? body?.items ?? [];
-    const rows = Array.isArray(raw) ? raw.map(normalizeInventoryRow) : [];
-    return { ...body, data: rows, total: body?.meta?.total ?? body?.total ?? rows.length };
+  // GET /inventory/items - List inventory (paginated with fallback to /inventory and /dashboards/inventory)
+  getInventory: async (params?: InventoryFilters): Promise<{ data: any[]; total: number; [key: string]: any }> => {
+    const candidateEndpoints = [
+      "/inventory/items",
+      "/inventory",
+      "/dashboards/inventory",
+    ];
+
+    let lastError: unknown = null;
+    for (const endpoint of candidateEndpoints) {
+      try {
+        const response = await api.get(endpoint, { params });
+        const body = response.data;
+        const raw = Array.isArray(body)
+          ? body
+          : body?.data ?? body?.items ?? body?.inventory ?? [];
+        const rows = Array.isArray(raw) ? raw.map(normalizeInventoryRow) : [];
+        if (rows.length > 0 || candidateEndpoints.indexOf(endpoint) === candidateEndpoints.length - 1) {
+          return {
+            ...asRecord(body),
+            data: rows,
+            total: Number(body?.meta?.total ?? body?.total ?? body?.count ?? rows.length),
+          };
+        }
+      } catch (err: unknown) {
+        if (axios.isAxiosError(err) && (err.response?.status === 404 || err.response?.status === 204)) {
+          lastError = err;
+          continue;
+        }
+        lastError = err;
+      }
+    }
+
+    if (axios.isAxiosError(lastError) && (lastError.response?.status === 404 || lastError.response?.status === 204)) {
+      return { data: [], total: 0 };
+    }
+
+    throw lastError || new Error("Failed to load inventory items.");
   },
 
   // GET /inventory/items/{item_id}
@@ -247,9 +282,27 @@ export const inventoryService = {
   },
 
   // GET /inventory/requisitions
-  getRequisitions: async (params?: { status?: RequisitionStatus; page?: number; page_size?: number }) => {
-    const response = await api.get("/inventory/requisitions", { params });
-    return response.data;
+  getRequisitions: async (params?: { status?: RequisitionStatus; page?: number; page_size?: number }): Promise<any[]> => {
+    const candidateEndpoints = ["/inventory/requisitions", "/requisitions"];
+    let lastError: unknown = null;
+    for (const endpoint of candidateEndpoints) {
+      try {
+        const response = await api.get(endpoint, { params });
+        const body = response.data;
+        const raw = Array.isArray(body) ? body : body?.data ?? body?.items ?? body?.requisitions ?? [];
+        return Array.isArray(raw) ? raw : [];
+      } catch (err) {
+        if (axios.isAxiosError(err) && (err.response?.status === 404 || err.response?.status === 204)) {
+          lastError = err;
+          continue;
+        }
+        lastError = err;
+      }
+    }
+    if (axios.isAxiosError(lastError) && (lastError.response?.status === 404 || lastError.response?.status === 204)) {
+      return [];
+    }
+    return [];
   },
 
   // PUT /inventory/requisitions/{req_id}/status (RequisitionStatusUpdate)
@@ -290,11 +343,27 @@ export const inventoryService = {
 
   // Supplier Management APIs
   // GET /inventory/suppliers
-  getSuppliers: async (params?: { search?: string; is_active?: boolean; page?: number; page_size?: number }) => {
-    const response = await api.get("/inventory/suppliers", { params });
-    const body = response.data;
-    const raw = Array.isArray(body) ? body : body?.data ?? body?.items ?? [];
-    return { ...body, data: raw };
+  getSuppliers: async (params?: { search?: string; is_active?: boolean; page?: number; page_size?: number }): Promise<{ data: any[]; [key: string]: any }> => {
+    const candidateEndpoints = ["/inventory/suppliers", "/suppliers"];
+    let lastError: unknown = null;
+    for (const endpoint of candidateEndpoints) {
+      try {
+        const response = await api.get(endpoint, { params });
+        const body = response.data;
+        const raw = Array.isArray(body) ? body : body?.data ?? body?.items ?? body?.suppliers ?? [];
+        return { ...asRecord(body), data: Array.isArray(raw) ? raw : [] };
+      } catch (err) {
+        if (axios.isAxiosError(err) && (err.response?.status === 404 || err.response?.status === 204)) {
+          lastError = err;
+          continue;
+        }
+        lastError = err;
+      }
+    }
+    if (axios.isAxiosError(lastError) && (lastError.response?.status === 404 || lastError.response?.status === 204)) {
+      return { data: [] };
+    }
+    return { data: [] };
   },
 
   // GET /inventory/suppliers/{id}

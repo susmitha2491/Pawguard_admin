@@ -19,6 +19,7 @@ import {
   FaHistory,
 } from "react-icons/fa";
 import inventoryService, {
+  normalizeInventoryRow,
   type ItemCategory,
   type MovementType,
   type RequisitionStatus,
@@ -191,25 +192,42 @@ const Inventory = () => {
     try {
       setLoading(true);
       setError(null);
-      const [invRes, reqRes, supRes] = await Promise.allSettled([
+      const [invRes, reqRes, supRes, dashRes] = await Promise.allSettled([
         inventoryService.getInventory(),
         inventoryService.getRequisitions(),
         inventoryService.getSuppliers(),
+        inventoryService.getInventoryDashboard(),
       ]);
 
-      if (invRes.status === "fulfilled") {
-        setInventory(invRes.value?.data || []);
+      let items: InventoryRow[] = [];
+      if (invRes.status === "fulfilled" && Array.isArray(invRes.value?.data) && invRes.value.data.length > 0) {
+        items = invRes.value.data;
+      } else if (dashRes.status === "fulfilled" && dashRes.value) {
+        const dashData = dashRes.value?.data || dashRes.value;
+        const raw = Array.isArray(dashData?.items)
+          ? dashData.items
+          : Array.isArray(dashData?.inventory)
+          ? dashData.inventory
+          : Array.isArray(dashData)
+          ? dashData
+          : [];
+        items = raw.map((r: any) => normalizeInventoryRow(r));
+      } else if (invRes.status === "fulfilled" && Array.isArray(invRes.value?.data)) {
+        items = invRes.value.data;
       }
+
+      setInventory(items);
+
       if (reqRes.status === "fulfilled") {
-        const raw = Array.isArray(reqRes.value) ? reqRes.value : reqRes.value?.data ?? [];
-        setRequisitions(raw);
+        const raw = Array.isArray(reqRes.value) ? reqRes.value : (reqRes.value as any)?.data ?? [];
+        setRequisitions(Array.isArray(raw) ? raw : []);
       }
       if (supRes.status === "fulfilled") {
-        const raw = Array.isArray(supRes.value) ? supRes.value : supRes.value?.data ?? [];
-        setSuppliers(raw);
+        const raw = Array.isArray(supRes.value) ? supRes.value : (supRes.value as any)?.data ?? [];
+        setSuppliers(Array.isArray(raw) ? raw : []);
       }
     } catch (err: any) {
-      setError(err?.response?.data?.detail || "Failed to load inventory dataset.");
+      setError(err?.response?.data?.detail || err?.message || "Failed to load inventory dataset.");
     } finally {
       setLoading(false);
     }
@@ -537,6 +555,10 @@ const Inventory = () => {
           columns={columns}
           data={paginatedInventory}
           module="inventory"
+          loading={loading}
+          error={error}
+          onRetry={() => void fetchInventoryData()}
+          emptyMessage="No matching inventory records found."
           serverMode={true}
           totalCount={filteredInventory.length}
           page={page}

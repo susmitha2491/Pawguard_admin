@@ -159,6 +159,36 @@ export const rescueService = {
       if (options?.rejection_rationale) payload.rejection_rationale = options.rejection_rationale;
       const res = await api.post(`/rescue/${requestId}/verify`, payload);
       responseData = res.data;
+    } else if (normalizedStatus === "dispatched") {
+      const caseRes = await api.get(`/rescue/${requestId}`).catch(() => null);
+      const cData = caseRes?.data?.data || caseRes?.data;
+      const dId = cData?.dispatch?.id || cData?.dispatch_id || cData?.dispatch?.dispatch_id;
+
+      if (dId) {
+        const res = await api.patch(`/rescue/dispatches/${dId}`, { status: "dispatched", notes: options?.notes });
+        responseData = res.data;
+      } else {
+        try {
+          const payload: Record<string, unknown> = {};
+          if (options?.notes) payload.equipment_details = options.notes;
+          const res = await api.post(`/rescue/${requestId}/dispatch`, payload);
+          responseData = res.data;
+        } catch (err: any) {
+          if (err?.response?.status === 409) {
+            const reFetch = await api.get(`/rescue/${requestId}`);
+            const reData = reFetch.data?.data || reFetch.data;
+            const reId = reData?.dispatch?.id || reData?.dispatch_id || reData?.dispatch?.dispatch_id;
+            if (reId) {
+              const res = await api.patch(`/rescue/dispatches/${reId}`, { status: "dispatched", notes: options?.notes });
+              responseData = res.data;
+            } else {
+              throw err;
+            }
+          } else {
+            throw err;
+          }
+        }
+      }
     } else if (normalizedStatus === "en_route") {
       const dispatchId = (options as any)?.dispatch_id;
       if (dispatchId) {
@@ -332,22 +362,64 @@ export const rescueService = {
 
     if (data.notes) payload.equipment_details = data.notes;
 
-    const response = await api.post(`/rescue/${requestId}/dispatch`, payload);
-    await publishActionEvent({
-      module: "rescue",
-      action: "assign",
-      title: "Rescue Vehicle Dispatched",
-      message: `Dispatch team assigned for rescue request ${requestId}.`,
-      targetRoles: ["super_admin", "rescue_centre_admin", "rescue_coordinator", "rescue_agent"],
-    });
-    return response.data;
+    try {
+      const response = await api.post(`/rescue/${requestId}/dispatch`, payload);
+      await publishActionEvent({
+        module: "rescue",
+        action: "assign",
+        title: "Rescue Vehicle Dispatched",
+        message: `Dispatch team assigned for rescue request ${requestId}.`,
+        targetRoles: ["super_admin", "rescue_centre_admin", "rescue_coordinator", "rescue_agent"],
+      });
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 409) {
+        // Dispatch record already exists for this case: update the existing dispatch record via PATCH /rescue/dispatches/{dispatch_id}
+        const caseRes = await api.get(`/rescue/${requestId}`);
+        const cData = caseRes.data?.data || caseRes.data;
+        const dId = cData?.dispatch?.id || cData?.dispatch_id || cData?.dispatch?.dispatch_id;
+        if (dId) {
+          const patchPayload: Record<string, unknown> = {
+            status: "dispatched",
+            ...payload,
+          };
+          const response = await api.patch(`/rescue/dispatches/${dId}`, patchPayload);
+          await publishActionEvent({
+            module: "rescue",
+            action: "assign",
+            title: "Rescue Dispatch Updated",
+            message: `Dispatch team updated for rescue request ${requestId}.`,
+            targetRoles: ["super_admin", "rescue_centre_admin", "rescue_coordinator", "rescue_agent"],
+          });
+          return response.data;
+        }
+      }
+      throw err;
+    }
   },
 
-  // PATCH /rescue/dispatches/{dispatch_id} - Mark En Route
+  // PATCH /rescue/dispatches/{dispatch_id} - Mark En Route (with POST /dispatches/{dispatch_id}/en-route fallback)
   markEnRoute: async (dispatchId: string) => {
-    const response = await api.patch(`/rescue/dispatches/${dispatchId}`, {
-      status: "en_route",
-    });
+    let responseData: any;
+    try {
+      const response = await api.patch(`/rescue/dispatches/${dispatchId}`, {
+        status: "en_route",
+      });
+      responseData = response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 404 || err?.response?.status === 405) {
+        try {
+          const response = await api.post(`/dispatches/${dispatchId}/en-route`);
+          responseData = response.data;
+        } catch {
+          const response = await api.post(`/rescue/dispatches/${dispatchId}/en-route`);
+          responseData = response.data;
+        }
+      } else {
+        throw err;
+      }
+    }
+
     await publishActionEvent({
       module: "rescue",
       action: "update",
@@ -355,23 +427,40 @@ export const rescueService = {
       message: `Field responder marked En Route for dispatch ${dispatchId}.`,
       targetRoles: ["super_admin", "rescue_centre_admin", "rescue_coordinator", "rescue_agent"],
     });
-    return response.data;
+    return responseData;
   },
 
   // PATCH /rescue/dispatches/{dispatch_id} - RescueDispatchUpdate
   updateDispatchStatus: async (dispatchId: string, status: string) => {
     const normalized = String(status || "").toLowerCase();
-    const response = await api.patch(`/rescue/dispatches/${dispatchId}`, {
-      status: normalized,
-    });
+    let responseData: any;
+    try {
+      const response = await api.patch(`/rescue/dispatches/${dispatchId}`, {
+        status: normalized,
+      });
+      responseData = response.data;
+    } catch (err: any) {
+      if ((err?.response?.status === 404 || err?.response?.status === 405) && normalized === "en_route") {
+        try {
+          const response = await api.post(`/dispatches/${dispatchId}/en-route`);
+          responseData = response.data;
+        } catch {
+          const response = await api.post(`/rescue/dispatches/${dispatchId}/en-route`);
+          responseData = response.data;
+        }
+      } else {
+        throw err;
+      }
+    }
+
     await publishActionEvent({
       module: "rescue",
       action: "update",
       title: "Dispatch Progress Updated",
       message: `Field agent confirmed status update (${normalized}) for dispatch ${dispatchId}.`,
-      targetRoles: ["super_admin", "rescue_coordinator", "rescue_agent"],
+      targetRoles: ["super_admin", "rescue_centre_admin", "rescue_coordinator", "rescue_agent"],
     });
-    return response.data;
+    return responseData;
   },
 
   updateDispatch: async (dispatchId: string, payload: Record<string, unknown>) => {

@@ -238,7 +238,7 @@ const VetAppointments = () => {
       const list = Array.isArray(res?.data) ? res.data : [];
       setAppointments(list);
       setApptPage(pageNum);
-      const total = Number((res?.meta as Record<string, unknown>)?.total || list.length);
+      const total = Number((res?.meta as Record<string, unknown>)?.total ?? list.length);
       setApptTotal(total);
 
       // Collect all distinct owner/user UUIDs to resolve real names dynamically

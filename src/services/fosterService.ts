@@ -270,15 +270,37 @@ export const fosterService = {
 
   // POST /fosters/{profile_id}/placements - Place dog with foster parent (Direct Dedicated Endpoint)
   placeDog: async (profileId: string, data: FosterPlacementPayload) => {
-    const response = await api.post(`/fosters/${profileId}/placements`, data);
-    await publishActionEvent({
-      module: "foster",
-      action: "create",
-      title: "Dog Placed in Foster Care",
-      message: `Dog ${data.dog_id} placed with foster profile ${profileId}.`,
-      targetRoles: ["super_admin", "foster_coordinator", "shelter_manager", "rescue_centre_admin"],
-    });
-    return response.data;
+    const payload: Record<string, unknown> = {
+      foster_profile_id: profileId,
+      profile_id: profileId,
+      dog_id: data.dog_id,
+    };
+    if (data.notes) payload.notes = data.notes;
+
+    try {
+      const response = await api.post(`/fosters/${profileId}/placements`, payload);
+      await publishActionEvent({
+        module: "foster",
+        action: "create",
+        title: "Dog Placed in Foster Care",
+        message: `Dog ${data.dog_id} placed with foster profile ${profileId}.`,
+        targetRoles: ["super_admin", "foster_coordinator", "shelter_manager", "rescue_centre_admin"],
+      });
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 404 || err?.response?.status === 405) {
+        const response = await api.post("/fosters/placements", payload);
+        await publishActionEvent({
+          module: "foster",
+          action: "create",
+          title: "Dog Placed in Foster Care",
+          message: `Dog ${data.dog_id} placed with foster profile ${profileId}.`,
+          targetRoles: ["super_admin", "foster_coordinator", "shelter_manager", "rescue_centre_admin"],
+        });
+        return response.data;
+      }
+      throw err;
+    }
   },
 
   // Alias for placeDog

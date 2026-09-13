@@ -1,3 +1,4 @@
+import axios from "axios";
 import api from "../api/axios";
 import { publishActionEvent } from "../utils/eventSystem";
 
@@ -5,10 +6,29 @@ const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 
 const unwrapList = (res: unknown): Record<string, unknown>[] => {
-  const body = asRecord(res).data;
+  const resObj = asRecord(res);
+  const body = resObj.data !== undefined ? resObj.data : resObj;
   if (Array.isArray(body)) return body as Record<string, unknown>[];
-  const inner = asRecord(body).data;
-  return Array.isArray(inner) ? (inner as Record<string, unknown>[]) : [];
+
+  const recBody = asRecord(body);
+  const candidates = [
+    recBody.data,
+    recBody.items,
+    recBody.results,
+    recBody.appointments,
+    recBody.clinics,
+    recBody.veterinarians,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate as Record<string, unknown>[];
+    const innerRec = asRecord(candidate);
+    if (Array.isArray(innerRec.data)) return innerRec.data as Record<string, unknown>[];
+    if (Array.isArray(innerRec.items)) return innerRec.items as Record<string, unknown>[];
+    if (Array.isArray(innerRec.results)) return innerRec.results as Record<string, unknown>[];
+    if (Array.isArray(innerRec.appointments)) return innerRec.appointments as Record<string, unknown>[];
+  }
+  return [];
 };
 
 const unwrapData = (res: unknown): Record<string, unknown> => {
@@ -45,9 +65,15 @@ export const vetService = {
   // GET /companion-pets/clinics - list active veterinary clinics
   getClinics: async (params?: Record<string, unknown>) => {
     const response = await api.get("/companion-pets/clinics", { params });
+    const resBody = asRecord(response.data);
+    const metaObj = asRecord(resBody.meta || resBody.pagination);
     return {
       data: unwrapList(response),
-      meta: asRecord(response).meta,
+      meta: {
+        total: Number(metaObj.total ?? metaObj.total_count ?? metaObj.count ?? unwrapList(response).length),
+        page: Number(metaObj.page ?? metaObj.current_page ?? params?.page ?? 1),
+        page_size: Number(metaObj.page_size ?? metaObj.per_page ?? params?.page_size ?? 50),
+      },
     };
   },
 
@@ -98,11 +124,52 @@ export const vetService = {
 
   // GET /companion-pets/appointments - list authorized veterinary appointments
   getAppointments: async (params?: Record<string, unknown>) => {
-    const response = await api.get("/companion-pets/appointments", { params });
-    return {
-      data: unwrapList(response),
-      meta: asRecord(response).meta,
-    };
+    const candidateEndpoints = [
+      "/companion-pets/appointments",
+      "/appointments",
+      "/medical/appointments",
+      "/vet/appointments",
+    ];
+
+    let lastError: unknown = null;
+
+    for (const endpoint of candidateEndpoints) {
+      try {
+        const response = await api.get(endpoint, { params });
+        const list = unwrapList(response);
+        const resBody = asRecord(response.data);
+        const metaObj = asRecord(resBody.meta || resBody.pagination || asRecord(resBody.data).meta);
+        const total = Number(
+          metaObj.total ?? metaObj.total_count ?? metaObj.count ?? resBody.total ?? resBody.total_count ?? list.length
+        );
+        return {
+          data: list,
+          meta: {
+            total,
+            page: Number(metaObj.page ?? metaObj.current_page ?? params?.page ?? 1),
+            page_size: Number(metaObj.page_size ?? metaObj.per_page ?? params?.page_size ?? 50),
+          },
+        };
+      } catch (err: unknown) {
+        if (axios.isAxiosError(err)) {
+          const status = err.response?.status;
+          if (status === 404 || status === 204) {
+            lastError = err;
+            continue;
+          }
+        }
+        lastError = err;
+      }
+    }
+
+    if (axios.isAxiosError(lastError) && (lastError.response?.status === 404 || lastError.response?.status === 204)) {
+      return {
+        data: [],
+        meta: { total: 0, page: Number(params?.page || 1), page_size: Number(params?.page_size || 50) },
+      };
+    }
+
+    throw lastError || new Error("Failed to load appointments.");
   },
 
   // POST /companion-pets/appointments - book a veterinary appointment

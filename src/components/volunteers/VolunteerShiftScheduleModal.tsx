@@ -782,11 +782,14 @@ export const VolunteerShiftScheduleModal: React.FC<VolunteerShiftScheduleModalPr
               style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", background: "#FFF" }}
             >
               <option value="">Open Shift (Volunteers can claim via Hub)</option>
-              {activeVolunteers.map((v: any) => (
-                <option key={v.id} value={v.id}>
-                  {v.user?.full_name || v.full_name || v.emergency_contact_name || "Volunteer"} ({v.preferred_role || "General"})
-                </option>
-              ))}
+              {activeVolunteers.map((v: any) => {
+                const volProfileId = volunteerService.getVolunteerProfileId(v);
+                return (
+                  <option key={volProfileId} value={volProfileId}>
+                    {v.user?.full_name || v.full_name || v.emergency_contact_name || "Volunteer"} ({v.preferred_role || "General"})
+                  </option>
+                );
+              })}
             </select>
           </div>
         </div>

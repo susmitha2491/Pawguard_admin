@@ -17,6 +17,8 @@ import {
 import { useNotifications } from "../../hooks/useNotifications";
 import DashboardSkeleton from "./DashboardSkeleton";
 import { formatDateTime } from "../../utils/dateUtils";
+import { resolveNotificationRoute } from "../../utils/notificationUtils";
+import type { NotificationItem } from "../../types/auth";
 
 const typeIcon: Record<string, React.ReactNode> = {
   emergency: <FaExclamationTriangle />,
@@ -62,11 +64,20 @@ const DashboardNotificationsPanel = () => {
   });
   const recent = notifications.slice(0, 5);
 
-  const handleOpen = async (id: string) => {
+  const handleOpen = async (item: NotificationItem) => {
     try {
-      await markAsRead(id);
+      if (!item.read) {
+        await markAsRead(item.id);
+      }
     } catch {
       /* ignore */
+    }
+
+    const { route, isValid } = resolveNotificationRoute(item);
+    if (isValid && route) {
+      navigate(route);
+    } else {
+      navigate(`/notifications?id=${item.id}`);
     }
   };
 
@@ -135,7 +146,7 @@ const DashboardNotificationsPanel = () => {
             {recent.map((n) => (
               <li key={n.id}>
                 <button
-                  onClick={() => handleOpen(n.id)}
+                  onClick={() => handleOpen(n)}
                   style={{
                     display: "flex",
                     gap: 12,

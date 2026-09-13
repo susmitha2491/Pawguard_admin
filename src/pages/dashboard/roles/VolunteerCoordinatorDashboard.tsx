@@ -815,7 +815,9 @@ const VolunteerCoordinatorDashboard = () => {
   const handleOpenAssignModal = (shift: any) => {
     setSelectedShiftToAssign(shift);
     if (approvedVolunteers.length > 0) {
-      setSelectedAssignVolunteerId(String(approvedVolunteers[0].id));
+      const firstVol = approvedVolunteers[0];
+      const volProfileId = volunteerService.getVolunteerProfileId(firstVol);
+      setSelectedAssignVolunteerId(String(volProfileId));
     } else {
       setSelectedAssignVolunteerId("");
     }
@@ -857,7 +859,9 @@ const VolunteerCoordinatorDashboard = () => {
       setIsSubmitting(true);
       await volunteerService.assignShift(selectedShiftToAssign.id, selectedAssignVolunteerId);
 
-      const volObj = volunteers.find((v) => String(v.id) === String(selectedAssignVolunteerId));
+      const volObj = volunteers.find(
+        (v) => volunteerService.getVolunteerProfileId(v) === String(selectedAssignVolunteerId) || String(v.id) === String(selectedAssignVolunteerId)
+      );
       const volName = volObj?.user?.full_name || volObj?.full_name || "Volunteer";
 
       addToast(`Successfully assigned ${volName} to shift: ${selectedShiftToAssign.role_name || "Volunteer Shift"}!`, "success");
@@ -937,7 +941,7 @@ const VolunteerCoordinatorDashboard = () => {
 
   // Handle Open Assign Work Modal for specific volunteer
   const handleOpenAssignWorkModal = (vol: any) => {
-    const volId = String(vol?.id || vol?._id || "");
+    const volId = volunteerService.getVolunteerProfileId(vol) || String(vol?.id || vol?._id || "");
     const volStatus = String(vol?.status || "").toLowerCase().trim();
     if (["submitted", "under_review", "applied", "pending"].includes(volStatus)) {
       addToast("Cannot assign work: Volunteer application is pending approval.", "error");
@@ -982,7 +986,7 @@ const VolunteerCoordinatorDashboard = () => {
     }
 
     const volObj = volunteers.find(
-      (v) => String(v.id || v._id) === String(assignWorkForm.volunteer_id)
+      (v) => volunteerService.getVolunteerProfileId(v) === String(assignWorkForm.volunteer_id) || String(v.id || v._id) === String(assignWorkForm.volunteer_id)
     );
     const volStatus = String(volObj?.status || "").toLowerCase().trim();
     if (volObj && !["approved", "onboarded", "active"].includes(volStatus)) {
@@ -2562,9 +2566,14 @@ const VolunteerCoordinatorDashboard = () => {
               <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                 <select value={volunteerFilter} onChange={(e) => setVolunteerFilter(e.target.value)} style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "12px", background: "#FFF" }}>
                   <option value="">All Volunteers</option>
-                  {approvedVolunteers.map((v) => (
-                    <option key={v.id} value={v.id}>{v.user?.full_name || v.full_name || `Volunteer ${String(v.id).slice(0, 6)}`}</option>
-                  ))}
+                  {approvedVolunteers.map((v) => {
+                    const volProfileId = volunteerService.getVolunteerProfileId(v);
+                    return (
+                      <option key={volProfileId} value={volProfileId}>
+                        {v.user?.full_name || v.full_name || `Volunteer ${String(volProfileId).slice(0, 6)}`}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             </div>
@@ -3699,7 +3708,8 @@ const VolunteerCoordinatorDashboard = () => {
                     type="button"
                     onClick={() => {
                       setIsProfileModalOpen(false);
-                      setSelectedVolunteerForShift(String(selectedVolunteerRecord.id));
+                      const profileId = volunteerService.getVolunteerProfileId(selectedVolunteerRecord);
+                      setSelectedVolunteerForShift(String(profileId));
                       setIsShiftModalOpen(true);
                     }}
                     style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #16A34A", background: "#ECFDF5", color: "#15803D", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}

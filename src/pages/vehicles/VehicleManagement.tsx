@@ -484,8 +484,11 @@ const VehicleManagement = () => {
 
   const handleCreateVehicle = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addForm.vehicle_number) {
-      addToast("Vehicle code or plate number is required", "error");
+    const vehicleCode = (addForm.vehicle_number || addForm.registration_number).trim();
+    const regNumber = (addForm.registration_number || addForm.vehicle_number).trim();
+
+    if (!regNumber && !vehicleCode) {
+      addToast("Vehicle registration number or code is required", "error");
       return;
     }
     if (isRescueCentreAdmin && !currentRescueCentreId) {
@@ -495,10 +498,10 @@ const VehicleManagement = () => {
     try {
       setIsSubmitting(true);
       const payload: VehiclePayload = {
-        make_model: addForm.model || addForm.vehicle_number,
-        license_plate: addForm.registration_number || addForm.vehicle_number,
-        vehicle_number: addForm.vehicle_number,
-        registration_number: addForm.registration_number || addForm.vehicle_number,
+        make_model: addForm.model || vehicleCode || "Vehicle Unit",
+        license_plate: regNumber || vehicleCode,
+        vehicle_number: vehicleCode,
+        registration_number: regNumber,
         model: addForm.model,
         type: addForm.type,
         vehicle_type: addForm.type,
@@ -1210,15 +1213,15 @@ const VehicleManagement = () => {
 
       {/* --- 2. REGISTER NEW VEHICLE UNIT MODAL --- */}
       <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Register Fleet Vehicle Unit" maxWidth="600px">
-        <form onSubmit={handleCreateVehicle} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+        <form onSubmit={handleCreateVehicle} noValidate style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Vehicle Code / ID *</label>
-              <input type="text" required placeholder="e.g. PGV-007" value={addForm.vehicle_number} onChange={(e) => setAddForm({ ...addForm, vehicle_number: e.target.value })} style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }} />
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Vehicle Code / ID</label>
+              <input type="text" placeholder="e.g. PGV-007" value={addForm.vehicle_number} onChange={(e) => setAddForm({ ...addForm, vehicle_number: e.target.value })} style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }} />
             </div>
             <div>
               <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Plate / Registration *</label>
-              <input type="text" required placeholder="e.g. AP 21 EX 1007" value={addForm.registration_number} onChange={(e) => setAddForm({ ...addForm, registration_number: e.target.value })} style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }} />
+              <input type="text" placeholder="e.g. AP 21 EX 1007" value={addForm.registration_number} onChange={(e) => setAddForm({ ...addForm, registration_number: e.target.value })} style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px" }} />
             </div>
           </div>
 

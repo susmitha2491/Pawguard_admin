@@ -111,13 +111,42 @@ export const reportsService = {
 
   // GET /reports/download/{filename} - fetch the generated file as a blob
   downloadReport: async (filename: string): Promise<void> => {
-    const response = await api.get(`/reports/download/${encodeURIComponent(filename)}`, {
-      responseType: "blob",
-    });
+    const cleanFilename = filename.split("/").pop() || filename;
+    let response;
+    try {
+      response = await api.get(`/reports/download/${encodeURIComponent(cleanFilename)}`, {
+        responseType: "blob",
+      });
+    } catch {
+      response = await api.get(`/reports/download/${encodeURIComponent(filename)}`, {
+        responseType: "blob",
+      });
+    }
     if (!(response.data instanceof Blob)) {
       throw new Error("Report endpoint did not return a valid file.");
     }
-    const safeName = filename.split("/").pop() || `PawGuard_Report_${Date.now()}`;
+    const safeName = cleanFilename || `PawGuard_Report_${Date.now()}`;
+    triggerDownload(response.data, safeName);
+  },
+
+  // Download directly from a presigned/signed storage URL or download endpoint
+  downloadFromUrl: async (downloadUrl: string, fallbackFilename = "medical_report.pdf"): Promise<void> => {
+    const isAbsolute = downloadUrl.startsWith("http://") || downloadUrl.startsWith("https://");
+    if (isAbsolute) {
+      const res = await fetch(downloadUrl);
+      if (!res.ok) {
+        throw new Error(`Storage server returned HTTP status ${res.status}`);
+      }
+      const blob = await res.blob();
+      const safeName = downloadUrl.split("?")[0].split("/").pop() || fallbackFilename;
+      triggerDownload(blob, safeName);
+      return;
+    }
+    const response = await api.get(downloadUrl, { responseType: "blob" });
+    if (!(response.data instanceof Blob)) {
+      throw new Error("Download URL did not return a valid blob file.");
+    }
+    const safeName = downloadUrl.split("?")[0].split("/").pop() || fallbackFilename;
     triggerDownload(response.data, safeName);
   },
 
@@ -125,9 +154,30 @@ export const reportsService = {
   generateAndDownloadReport: async (options: ReportOptions): Promise<void> => {
     try {
       const report = await reportsService.generateReport(options);
-      const filename = report?.filename || report?.file_name || report?.file;
+      const downloadUrl =
+        report?.download_url ||
+        report?.url ||
+        report?.file_url ||
+        report?.presigned_url ||
+        report?.signed_url;
+
+      const filename =
+        report?.filename ||
+        report?.file_name ||
+        report?.file ||
+        report?.object_key;
+
+      if (downloadUrl && typeof downloadUrl === "string") {
+        try {
+          await reportsService.downloadFromUrl(downloadUrl, filename || "PawGuard_Medical_Report.pdf");
+          return;
+        } catch (urlErr) {
+          console.warn("Direct storage download URL failed, attempting backend download route...", urlErr);
+        }
+      }
+
       if (!filename) {
-        throw new Error("Report was generated but the backend did not return a downloadable file name.");
+        throw new Error("Report was generated but the backend did not return a downloadable file reference.");
       }
       await reportsService.downloadReport(filename);
     } catch (err) {
