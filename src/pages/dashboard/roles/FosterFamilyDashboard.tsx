@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import StatCard from "../../../components/dashboard/StatCard";
 import { Modal } from "../../../components/common/Modal";
 import { useToast } from "../../../context/ToastContext";
@@ -13,11 +14,12 @@ import {
   FaHeart,
   FaDog,
   FaCheckCircle,
+  FaTrash,
+  FaHistory,
 } from "react-icons/fa";
 import { fosterService } from "../../../services/fosterService";
 import { petService } from "../../../services/petService";
 import { storageService } from "../../../services/storageService";
-import { adoptionService } from "../../../services/adoptionService";
 import { getStoredUser } from "../../../utils/authStorage";
 import { useDataSync, notifyDataChanged } from "../../../utils/dataSync";
 
@@ -44,7 +46,11 @@ const inputStyle: React.CSSProperties = {
 
 const FosterFamilyDashboard: React.FC = () => {
   const { addToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const currentUser = getStoredUser<any>();
+
+  // Navigation tab: 'overview' or 'progress'
+  const currentTab = searchParams.get("tab") === "progress" ? "progress" : "overview";
 
   // Main State
   const [placements, setPlacements] = useState<any[]>([]);
@@ -52,10 +58,10 @@ const FosterFamilyDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Active Placement for Modals
+  // Active Placement for Modals & Daily Progress Portal
   const [selectedPlacement, setSelectedPlacement] = useState<any | null>(null);
 
-  // Daily Progress Portal Modal State
+  // Daily Progress Portal Modal State (for quick access from overview cards)
   const [isDailyProgressModalOpen, setIsDailyProgressModalOpen] = useState(false);
   const [activeProgressTab, setActiveProgressTab] = useState<"weight" | "behavior" | "medication" | "media" | "history">("weight");
   const [progressHistory, setProgressHistory] = useState<any[]>([]);
@@ -87,6 +93,7 @@ const FosterFamilyDashboard: React.FC = () => {
 
   // 2D. Media Form
   const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
   const [mediaCaption, setMediaCaption] = useState("");
   const [mediaNotes, setMediaNotes] = useState("");
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
@@ -151,6 +158,20 @@ const FosterFamilyDashboard: React.FC = () => {
       );
 
       setPlacements(hydratedPlacements);
+      if (hydratedPlacements.length > 0) {
+        setSelectedPlacement((prev: any) => {
+          if (prev) {
+            const match = hydratedPlacements.find(
+              (p: any) => String(p.id || p.placement_id) === String(prev.id || prev.placement_id)
+            );
+            if (match) return match;
+          }
+          const firstActive = hydratedPlacements.find(
+            (p: any) => p.is_active !== false && !p.returned_at
+          );
+          return firstActive || hydratedPlacements[0];
+        });
+      }
     } catch (err: any) {
       const msg = extractBackendErrorMessage(err, "Failed to load foster profile. Please verify your connection.");
       setError(msg);
@@ -167,6 +188,7 @@ const FosterFamilyDashboard: React.FC = () => {
 
   // Load progress history for a placement
   const loadProgressHistory = async (placementId: string) => {
+    if (!placementId) return;
     try {
       setHistoryLoading(true);
       const res = await fosterService.getProgressLogs(placementId);
@@ -179,7 +201,15 @@ const FosterFamilyDashboard: React.FC = () => {
     }
   };
 
-  // Open Daily Progress Modal
+  // Auto-sync progress history when selected placement changes
+  useEffect(() => {
+    const placementId = String(selectedPlacement?.id || selectedPlacement?.placement_id || "");
+    if (placementId) {
+      loadProgressHistory(placementId);
+    }
+  }, [selectedPlacement?.id, selectedPlacement?.placement_id]);
+
+  // Open Daily Progress Modal (from quick-action cards)
   const handleOpenDailyProgress = (placement: any, tab: "weight" | "behavior" | "medication" | "media" = "weight") => {
     setSelectedPlacement(placement);
     setActiveProgressTab(tab);
@@ -201,6 +231,7 @@ const FosterFamilyDashboard: React.FC = () => {
       notes: "",
     });
     setMediaFile(null);
+    setMediaPreview(null);
     setMediaCaption("");
     setMediaNotes("");
     setIsDailyProgressModalOpen(true);
@@ -210,25 +241,51 @@ const FosterFamilyDashboard: React.FC = () => {
     }
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setMediaFile(file);
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setMediaPreview(url);
+    } else {
+      setMediaPreview(null);
+    }
+  };
+
+  const handleClearMedia = () => {
+    setMediaFile(null);
+    if (mediaPreview) {
+      URL.revokeObjectURL(mediaPreview);
+      setMediaPreview(null);
+    }
+  };
+
   // 2A. Submit Weight Log
   const handleWeightSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPlacement?.id) return;
+    const placementId = String(selectedPlacement?.id || selectedPlacement?.placement_id || "");
+    if (!placementId) {
+      addToast("Please select an assigned foster dog first.", "error");
+      return;
+    }
     const kg = parseFloat(weightForm.weight_kg);
     if (isNaN(kg) || kg <= 0) {
-      addToast("Please enter a valid weight in kilograms.", "error");
+      addToast("Please enter a valid weight in kilograms (greater than 0).", "error");
       return;
     }
     try {
       setIsSubmittingProgress(true);
-      await fosterService.logWeight(selectedPlacement.id, {
+      await fosterService.logWeight(placementId, {
         weight_kg: kg,
-        date: weightForm.date,
-        notes: weightForm.notes.trim() || `Daily weight check: ${kg} kg`,
+        notes: weightForm.notes.trim() || undefined,
       });
-      addToast("Weight recorded successfully!", "success");
-      loadProgressHistory(selectedPlacement.id);
-      setActiveProgressTab("history");
+      addToast(`Recorded weight (${kg} kg) for ${selectedPlacement?.dog?.name || "foster animal"}!`, "success");
+      setWeightForm({
+        weight_kg: "",
+        date: new Date().toISOString().split("T")[0],
+        notes: "",
+      });
+      await loadProgressHistory(placementId);
       notifyDataChanged();
     } catch (err: any) {
       addToast(extractBackendErrorMessage(err, "Failed to record weight."), "error");
@@ -240,18 +297,31 @@ const FosterFamilyDashboard: React.FC = () => {
   // 2B. Submit Behavioral Log
   const handleBehaviorSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPlacement?.id) return;
+    const placementId = String(selectedPlacement?.id || selectedPlacement?.placement_id || "");
+    if (!placementId) {
+      addToast("Please select an assigned foster dog first.", "error");
+      return;
+    }
+    if (!behaviorForm.behavior_notes.trim()) {
+      addToast("Please enter behavioral observations (required by backend).", "error");
+      return;
+    }
     try {
       setIsSubmittingProgress(true);
-      await fosterService.logBehavior(selectedPlacement.id, {
-        mood_rating: behaviorForm.mood_rating,
-        exercise_minutes: behaviorForm.exercise_minutes,
+      await fosterService.logBehavior(placementId, {
         behavior_notes: behaviorForm.behavior_notes.trim(),
-        notes: behaviorForm.notes.trim(),
+        mood_rating: Number(behaviorForm.mood_rating) || 5,
+        exercise_minutes: Number(behaviorForm.exercise_minutes) || 0,
+        notes: behaviorForm.notes.trim() || undefined,
       });
-      addToast("Behavior and exercise log submitted!", "success");
-      loadProgressHistory(selectedPlacement.id);
-      setActiveProgressTab("history");
+      addToast(`Saved behavioral log for ${selectedPlacement?.dog?.name || "foster animal"}!`, "success");
+      setBehaviorForm({
+        mood_rating: 5,
+        exercise_minutes: 45,
+        behavior_notes: "",
+        notes: "",
+      });
+      await loadProgressHistory(placementId);
       notifyDataChanged();
     } catch (err: any) {
       addToast(extractBackendErrorMessage(err, "Failed to submit behavior log."), "error");
@@ -263,22 +333,30 @@ const FosterFamilyDashboard: React.FC = () => {
   // 2C. Submit Medication Check-in
   const handleMedicationSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPlacement?.id) return;
+    const placementId = String(selectedPlacement?.id || selectedPlacement?.placement_id || "");
+    if (!placementId) {
+      addToast("Please select an assigned foster dog first.", "error");
+      return;
+    }
     if (!medicationForm.medication_notes.trim()) {
       addToast("Please enter the medication name, dosage, or administration notes.", "error");
       return;
     }
     try {
       setIsSubmittingProgress(true);
-      await fosterService.logMedication(selectedPlacement.id, {
+      await fosterService.logMedication(placementId, {
         medication_notes: medicationForm.medication_notes.trim(),
         verified: medicationForm.verified,
-        date: medicationForm.date,
-        notes: medicationForm.notes.trim(),
+        notes: medicationForm.notes.trim() || undefined,
       });
-      addToast("Medication verification check-in logged!", "success");
-      loadProgressHistory(selectedPlacement.id);
-      setActiveProgressTab("history");
+      addToast(`Medication verification logged for ${selectedPlacement?.dog?.name || "foster animal"}!`, "success");
+      setMedicationForm({
+        medication_notes: "",
+        verified: true,
+        date: new Date().toISOString().split("T")[0],
+        notes: "",
+      });
+      await loadProgressHistory(placementId);
       notifyDataChanged();
     } catch (err: any) {
       addToast(extractBackendErrorMessage(err, "Failed to log medication check-in."), "error");
@@ -290,31 +368,30 @@ const FosterFamilyDashboard: React.FC = () => {
   // 2D. Submit Media Upload
   const handleMediaSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPlacement?.id) return;
+    const placementId = String(selectedPlacement?.id || selectedPlacement?.placement_id || "");
+    if (!placementId) {
+      addToast("Please select an assigned foster dog first.", "error");
+      return;
+    }
     if (!mediaFile) {
       addToast("Please choose an image file (JPEG or PNG) to upload.", "error");
       return;
     }
     try {
       setIsUploadingMedia(true);
-      const url = await storageService.uploadFile(mediaFile, {
-        folder: "foster_updates",
-        entity_type: "foster_placement",
-        entity_id: selectedPlacement.id,
-      });
+      const url = await storageService.uploadImage(mediaFile, "dogs");
 
-      await fosterService.logMedia(selectedPlacement.id, {
+      await fosterService.logMedia(placementId, {
         photo_urls: [url],
         caption: mediaCaption.trim() || "Daily foster photo update",
-        notes: mediaNotes.trim(),
+        notes: mediaNotes.trim() || undefined,
       });
 
-      addToast("Photo update uploaded and logged!", "success");
-      setMediaFile(null);
+      addToast(`Photo update uploaded and logged for ${selectedPlacement?.dog?.name || "foster animal"}!`, "success");
+      handleClearMedia();
       setMediaCaption("");
       setMediaNotes("");
-      loadProgressHistory(selectedPlacement.id);
-      setActiveProgressTab("history");
+      await loadProgressHistory(placementId);
       notifyDataChanged();
     } catch (err: any) {
       addToast(extractBackendErrorMessage(err, "Failed to upload photo update."), "error");
@@ -373,37 +450,39 @@ const FosterFamilyDashboard: React.FC = () => {
   const handleAdoptSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPlacement) return;
+
+    const placementId = String(selectedPlacement.id || selectedPlacement.placement_id || "");
+    if (!placementId) {
+      addToast("Invalid placement ID.", "error");
+      return;
+    }
+
+    const isActive =
+      selectedPlacement.is_active !== false &&
+      !selectedPlacement.returned_at &&
+      selectedPlacement.status !== "converted_to_adopt" &&
+      selectedPlacement.status !== "returned" &&
+      selectedPlacement.status !== "completed";
+
+    if (!isActive) {
+      addToast("This foster placement is inactive or already returned/converted and cannot be converted to adoption.", "error");
+      return;
+    }
+
     if (!adoptForm.agreement_confirmed) {
       addToast("Please confirm that you agree to complete the permanent adoption process.", "error");
       return;
     }
 
-    const dogId = String(selectedPlacement.dog_id || selectedPlacement.dog?.id || "");
-    const placementId = String(selectedPlacement.id || selectedPlacement.placement_id || "");
-
     try {
       setIsSubmittingAdopt(true);
 
-      // Submit formal adoption application
-      await adoptionService.createAdoption({
-        dog_id: dogId,
-        residential_status: adoptForm.residential_status,
-        has_landlord_approval: adoptForm.has_landlord_approval,
-        has_yard_fence: adoptForm.has_yard_fence,
-        household_members_count: adoptForm.household_members_count,
-        pet_care_experience: `Current active foster parent since ${selectedPlacement.start_date || selectedPlacement.created_at || "placement"}.`,
-        notes: adoptForm.notes,
-      });
+      // Execute official backend Foster-to-Adopt placement conversion workflow
+      await fosterService.convertToAdopt(placementId, adoptForm.notes);
 
-      // Also notify foster coordinator workflow
-      if (placementId) {
-        await fosterService.logProgress(placementId, {
-          notes: `[ADOPTION APPLICATION] Foster family submitted formal application to permanently adopt this animal.`,
-        }).catch(() => null);
-      }
-
-      addToast("Adoption application submitted successfully! Your foster coordinator will review and finalize.", "success");
+      addToast("Foster placement successfully converted to permanent adoption! Legal adoption lease generated.", "success");
       setIsAdoptModalOpen(false);
+      await fetchMyData();
       notifyDataChanged();
     } catch (err: any) {
       const msg = extractBackendErrorMessage(err, "Failed to submit adoption application.");
@@ -450,8 +529,63 @@ const FosterFamilyDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Stat Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "24px" }}>
+      {/* Navigation Switcher Tabs */}
+      <div
+        style={{
+          display: "flex",
+          gap: "10px",
+          marginBottom: "22px",
+          borderBottom: "2px solid #E2E8F0",
+          paddingBottom: "12px",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setSearchParams({ tab: "overview" })}
+          style={{
+            padding: "9px 20px",
+            borderRadius: "10px",
+            border: "none",
+            background: currentTab === "overview" ? "#0F172A" : "#F1F5F9",
+            color: currentTab === "overview" ? "#FFF" : "#475569",
+            fontWeight: currentTab === "overview" ? 800 : 600,
+            fontSize: "13.5px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            transition: "all 0.15s ease",
+          }}
+        >
+          <FaDog /> My Foster Dogs ({activePlacementCount})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSearchParams({ tab: "progress" })}
+          style={{
+            padding: "9px 20px",
+            borderRadius: "10px",
+            border: "none",
+            background: currentTab === "progress" ? "#2563EB" : "#F1F5F9",
+            color: currentTab === "progress" ? "#FFF" : "#475569",
+            fontWeight: currentTab === "progress" ? 800 : 600,
+            fontSize: "13.5px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            transition: "all 0.15s ease",
+          }}
+        >
+          <FaCalendarCheck /> Daily Foster Progress Portal
+        </button>
+      </div>
+
+      {currentTab === "overview" ? (
+        <>
+          {/* Stat Cards */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "24px" }}>
         <StatCard
           title="Fostered Animals"
           value={loading ? "..." : `${activePlacementCount} in Care`}
@@ -719,6 +853,652 @@ const FosterFamilyDashboard: React.FC = () => {
           </div>
         )}
       </div>
+    </>
+  ) : (
+    /* DEDICATED DAILY FOSTER PROGRESS PORTAL */
+    <div style={{ marginBottom: "30px" }}>
+      {/* Prominent Foster Animal Selector */}
+      {placements.length === 0 && !loading ? (
+        <div style={{ background: "#FFF", border: "1px dashed #CBD5E1", borderRadius: "14px", padding: "40px 20px", textAlign: "center", color: "#64748B", marginBottom: "20px" }}>
+          <FaDog size={40} color="#94A3B8" style={{ marginBottom: "12px" }} />
+          <h3 style={{ margin: "0 0 6px", fontSize: "16px", fontWeight: 700, color: "#1E293B" }}>
+            No Active Foster Animals Assigned
+          </h3>
+          <p style={{ margin: 0, fontSize: "13px", color: "#64748B", maxWidth: "480px", marginInline: "auto" }}>
+            Daily progress reporting will become active once your foster coordinator places a rescue animal in your care.
+          </p>
+        </div>
+      ) : (
+        <div
+          style={{
+            background: "#FFF",
+            border: "1px solid #E2E8F0",
+            borderRadius: "14px",
+            padding: "16px 20px",
+            marginBottom: "22px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.03)",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+              {selectedPlacement?.dog?.primary_photo_url || selectedPlacement?.dog?.photo_url || selectedPlacement?.dog?.image_url ? (
+                <img
+                  src={selectedPlacement?.dog?.primary_photo_url || selectedPlacement?.dog?.photo_url || selectedPlacement?.dog?.image_url}
+                  alt={selectedPlacement?.dog?.name || "Dog"}
+                  style={{ width: "56px", height: "56px", borderRadius: "12px", objectFit: "cover", border: "1px solid #CBD5E1" }}
+                />
+              ) : (
+                <div style={{ width: "56px", height: "56px", borderRadius: "12px", background: "#EFF6FF", color: "#2563EB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px" }}>
+                  <FaDog />
+                </div>
+              )}
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 800, color: "#0F172A" }}>
+                    Daily Progress Portal: {selectedPlacement?.dog?.name || "Active Foster Animal"}
+                  </h2>
+                  <span style={{ padding: "3px 8px", borderRadius: "6px", background: "#ECFDF5", color: "#047857", fontSize: "11.5px", fontWeight: 700 }}>
+                    Currently in Your Care
+                  </span>
+                </div>
+                <div style={{ fontSize: "13px", color: "#64748B", marginTop: "3px" }}>
+                  Breed: {selectedPlacement?.dog?.breed || selectedPlacement?.dog?.breed_classification || "Mixed Breed"} • Age: {selectedPlacement?.dog?.age_years ? `${selectedPlacement?.dog?.age_years} yrs` : "N/A"} • Placement ID: <span style={{ fontFamily: "monospace", fontWeight: 700 }}>{String(selectedPlacement?.id || selectedPlacement?.placement_id || "").slice(0, 8)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const pId = String(selectedPlacement?.id || selectedPlacement?.placement_id || "");
+                  if (pId) loadProgressHistory(pId);
+                }}
+                disabled={historyLoading}
+                style={{
+                  padding: "7px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #CBD5E1",
+                  background: "#F8FAFC",
+                  color: "#334155",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <FaHistory /> {historyLoading ? "Syncing..." : "Sync Logs"}
+              </button>
+            </div>
+          </div>
+
+          {placements.length > 1 && (
+            <div style={{ borderTop: "1px solid #F1F5F9", marginTop: "14px", paddingTop: "12px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "12.5px", fontWeight: 700, color: "#334155" }}>Switch Animal:</span>
+              {placements.map((p) => {
+                const isSel = String(selectedPlacement?.id || selectedPlacement?.placement_id) === String(p.id || p.placement_id);
+                return (
+                  <button
+                    key={p.id || p.placement_id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedPlacement(p);
+                      const pId = String(p.id || p.placement_id || "");
+                      if (pId) loadProgressHistory(pId);
+                    }}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: "8px",
+                      border: isSel ? "2px solid #2563EB" : "1px solid #CBD5E1",
+                      background: isSel ? "#EFF6FF" : "#FFF",
+                      color: isSel ? "#1D4ED8" : "#475569",
+                      fontWeight: isSel ? 800 : 600,
+                      fontSize: "12.5px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <FaDog color={isSel ? "#2563EB" : "#94A3B8"} />
+                    {p.dog?.name || `Dog #${String(p.dog_id || "").slice(0, 6)}`}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 4 Clearly Identifiable Reporting Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", gap: "22px" }}>
+        {/* CARD 1: WEIGHT LOG */}
+        <div
+          style={{
+            background: "#FFF",
+            border: "1px solid #E2E8F0",
+            borderRadius: "14px",
+            padding: "22px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+          }}
+        >
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+              <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "#EFF6FF", color: "#2563EB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>
+                <FaWeight />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#0F172A" }}>
+                  Weight Log
+                </h3>
+                <p style={{ margin: 0, fontSize: "12.5px", color: "#64748B" }}>
+                  Track weight fluctuations to assist medical care and dietary health.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleWeightSubmit} style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                  Weight (in Kilograms) *
+                </label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0.1"
+                  required
+                  placeholder="e.g. 18.5"
+                  value={weightForm.weight_kg}
+                  onChange={(e) => setWeightForm({ ...weightForm, weight_kg: e.target.value })}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                  Observation Notes (Optional)
+                </label>
+                <textarea
+                  placeholder="e.g. Healthy appetite, post-morning meal weigh-in..."
+                  value={weightForm.notes}
+                  onChange={(e) => setWeightForm({ ...weightForm, notes: e.target.value })}
+                  style={{ ...inputStyle, minHeight: "65px" }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmittingProgress || !selectedPlacement}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: "8px",
+                  border: "none",
+                  background: "#2563EB",
+                  color: "#FFF",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  cursor: isSubmittingProgress || !selectedPlacement ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                }}
+              >
+                <FaWeight /> {isSubmittingProgress ? "Recording Weight..." : "Record Weight Log"}
+              </button>
+            </form>
+          </div>
+
+          {/* Mini Weight History */}
+          <div style={{ marginTop: "18px", borderTop: "1px solid #F1F5F9", paddingTop: "14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>
+                Recent Weight Logs
+              </span>
+              <span style={{ fontSize: "11px", color: "#94A3B8" }}>
+                {progressHistory.filter((i) => i.weight_kg !== null && i.weight_kg !== undefined).length} entries
+              </span>
+            </div>
+            {progressHistory.filter((i) => i.weight_kg !== null && i.weight_kg !== undefined).length === 0 ? (
+              <div style={{ fontSize: "12px", color: "#94A3B8", fontStyle: "italic", padding: "8px 0" }}>
+                No weight records logged yet.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                {progressHistory
+                  .filter((i) => i.weight_kg !== null && i.weight_kg !== undefined)
+                  .slice(0, 3)
+                  .map((item) => (
+                    <div key={item.id} style={{ background: "#F8FAFC", borderRadius: "6px", padding: "6px 10px", fontSize: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <strong style={{ color: "#1E293B" }}>{item.weight_kg} kg</strong>
+                        {item.notes && <span style={{ color: "#64748B", marginLeft: "6px" }}>— {item.notes}</span>}
+                      </div>
+                      <span style={{ fontSize: "11px", color: "#94A3B8" }}>
+                        {item.logged_at ? new Date(item.logged_at).toLocaleDateString() : ""}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* CARD 2: BEHAVIORAL LOG */}
+        <div
+          style={{
+            background: "#FFF",
+            border: "1px solid #E2E8F0",
+            borderRadius: "14px",
+            padding: "22px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+          }}
+        >
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+              <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "#ECFDF5", color: "#10B981", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>
+                <FaSmile />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#0F172A" }}>
+                  Behavioral Log
+                </h3>
+                <p style={{ margin: 0, fontSize: "12.5px", color: "#64748B" }}>
+                  Record daily temperament, energy, socialization, and confidence building.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleBehaviorSubmit} style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                    Mood / Energy (1-5) *
+                  </label>
+                  <select
+                    value={behaviorForm.mood_rating}
+                    onChange={(e) => setBehaviorForm({ ...behaviorForm, mood_rating: Number(e.target.value) })}
+                    style={inputStyle}
+                  >
+                    <option value={5}>⭐⭐⭐⭐⭐ 5 - Playful &amp; Calm</option>
+                    <option value={4}>⭐⭐⭐⭐ 4 - Good / Content</option>
+                    <option value={3}>⭐⭐⭐ 3 - Neutral / Mild Shyness</option>
+                    <option value={2}>⭐⭐ 2 - Nervous / Restless</option>
+                    <option value={1}>⭐ 1 - Anxious / Stressed</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                    Daily Exercise (Minutes) *
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={behaviorForm.exercise_minutes}
+                    onChange={(e) => setBehaviorForm({ ...behaviorForm, exercise_minutes: Number(e.target.value) })}
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                  Behavioral Observations &amp; Milestones *
+                </label>
+                <textarea
+                  required
+                  placeholder="e.g. Great loose-leash walking, friendly with visitors, responded well to crate training..."
+                  value={behaviorForm.behavior_notes}
+                  onChange={(e) => setBehaviorForm({ ...behaviorForm, behavior_notes: e.target.value })}
+                  style={{ ...inputStyle, minHeight: "65px" }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmittingProgress || !selectedPlacement}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: "8px",
+                  border: "none",
+                  background: "#10B981",
+                  color: "#FFF",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  cursor: isSubmittingProgress || !selectedPlacement ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                }}
+              >
+                <FaSmile /> {isSubmittingProgress ? "Saving Behavior..." : "Save Behavioral Log"}
+              </button>
+            </form>
+          </div>
+
+          {/* Mini Behavior History */}
+          <div style={{ marginTop: "18px", borderTop: "1px solid #F1F5F9", paddingTop: "14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>
+                Recent Behavioral Logs
+              </span>
+              <span style={{ fontSize: "11px", color: "#94A3B8" }}>
+                {progressHistory.filter((i) => i.behavior_notes || i.mood_rating).length} entries
+              </span>
+            </div>
+            {progressHistory.filter((i) => i.behavior_notes || i.mood_rating).length === 0 ? (
+              <div style={{ fontSize: "12px", color: "#94A3B8", fontStyle: "italic", padding: "8px 0" }}>
+                No behavioral records logged yet.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                {progressHistory
+                  .filter((i) => i.behavior_notes || i.mood_rating)
+                  .slice(0, 3)
+                  .map((item) => (
+                    <div key={item.id} style={{ background: "#F8FAFC", borderRadius: "6px", padding: "6px 10px", fontSize: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ maxWidth: "75%" }}>
+                        <span style={{ color: "#047857", fontWeight: 700, marginRight: "6px" }}>
+                          {"⭐".repeat(item.mood_rating || 5)}
+                        </span>
+                        <span style={{ color: "#334155" }}>
+                          {item.behavior_notes || item.notes}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: "11px", color: "#94A3B8" }}>
+                        {item.logged_at ? new Date(item.logged_at).toLocaleDateString() : ""}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* CARD 3: MEDICATION CHECK-IN */}
+        <div
+          style={{
+            background: "#FFF",
+            border: "1px solid #E2E8F0",
+            borderRadius: "14px",
+            padding: "22px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+          }}
+        >
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+              <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "#F5F3FF", color: "#8B5CF6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>
+                <FaPills />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#0F172A" }}>
+                  Medication Check-in
+                </h3>
+                <p style={{ margin: 0, fontSize: "12.5px", color: "#64748B" }}>
+                  Verify administration of prescribed treatments, preventatives, and eye drops.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleMedicationSubmit} style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                  Medication Administered &amp; Dosage *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Amoxicillin 250mg chewable tab with meal"
+                  value={medicationForm.medication_notes}
+                  onChange={(e) => setMedicationForm({ ...medicationForm, medication_notes: e.target.value })}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "10px 12px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12.5px", fontWeight: 600, color: "#1E293B", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={medicationForm.verified}
+                    onChange={(e) => setMedicationForm({ ...medicationForm, verified: e.target.checked })}
+                  />
+                  <span>I verify this dose was administered accurately as scheduled</span>
+                </label>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                  Reaction &amp; Tolerance Notes (Optional)
+                </label>
+                <textarea
+                  placeholder="e.g. Ingested easily with peanut butter, no digestive upset..."
+                  value={medicationForm.notes}
+                  onChange={(e) => setMedicationForm({ ...medicationForm, notes: e.target.value })}
+                  style={{ ...inputStyle, minHeight: "55px" }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmittingProgress || !selectedPlacement}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: "8px",
+                  border: "none",
+                  background: "#8B5CF6",
+                  color: "#FFF",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  cursor: isSubmittingProgress || !selectedPlacement ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                }}
+              >
+                <FaPills /> {isSubmittingProgress ? "Verifying..." : "Verify Medication Dose"}
+              </button>
+            </form>
+          </div>
+
+          {/* Mini Medication History */}
+          <div style={{ marginTop: "18px", borderTop: "1px solid #F1F5F9", paddingTop: "14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>
+                Recent Verified Doses
+              </span>
+              <span style={{ fontSize: "11px", color: "#94A3B8" }}>
+                {progressHistory.filter((i) => i.medication_notes).length} entries
+              </span>
+            </div>
+            {progressHistory.filter((i) => i.medication_notes).length === 0 ? (
+              <div style={{ fontSize: "12px", color: "#94A3B8", fontStyle: "italic", padding: "8px 0" }}>
+                No medication check-ins logged yet.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                {progressHistory
+                  .filter((i) => i.medication_notes)
+                  .slice(0, 3)
+                  .map((item) => (
+                    <div key={item.id} style={{ background: "#F8FAFC", borderRadius: "6px", padding: "6px 10px", fontSize: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ maxWidth: "75%" }}>
+                        <span style={{ padding: "1px 6px", borderRadius: "4px", background: "#EDE9FE", color: "#6D28D9", fontSize: "10.5px", fontWeight: 800, marginRight: "6px" }}>
+                          ✓ Verified
+                        </span>
+                        <span style={{ color: "#334155", fontWeight: 600 }}>
+                          {item.medication_notes}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: "11px", color: "#94A3B8" }}>
+                        {item.logged_at ? new Date(item.logged_at).toLocaleDateString() : ""}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* CARD 4: PROGRESS MEDIA UPLOADS */}
+        <div
+          style={{
+            background: "#FFF",
+            border: "1px solid #E2E8F0",
+            borderRadius: "14px",
+            padding: "22px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+          }}
+        >
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+              <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "#FEF3C7", color: "#D97706", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>
+                <FaCamera />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#0F172A" }}>
+                  Progress Media Uploads
+                </h3>
+                <p style={{ margin: 0, fontSize: "12.5px", color: "#64748B" }}>
+                  Upload photos showcasing foster recovery and adoption personality.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleMediaSubmit} style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                  Select Photo (JPEG, PNG, WebP) *
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  style={{ fontSize: "12px" }}
+                />
+              </div>
+
+              {mediaPreview && (
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", background: "#F8FAFC", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }}>
+                  <img
+                    src={mediaPreview}
+                    alt="Preview"
+                    style={{ width: "48px", height: "48px", borderRadius: "6px", objectFit: "cover" }}
+                  />
+                  <div style={{ flex: 1, fontSize: "12px", color: "#334155" }}>
+                    <div style={{ fontWeight: 700 }}>{mediaFile?.name}</div>
+                    <div style={{ color: "#64748B" }}>{((mediaFile?.size || 0) / 1024).toFixed(1)} KB</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleClearMedia}
+                    style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", padding: "4px" }}
+                    title="Remove photo"
+                  >
+                    <FaTrash />
+                  </button>
+                </div>
+              )}
+
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                  Photo Caption (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Playing safely in fenced yard"
+                  value={mediaCaption}
+                  onChange={(e) => setMediaCaption(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                  Progress Story / Notes (Optional)
+                </label>
+                <textarea
+                  placeholder="e.g. Great milestone today! Enjoyed a calm nap after playing..."
+                  value={mediaNotes}
+                  onChange={(e) => setMediaNotes(e.target.value)}
+                  style={{ ...inputStyle, minHeight: "55px" }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isUploadingMedia || !mediaFile || !selectedPlacement}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: "8px",
+                  border: "none",
+                  background: "#F59E0B",
+                  color: "#FFF",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  cursor: isUploadingMedia || !mediaFile || !selectedPlacement ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                }}
+              >
+                <FaCamera /> {isUploadingMedia ? "Uploading Photo..." : "Upload Photo Update"}
+              </button>
+            </form>
+          </div>
+
+          {/* Mini Media Gallery */}
+          <div style={{ marginTop: "18px", borderTop: "1px solid #F1F5F9", paddingTop: "14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>
+                Recent Photo Updates
+              </span>
+              <span style={{ fontSize: "11px", color: "#94A3B8" }}>
+                {progressHistory.filter((i) => Array.isArray(i.photo_urls) && i.photo_urls.length > 0).length} photos
+              </span>
+            </div>
+            {progressHistory.filter((i) => Array.isArray(i.photo_urls) && i.photo_urls.length > 0).length === 0 ? (
+              <div style={{ fontSize: "12px", color: "#94A3B8", fontStyle: "italic", padding: "8px 0" }}>
+                No photos uploaded yet for this stay.
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: "8px", overflowX: "auto", paddingBottom: "4px" }}>
+                {progressHistory
+                  .filter((i) => Array.isArray(i.photo_urls) && i.photo_urls.length > 0)
+                  .slice(0, 4)
+                  .map((item) => (
+                    <div key={item.id} style={{ flexShrink: 0, width: "64px", height: "64px", borderRadius: "8px", overflow: "hidden", border: "1px solid #CBD5E1", position: "relative" }}>
+                      <img
+                        src={item.photo_urls[0]}
+                        alt={item.notes || "Foster photo"}
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
 
       {/* Daily Progress Portal Modal (4 Tabs + History) */}
       <Modal

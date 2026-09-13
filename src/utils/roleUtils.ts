@@ -620,6 +620,7 @@ export const getMenusForRole = (role?: string | UserRole | null): RoleMenuItem[]
     case "foster_family":
       return [
         { name: "Dashboard", path: dashboardPath, iconType: "dashboard" },
+        { name: "Daily Progress Portal", path: `${dashboardPath}?tab=progress`, iconType: "tasks" },
       ];
 
     case "donor":

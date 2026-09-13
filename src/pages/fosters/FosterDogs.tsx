@@ -55,6 +55,15 @@ const unwrapList = (v: any): any[] => {
   return [];
 };
 
+const isClosedPlacement = (p: any): boolean => {
+  if (!p) return true;
+  if (p.is_active === false) return true;
+  const s = String(p.status || "").toLowerCase().trim();
+  if (s === "returned" || s === "converted_to_adopt" || s === "completed" || s === "adopted" || s === "inactive") return true;
+  if (p.returned_at) return true;
+  return false;
+};
+
 const getDurationInCare = (placedAt?: string | null): string | null => {
   if (!placedAt) return null;
   const start = new Date(placedAt).getTime();
@@ -381,15 +390,7 @@ export const FosterDogs: React.FC = () => {
 
   // Calculate foster statistics
   const activePlacements = useMemo(() => {
-    return placements.filter((p) => {
-      const s = String(p.status || "").toLowerCase().trim();
-      if (p.is_active === true || p.is_active === "true") return true;
-      if (s === "active" || s === "fostered" || s === "in_foster") return true;
-      if (!p.returned_at && s !== "returned" && s !== "converted_to_adopt" && s !== "adopted" && s !== "completed") {
-        return true;
-      }
-      return false;
-    });
+    return placements.filter((p) => !isClosedPlacement(p));
   }, [placements]);
 
   const activeHomesCount = useMemo(() => {
@@ -468,10 +469,10 @@ export const FosterDogs: React.FC = () => {
 
     if (statusFilter !== "all") {
       list = list.filter((p) => {
+        const isAct = !isClosedPlacement(p);
         const s = String(p.status || "").toLowerCase().trim();
-        const isAct = p.is_active === true || s === "active" || (!p.returned_at && s !== "returned" && s !== "converted_to_adopt" && s !== "adopted");
         if (statusFilter === "active") return isAct;
-        if (statusFilter === "returned") return s === "returned" || !!p.returned_at;
+        if (statusFilter === "returned") return s === "returned" || Boolean(p.returned_at) || isClosedPlacement(p);
         if (statusFilter === "converted_to_adopt") return s === "converted_to_adopt" || s === "adopted";
         return true;
       });
@@ -673,7 +674,7 @@ export const FosterDogs: React.FC = () => {
   const handleConfirmReturn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPlacement) return;
-    const placementId = String(selectedPlacement.id || "");
+    const placementId = String(selectedPlacement.id || selectedPlacement.placement_id || "");
     if (!placementId) {
       addToast("Invalid placement ID.", "error");
       return;
@@ -684,12 +685,17 @@ export const FosterDogs: React.FC = () => {
         reason: returnReason,
         notes: returnNotes,
       });
+
+      // Optimistic filter
+      setPlacements((prev) => prev.filter((p) => String(p.id || p.placement_id) !== placementId));
+
       addToast(
         `Returned ${selectedPlacement.dog?.name || "dog"} to shelter facility. Placement completed.`,
         "info"
       );
       setIsReturnModalOpen(false);
       setIsDetailModalOpen(false);
+      setSelectedPlacement(null);
       await fetchData();
       notifyDataChanged();
     } catch (err: any) {
@@ -764,6 +770,22 @@ export const FosterDogs: React.FC = () => {
     if (!placeTargetProfileId || !placeTargetDogId) {
       addToast("Please select an approved foster home and an eligible dog.", "error");
       return;
+    }
+
+    const selectedProfile = fosterProfiles.find((p) => String(p.id) === placeTargetProfileId);
+    if (selectedProfile) {
+      const bgStatus = String(selectedProfile.raw?.background_check_status || selectedProfile.background_check_status || (selectedProfile.background_check_passed ? "cleared" : "")).toLowerCase();
+      const isBgCleared = selectedProfile.background_check_passed === true || bgStatus === "cleared" || bgStatus === "passed";
+      if (!isBgCleared) {
+        addToast(`Cannot place dog: Foster caregiver "${selectedProfile.foster_family || "Selected family"}" background check is not Cleared (Current status: ${bgStatus || "Pending"}).`, "error");
+        return;
+      }
+      const homeStatus = String(selectedProfile.raw?.home_inspection_status || selectedProfile.home_inspection_status || (selectedProfile.home_inspection_passed ? "approved" : "")).toLowerCase();
+      const isHomeApproved = selectedProfile.home_inspection_passed === true || homeStatus === "approved" || homeStatus === "passed";
+      if (!isHomeApproved) {
+        addToast(`Cannot place dog: Foster caregiver "${selectedProfile.foster_family || "Selected family"}" home inspection is not Approved (Current status: ${homeStatus || "Pending"}).`, "error");
+        return;
+      }
     }
     try {
       setIsSubmitting(true);
@@ -900,7 +922,7 @@ export const FosterDogs: React.FC = () => {
       key: "status",
       title: "Care Status",
       render: (_: unknown, row: any) => {
-        const isAct = row.is_active || row.status === "active" || (!row.returned_at && row.status !== "converted_to_adopt" && row.status !== "returned");
+        const isAct = !isClosedPlacement(row);
         const statusStr = String(row.status || (isAct ? "active" : "completed")).toLowerCase();
 
         let badgeBg = "#EFF6FF";
@@ -942,7 +964,7 @@ export const FosterDogs: React.FC = () => {
       key: "actions",
       title: "Actions",
       render: (_: unknown, row: any) => {
-        const isAct = row.is_active || row.status === "active" || (!row.returned_at && row.status !== "converted_to_adopt" && row.status !== "returned");
+        const isAct = !isClosedPlacement(row);
 
         const actionItems: RowActionItem[] = [
           {

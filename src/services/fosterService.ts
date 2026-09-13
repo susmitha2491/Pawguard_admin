@@ -296,15 +296,32 @@ export const fosterService = {
   returnDog: async (placementId: string, data?: string | FosterReturnPayload) => {
     const payload: FosterReturnPayload =
       typeof data === "string" ? { notes: data, reason: "Normal Placement Conclusion" } : (data || {});
-    const response = await api.post(`/fosters/placements/${placementId}/return`, payload);
-    await publishActionEvent({
+
+    // Publish event asynchronously without blocking or failing the successful return
+    publishActionEvent({
       module: "foster",
       action: "update",
       title: "Dog Returned from Foster Care",
       message: `Foster placement ${placementId} concluded and animal returned to shelter.`,
       targetRoles: ["super_admin", "foster_coordinator", "shelter_manager"],
-    });
-    return response.data;
+    }).catch(() => null);
+
+    try {
+      const response = await api.post(`/fosters/placements/${placementId}/return`, payload);
+      return response.data;
+    } catch (primaryErr: any) {
+      // If primary POST returns 404/405, fallback to alternate valid OpenAPI paths
+      if (primaryErr?.response?.status === 404 || primaryErr?.response?.status === 405) {
+        try {
+          const putRes = await api.put(`/fosters/placements/${placementId}/return`, payload);
+          return putRes.data;
+        } catch {
+          const altRes = await api.post(`/fosters/placements/${placementId}/return-to-shelter`, payload);
+          return altRes.data;
+        }
+      }
+      throw primaryErr;
+    }
   },
 
   // Alias for returnDog
@@ -338,26 +355,100 @@ export const fosterService = {
 
   // POST /fosters/placements/{placement_id}/progress/weight - Log Weight
   logWeight: async (placementId: string, payload: FosterWeightLogPayload) => {
-    const response = await api.post(`/fosters/placements/${placementId}/progress/weight`, payload);
-    return response.data;
+    const cleanPayload: { weight_kg: number; notes?: string } = {
+      weight_kg: Number(payload.weight_kg),
+    };
+    if (payload.notes) cleanPayload.notes = payload.notes.trim();
+
+    try {
+      const response = await api.post(`/fosters/placements/${placementId}/progress/weight`, cleanPayload);
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 404 || err?.response?.status === 405) {
+        try {
+          const alt1 = await api.post(`/fosters/placements/${placementId}/weight`, cleanPayload);
+          return alt1.data;
+        } catch {
+          const alt2 = await api.post(`/fosters/${placementId}/progress/weight`, cleanPayload);
+          return alt2.data;
+        }
+      }
+      throw err;
+    }
   },
 
   // POST /fosters/placements/{placement_id}/progress/behavior - Log Behavior
   logBehavior: async (placementId: string, payload: FosterBehaviorLogPayload) => {
-    const response = await api.post(`/fosters/placements/${placementId}/progress/behavior`, payload);
-    return response.data;
+    const cleanPayload: {
+      behavior_notes: string;
+      mood_rating?: number;
+      exercise_minutes?: number;
+      notes?: string;
+    } = {
+      behavior_notes: payload.behavior_notes.trim(),
+    };
+    if (payload.mood_rating) cleanPayload.mood_rating = Number(payload.mood_rating);
+    if (payload.exercise_minutes !== undefined) cleanPayload.exercise_minutes = Number(payload.exercise_minutes);
+    if (payload.notes) cleanPayload.notes = payload.notes.trim();
+
+    try {
+      const response = await api.post(`/fosters/placements/${placementId}/progress/behavior`, cleanPayload);
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 404 || err?.response?.status === 405) {
+        const alt = await api.post(`/fosters/${placementId}/progress/behavior`, cleanPayload);
+        return alt.data;
+      }
+      throw err;
+    }
   },
 
   // POST /fosters/placements/{placement_id}/progress/medication - Log Medication Check-in
   logMedication: async (placementId: string, payload: FosterMedicationLogPayload) => {
-    const response = await api.post(`/fosters/placements/${placementId}/progress/medication`, payload);
-    return response.data;
+    const cleanPayload: {
+      medication_notes: string;
+      verified: boolean;
+      notes?: string;
+    } = {
+      medication_notes: payload.medication_notes.trim(),
+      verified: payload.verified ?? true,
+    };
+    if (payload.notes) cleanPayload.notes = payload.notes.trim();
+
+    try {
+      const response = await api.post(`/fosters/placements/${placementId}/progress/medication`, cleanPayload);
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 404 || err?.response?.status === 405) {
+        const alt = await api.post(`/fosters/${placementId}/progress/medication`, cleanPayload);
+        return alt.data;
+      }
+      throw err;
+    }
   },
 
   // POST /fosters/placements/{placement_id}/progress/media - Log Media
   logMedia: async (placementId: string, payload: FosterMediaLogPayload) => {
-    const response = await api.post(`/fosters/placements/${placementId}/progress/media`, payload);
-    return response.data;
+    const cleanPayload: {
+      photo_urls: string[];
+      caption?: string;
+      notes?: string;
+    } = {
+      photo_urls: Array.isArray(payload.photo_urls) ? payload.photo_urls : [payload.photo_urls],
+    };
+    if (payload.caption) cleanPayload.caption = payload.caption.trim();
+    if (payload.notes) cleanPayload.notes = payload.notes.trim();
+
+    try {
+      const response = await api.post(`/fosters/placements/${placementId}/progress/media`, cleanPayload);
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 404 || err?.response?.status === 405) {
+        const alt = await api.post(`/fosters/${placementId}/progress/media`, cleanPayload);
+        return alt.data;
+      }
+      throw err;
+    }
   },
 
   // GET /fosters/placements/{placement_id}/progress

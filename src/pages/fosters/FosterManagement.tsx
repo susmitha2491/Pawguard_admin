@@ -39,9 +39,10 @@ import fosterService, {
 import petService from "../../services/petService";
 import vetService from "../../services/vetService";
 import storageService from "../../services/storageService";
-import { notifyDataChanged } from "../../utils/dataSync";
+import { notifyDataChanged, useDataSync } from "../../utils/dataSync";
 import { formatDateTime } from "../../utils/dateUtils";
-import { getCurrentUserRole } from "../../utils/roleUtils";
+import userService from "../../services/userService";
+import { getCurrentUserRole, getCurrentUser } from "../../utils/roleUtils";
 
 export interface FosterProfileRow {
   id: string;
@@ -71,6 +72,15 @@ const inputStyle: React.CSSProperties = {
 
 const unwrapList = (v: any) =>
   Array.isArray(v) ? v : Array.isArray(v?.data) ? v.data : Array.isArray(v?.items) ? v.items : [];
+
+const isClosedPlacement = (p: any): boolean => {
+  if (!p) return true;
+  if (p.is_active === false) return true;
+  const s = String(p.status || "").toLowerCase().trim();
+  if (s === "returned" || s === "converted_to_adopt" || s === "completed" || s === "adopted" || s === "inactive") return true;
+  if (p.returned_at) return true;
+  return false;
+};
 
 const getDurationInCare = (placedAt?: string | null): string | null => {
   if (!placedAt) return null;
@@ -297,6 +307,14 @@ const FosterManagement = () => {
   const [isInitiatingBgCheck, setIsInitiatingBgCheck] = useState(false);
   const [bgCheckInitiateError, setBgCheckInitiateError] = useState<string | null>(null);
 
+  // Authorized Inspector & Coordinator List
+  const [staffInspectors, setStaffInspectors] = useState<Array<{ id: string; name: string; role?: string }>>([]);
+
+  const isAuthorizedCoordinator = useCallback(() => {
+    const role = getCurrentUserRole();
+    return role === "super_admin" || role === "rescue_centre_admin" || role === "shelter_manager" || role === "foster_coordinator";
+  }, []);
+
   // Home Inspection Management State (for Review Modal)
   const [inspectionSubStep, setInspectionSubStep] = useState<"schedule" | "checklist" | "decision">("schedule");
   const [inspectionScheduleForm, setInspectionScheduleForm] = useState({
@@ -306,6 +324,56 @@ const FosterManagement = () => {
     address: "",
     notes: "",
   });
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadStaffInspectors = async () => {
+      try {
+        const currentUser = getCurrentUser();
+        const currentRole = getCurrentUserRole();
+        const inspectors: Array<{ id: string; name: string; role?: string }> = [];
+
+        if (currentUser?.full_name || currentUser?.name) {
+          inspectors.push({
+            id: String(currentUser.id || "current-user"),
+            name: currentUser.full_name || currentUser.name || "Current User",
+            role: currentRole || "Coordinator",
+          });
+        }
+
+        if (currentRole === "super_admin" || currentRole === "rescue_centre_admin" || currentRole === "shelter_manager" || currentRole === "foster_coordinator") {
+          const res = await userService.getUsers().catch(() => null);
+          const userList = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+          for (const u of userList) {
+            const uName = u.full_name || u.name || (u.email ? u.email.split("@")[0] : "");
+            if (uName && !inspectors.some((existing) => existing.name.toLowerCase() === uName.toLowerCase())) {
+              inspectors.push({
+                id: String(u.id || uName),
+                name: uName,
+                role: u.role || (u.roles && u.roles[0]) || "Staff",
+              });
+            }
+          }
+        }
+
+        if (isMounted) {
+          setStaffInspectors(inspectors);
+          if (inspectors.length > 0) {
+            setInspectionScheduleForm((prev) => ({
+              ...prev,
+              inspector_name: prev.inspector_name || inspectors[0].name,
+            }));
+          }
+        }
+      } catch {
+        // Ignore errors
+      }
+    };
+    loadStaffInspectors();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   const [inspectionAuditForm, setInspectionAuditForm] = useState({
     yard_condition: "Secure & Escape-Proof",
     fencing_condition: "High Fence (6ft+)",
@@ -478,6 +546,18 @@ const FosterManagement = () => {
 
   const handleInitiateBackgroundCheck = async () => {
     if (!selectedFoster) return;
+    const userRole = getCurrentUserRole();
+    const isAuthorized =
+      userRole === "super_admin" ||
+      userRole === "foster_coordinator" ||
+      userRole === "rescue_centre_admin" ||
+      userRole === "shelter_manager";
+
+    if (!isAuthorized) {
+      addToast("403 Forbidden: You do not have permission to initiate background checks.", "error");
+      return;
+    }
+
     try {
       setIsInitiatingBgCheck(true);
       setIsSubmitting(true);
@@ -513,19 +593,33 @@ const FosterManagement = () => {
 
   const handleSaveBackgroundCheckOutcome = async () => {
     if (!selectedFoster) return;
+    const userRole = getCurrentUserRole();
+    const isAuthorized =
+      userRole === "super_admin" ||
+      userRole === "foster_coordinator" ||
+      userRole === "rescue_centre_admin" ||
+      userRole === "shelter_manager";
+
+    if (!isAuthorized) {
+      addToast("403 Forbidden: You do not have permission to submit background check decisions.", "error");
+      return;
+    }
+
     if (!bgCheckOutcome) {
       addToast("Please select a verification outcome (Cleared, Flagged, or Rejected).", "error");
       return;
     }
-    if ((bgCheckOutcome === "flagged" || bgCheckOutcome === "rejected") && !bgCheckOutcomeNotes.trim()) {
-      addToast("Notes are mandatory when marking Background Check as Flagged or Rejected.", "error");
+
+    if (!bgCheckOutcomeNotes.trim()) {
+      addToast("Verification notes/reason are mandatory when submitting a Background Check outcome.", "error");
       return;
     }
+
     try {
       setIsSubmitting(true);
       const res = await fosterService.recordBackgroundCheckOutcome(selectedFoster.id, {
         outcome: bgCheckOutcome,
-        notes: bgCheckOutcomeNotes.trim() || "Background check outcome recorded.",
+        notes: bgCheckOutcomeNotes.trim(),
         references_checked: reviewForm.references_checked,
         reference_notes: reviewForm.reference_notes || undefined,
       });
@@ -554,6 +648,10 @@ const FosterManagement = () => {
 
   const handleScheduleHomeInspection = async () => {
     if (!selectedFoster) return;
+    if (!isAuthorizedCoordinator()) {
+      addToast("Unauthorized: Only Foster Coordinators and authorized administrators can schedule home inspections.", "error");
+      return;
+    }
     if (!inspectionScheduleForm.scheduled_at) {
       addToast("Inspection scheduled date/time is required.", "error");
       return;
@@ -583,6 +681,10 @@ const FosterManagement = () => {
 
   const handleSaveHomeInspectionAudit = async () => {
     if (!selectedFoster) return;
+    if (!isAuthorizedCoordinator()) {
+      addToast("Unauthorized: Only Foster Coordinators and authorized administrators can record inspection audits.", "error");
+      return;
+    }
     try {
       setIsSubmitting(true);
       const res = await fosterService.logHomeInspectionAudit(selectedFoster.id, {
@@ -612,6 +714,10 @@ const FosterManagement = () => {
   const handleUploadInspectionEvidence = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedFoster) return;
+    if (!isAuthorizedCoordinator()) {
+      addToast("Unauthorized: Only Foster Coordinators and authorized administrators can upload evidence.", "error");
+      return;
+    }
     const allowed = ["image/jpeg", "image/png", "image/jpg", "application/pdf"];
     if (!allowed.includes(file.type)) {
       addToast("Invalid file type. Only JPEG, PNG, and PDF are allowed.", "error");
@@ -659,15 +765,19 @@ const FosterManagement = () => {
 
   const handleSaveHomeInspectionOutcome = async () => {
     if (!selectedFoster) return;
-    if (inspectionOutcomeForm.outcome === "rejected" && !inspectionOutcomeForm.notes.trim()) {
-      addToast("Notes/Reason are mandatory when rejecting a Home Inspection.", "error");
+    if (!isAuthorizedCoordinator()) {
+      addToast("Unauthorized: Only Foster Coordinators and authorized administrators can submit home inspection outcomes.", "error");
+      return;
+    }
+    if (!inspectionOutcomeForm.notes.trim()) {
+      addToast("Notes/Reason are mandatory when recording a Home Inspection outcome.", "error");
       return;
     }
     try {
       setIsSubmitting(true);
       const res = await fosterService.recordHomeInspectionOutcome(selectedFoster.id, {
         outcome: inspectionOutcomeForm.outcome,
-        notes: inspectionOutcomeForm.notes.trim() || "Home inspection completed.",
+        notes: inspectionOutcomeForm.notes.trim(),
         address: reviewForm.home_inspection_address || undefined,
       });
       const updatedData = res?.data || res;
@@ -918,7 +1028,7 @@ const FosterManagement = () => {
 
       const allPlacements: any[] = [];
       list.forEach((p: any) => {
-        if (p.is_active || p.status === "active" || (!p.returned_at && p.status !== "converted_to_adopt" && p.status !== "returned")) {
+        if (!isClosedPlacement(p)) {
           const fosterObj = p.foster || {};
           const fId = String(p.foster_id || p.profile_id || fosterObj.id || "");
           const matchingProfile = profilesMap.get(fId);
@@ -933,6 +1043,7 @@ const FosterManagement = () => {
 
           allPlacements.push({
             ...p,
+            id: String(p.id || p.placement_id || ""),
             foster_family: familyName,
             profile_id: fId,
             background_check_passed: matchingProfile ? matchingProfile.background_check_passed : Boolean(fosterObj.background_check_passed),
@@ -1093,6 +1204,9 @@ const FosterManagement = () => {
     }
   }, [fetchFosters, fetchDogs]);
 
+  // Subscribe to automatic cross-module data change notifications
+  useDataSync(fetchFosters);
+
   useEffect(() => {
     const action = searchParams.get("action");
     const profileId = searchParams.get("profileId");
@@ -1197,8 +1311,10 @@ const FosterManagement = () => {
         addToast(`Cannot place dog: Foster family "${targetFoster.foster_family}" background check is not Cleared.`, "error");
         return;
       }
-      if (!targetFoster.home_inspection_passed) {
-        addToast(`Cannot place dog: Foster family "${targetFoster.foster_family}" home inspection is not Approved.`, "error");
+      const homeStatus = String(targetFoster.raw?.home_inspection_status || (targetFoster.home_inspection_passed ? "approved" : "pending")).toLowerCase();
+      const isHomeApproved = targetFoster.home_inspection_passed === true || homeStatus === "approved" || homeStatus === "passed";
+      if (!isHomeApproved) {
+        addToast(`Cannot place dog: Foster family "${targetFoster.foster_family}" home inspection is not Approved (Current status: ${homeStatus}).`, "error");
         return;
       }
     }
@@ -1262,31 +1378,54 @@ const FosterManagement = () => {
 
   const handleReturnSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPlacement?.id) return;
-    const dogId = String(selectedPlacement.dog_id || selectedPlacement.dog?.id || "");
+    const placementId = String(selectedPlacement?.id || selectedPlacement?.placement_id || "");
+    if (!placementId) {
+      addToast("Invalid foster placement record selected.", "error");
+      return;
+    }
+    const fosterId = String(selectedPlacement.foster_id || selectedPlacement.profile_id || "");
+
     try {
       setIsSubmitting(true);
-      await fosterService.returnDog(selectedPlacement.id, {
+      await fosterService.returnDog(placementId, {
         reason: returnReason,
         notes: returnNotes || `Concluded foster stay (${returnReason}). Returned animal to shelter facility.`,
       });
-      if (dogId) {
-        await petService.updatePet(dogId, {
-          status: "shelter_care",
-          shelter_status: "In Shelter",
-          is_adoptable: true,
-        }).catch(() => null);
+
+      // Optimistically remove placement from active roster immediately
+      setActivePlacements((prev) => prev.filter((p) => String(p.id || p.placement_id) !== placementId));
+
+      // Optimistically update caregiver capacity
+      if (fosterId) {
+        setFosters((prev) =>
+          prev.map((f) =>
+            f.id === fosterId
+              ? { ...f, active_count: Math.max(0, (f.active_count || 1) - 1), is_available: true }
+              : f
+          )
+        );
       }
-      addToast("Dog returned from foster care to shelter & Shelter Management roster updated!", "success");
+
+      // Close modals and clear selected state
       setIsReturnModalOpen(false);
+      setIsPlacementDetailModalOpen(false);
       setSelectedPlacement(null);
+      setSelectedPlacementDetail(null);
       setReturnNotes("");
       setReturnReason("Foster Term Completed");
-      fetchFosters();
-      fetchDogs();
+
+      addToast("Dog returned from foster care to shelter & Shelter Management roster updated!", "success");
+
+      // Await fresh server state
+      await Promise.allSettled([
+        fetchPlacements(),
+        fetchFosters(true),
+        fetchDogs(),
+      ]);
+
       notifyDataChanged();
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || err?.response?.data?.message || "Failed to return dog.";
+      const msg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to return dog.";
       addToast(msg, "error");
     } finally {
       setIsSubmitting(false);
@@ -2621,6 +2760,31 @@ const FosterManagement = () => {
                 {selectedFoster.raw?.background_check_notes && (
                   <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>Notes: {selectedFoster.raw.background_check_notes}</div>
                 )}
+                <div style={{ marginTop: "8px" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDetailModalOpen(false);
+                      handleOpenReview(selectedFoster);
+                      setReviewActiveStep(2);
+                    }}
+                    style={{
+                      padding: "5px 10px",
+                      borderRadius: "6px",
+                      border: "1px solid #BFDBFE",
+                      background: "#EFF6FF",
+                      color: "#2563EB",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    <FaClipboardList size={11} /> Manage Background Check
+                  </button>
+                </div>
               </div>
               <div style={{ background: "#FFF", padding: "12px 16px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
                 <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Home Inspection</div>
@@ -2652,6 +2816,31 @@ const FosterManagement = () => {
                 {selectedFoster.raw?.home_inspection_notes && (
                   <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>Notes: {selectedFoster.raw.home_inspection_notes}</div>
                 )}
+                <div style={{ marginTop: "8px" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDetailModalOpen(false);
+                      handleOpenReview(selectedFoster);
+                      setReviewActiveStep(3);
+                    }}
+                    style={{
+                      padding: "5px 10px",
+                      borderRadius: "6px",
+                      border: "1px solid #BFDBFE",
+                      background: "#EFF6FF",
+                      color: "#2563EB",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    <FaClipboardList size={11} /> Manage Home Inspection
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -3083,104 +3272,90 @@ const FosterManagement = () => {
 
                   {/* 2. Record Outcome & References */}
                   <div style={{
-                    background: isPending ? "#F8FAFC" : "#FFF",
+                    background: "#FFF",
                     border: "1px solid #E2E8F0",
                     borderRadius: "10px",
                     padding: "14px",
-                    opacity: isPending ? 0.6 : 1,
                   }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-                      <div style={{ fontSize: "13px", fontWeight: 800, color: isPending ? "#64748B" : "#0F172A" }}>
+                      <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A" }}>
                         2. Record Outcome &amp; References
                       </div>
-                      {isPending && (
-                        <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 600, background: "#E2E8F0", padding: "2px 8px", borderRadius: "4px" }}>
-                          Locked until check is initiated
-                        </span>
-                      )}
                     </div>
 
-                    {isPending ? (
-                      <div style={{ fontSize: "12px", color: "#64748B", padding: "8px 0" }}>
-                        Outcome and references cannot be recorded until a background check is initiated and in progress.
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: "10px", marginBottom: "10px" }}>
+                      <div>
+                        <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Background Outcome Decision *</label>
+                        <select
+                          value={bgCheckOutcome}
+                          onChange={(e) => setBgCheckOutcome(e.target.value as any)}
+                          disabled={isSubmitting}
+                          style={{
+                            ...inputStyle,
+                            fontSize: "12px",
+                            padding: "7px 10px",
+                            fontWeight: 700,
+                            background: bgCheckOutcome === "cleared" ? "#ECFDF5" : bgCheckOutcome === "rejected" ? "#FEF2F2" : bgCheckOutcome === "flagged" ? "#FFFBEB" : "#FFF",
+                          }}
+                        >
+                          <option value="" disabled>-- Select Verification Outcome --</option>
+                          <option value="cleared">✓ Cleared (Clean Record, Eligible)</option>
+                          <option value="flagged">⚠ Flagged (Discrepancy / Caution)</option>
+                          <option value="rejected">✕ Rejected (Disqualified)</option>
+                        </select>
                       </div>
-                    ) : (
-                      <>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: "10px", marginBottom: "10px" }}>
-                          <div>
-                            <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Background Outcome Decision *</label>
-                            <select
-                              value={bgCheckOutcome}
-                              onChange={(e) => setBgCheckOutcome(e.target.value as any)}
-                              disabled={isSubmitting}
-                              style={{
-                                ...inputStyle,
-                                fontSize: "12px",
-                                padding: "7px 10px",
-                                fontWeight: 700,
-                                background: bgCheckOutcome === "cleared" ? "#ECFDF5" : bgCheckOutcome === "rejected" ? "#FEF2F2" : bgCheckOutcome === "flagged" ? "#FFFBEB" : "#FFF",
-                              }}
-                            >
-                              <option value="" disabled>-- Select Verification Outcome --</option>
-                              <option value="cleared">✓ Cleared (Clean Record, Eligible)</option>
-                              <option value="flagged">⚠ Flagged (Discrepancy / Caution)</option>
-                              <option value="rejected">✕ Rejected (Disqualified)</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Verification Notes / Reference ID *</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. Cleared by PawGuard Registry ref #PG-BG-8921..."
-                              value={bgCheckOutcomeNotes}
-                              onChange={(e) => setBgCheckOutcomeNotes(e.target.value)}
-                              disabled={isSubmitting}
-                              style={{ ...inputStyle, fontSize: "12px", padding: "7px 10px" }}
-                            />
-                          </div>
-                        </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Verification Notes / Reason *</label>
+                        <input
+                          type="text"
+                          placeholder="Mandatory notes or reference ID (e.g. Cleared by PawGuard Registry ref #PG-BG-8921)..."
+                          value={bgCheckOutcomeNotes}
+                          onChange={(e) => setBgCheckOutcomeNotes(e.target.value)}
+                          disabled={isSubmitting}
+                          style={{ ...inputStyle, fontSize: "12px", padding: "7px 10px" }}
+                        />
+                      </div>
+                    </div>
 
-                        <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "10px", alignItems: "center", borderTop: "1px dashed #E2E8F0", paddingTop: "10px", marginBottom: "10px" }}>
-                          <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 600, color: "#334155", cursor: "pointer" }}>
-                            <input
-                              type="checkbox"
-                              checked={reviewForm.references_checked}
-                              onChange={(e) => setReviewForm({ ...reviewForm, references_checked: e.target.checked })}
-                              disabled={isSubmitting}
-                            />
-                            Personal &amp; Vet References Checked
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Reference verification notes or veterinarian check summary..."
-                            value={reviewForm.reference_notes}
-                            onChange={(e) => setReviewForm({ ...reviewForm, reference_notes: e.target.value })}
-                            disabled={isSubmitting}
-                            style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
-                          />
-                        </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "10px", alignItems: "center", borderTop: "1px dashed #E2E8F0", paddingTop: "10px", marginBottom: "10px" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 600, color: "#334155", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={reviewForm.references_checked}
+                          onChange={(e) => setReviewForm({ ...reviewForm, references_checked: e.target.checked })}
+                          disabled={isSubmitting}
+                        />
+                        Personal &amp; Vet References Checked
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Reference verification notes or veterinarian check summary..."
+                        value={reviewForm.reference_notes}
+                        onChange={(e) => setReviewForm({ ...reviewForm, reference_notes: e.target.value })}
+                        disabled={isSubmitting}
+                        style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                      />
+                    </div>
 
-                        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                          <button
-                            type="button"
-                            disabled={isSubmitting || !bgCheckOutcome}
-                            onClick={handleSaveBackgroundCheckOutcome}
-                            style={{
-                              padding: "7px 16px",
-                              borderRadius: "6px",
-                              border: "1px solid #CBD5E1",
-                              background: !bgCheckOutcome || isSubmitting ? "#F1F5F9" : "#0F172A",
-                              color: !bgCheckOutcome || isSubmitting ? "#94A3B8" : "#FFF",
-                              fontSize: "12px",
-                              fontWeight: 700,
-                              cursor: !bgCheckOutcome || isSubmitting ? "not-allowed" : "pointer",
-                            }}
-                          >
-                            {isSubmitting ? "Saving Outcome..." : "Save Background Check Outcome"}
-                          </button>
-                        </div>
-                      </>
-                    )}
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      <button
+                        type="button"
+                        disabled={isSubmitting || !bgCheckOutcome}
+                        onClick={handleSaveBackgroundCheckOutcome}
+                        style={{
+                          padding: "7px 16px",
+                          borderRadius: "6px",
+                          border: "1px solid #CBD5E1",
+                          background: !bgCheckOutcome || isSubmitting ? "#F1F5F9" : "#0F172A",
+                          color: !bgCheckOutcome || isSubmitting ? "#94A3B8" : "#FFF",
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          cursor: !bgCheckOutcome || isSubmitting ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        {isSubmitting ? "Saving Outcome..." : "Save Background Check Outcome"}
+                      </button>
+                    </div>
                   </div>
 
                   {/* Navigation */}
@@ -3321,14 +3496,28 @@ const FosterManagement = () => {
                           />
                         </div>
                         <div>
-                          <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Inspector Name</label>
-                          <input
-                            type="text"
-                            placeholder="Assigned inspector full name..."
-                            value={inspectionScheduleForm.inspector_name}
-                            onChange={(e) => setInspectionScheduleForm({ ...inspectionScheduleForm, inspector_name: e.target.value })}
-                            style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
-                          />
+                          <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Inspector Name *</label>
+                          {staffInspectors.length > 0 ? (
+                            <select
+                              value={inspectionScheduleForm.inspector_name}
+                              onChange={(e) => setInspectionScheduleForm({ ...inspectionScheduleForm, inspector_name: e.target.value })}
+                              style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                            >
+                              {staffInspectors.map((inspector) => (
+                                <option key={inspector.id} value={inspector.name}>
+                                  {inspector.name} ({inspector.role})
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              placeholder="Assigned inspector full name..."
+                              value={inspectionScheduleForm.inspector_name}
+                              onChange={(e) => setInspectionScheduleForm({ ...inspectionScheduleForm, inspector_name: e.target.value })}
+                              style={{ ...inputStyle, fontSize: "12px", padding: "6px 8px" }}
+                            />
+                          )}
                         </div>
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
