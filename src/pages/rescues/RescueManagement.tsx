@@ -275,7 +275,14 @@ const formatCaseRow = (raw: Record<string, unknown>): RescueCaseTableRow => {
     behavioral_indicators: toSafeStr(item.behavioral_indicators ?? "-"),
     severity: toSafeStr(item.severity ?? item.urgency_level ?? item.urgency ?? "-"),
     is_urgent: item.is_urgent !== undefined && item.is_urgent !== null ? (item.is_urgent ? "Yes" : "No") : "-",
-    coordinator_id: item.coordinator_id ? toSafeStr(item.coordinator_id) : null,
+    coordinator_id: item.coordinator_id ? toSafeStr(item.coordinator_id) : d?.assigned_coordinator_id ? toSafeStr(d.assigned_coordinator_id) : null,
+    coordinator_name: toSafeStr(item.coordinator_name || item.coordinator || d?.assigned_coordinator_name || item.coordinator_id || d?.assigned_coordinator_id || "-"),
+    assigned_agent_id: toSafeStr(d?.assigned_agent_id || (agentsList.length > 0 ? agentsList[0]?.agent_id || agentsList[0]?.id : "") || item.assigned_agent_id || "-"),
+    assigned_agent_name: agentsList.length > 0
+      ? agentsList.map((a: Record<string, unknown>) => toSafeStr(a.agent_name || a.name || a.agent_id || a.id || "")).join(", ")
+      : toSafeStr(d?.assigned_agent_names || d?.agent_name || item.assigned_agent_name || "-"),
+    assigned_vehicle_id: toSafeStr(d?.assigned_vehicle_id || item.assigned_vehicle_id || d?.vehicle_id || "-"),
+    assigned_vehicle_number: toSafeStr(d?.assigned_vehicle_number || d?.vehicle_number || d?.vehicle_id || item.assigned_vehicle_number || item.assigned_vehicle_id || "-"),
     media_evidence: Array.isArray(item.media_evidence)
       ? item.media_evidence.join(", ")
       : toSafeStr(item.media_evidence ?? item.media_urls ?? "-"),
@@ -474,17 +481,19 @@ const RescueManagement = () => {
       setError(null);
 
       const isAgentRole = getCurrentUserRole() === "rescue_agent";
-      const [casesRes, usersRes, vehiclesRes, agentsAvailRes] = await Promise.allSettled([
+      const [casesRes, usersRes, vehiclesRes, agentsAvailRes, vehiclesAvailRes] = await Promise.allSettled([
         rescueService.getAllRescueCases(isAgentRole ? { assigned_to_me: true } : undefined),
         userService.getUsers(),
         vehicleService.getVehicles(),
         rescueService.getAgentAvailability(),
+        rescueService.getVehicleAvailability(),
       ]);
 
       // Process Cases
+      let formattedCases: RescueCaseTableRow[] = [];
       if (casesRes.status === "fulfilled") {
         const rawCases = unwrapList(casesRes.value?.data ?? casesRes.value);
-        const formattedCases = (rawCases as Record<string, unknown>[]).map(formatCaseRow);
+        formattedCases = (rawCases as Record<string, unknown>[]).map(formatCaseRow);
         formattedCases.sort((a, b) => {
           const rawA = (a.rawItem?.created_at || a.rawItem?.reported_at || a.rawItem?.timestamp || a.rawItem?.date || a.created_at) as string;
           const rawB = (b.rawItem?.created_at || b.rawItem?.reported_at || b.rawItem?.timestamp || b.rawItem?.date || b.created_at) as string;
@@ -495,6 +504,13 @@ const RescueManagement = () => {
           return validB - validA;
         });
         setCases(formattedCases);
+
+        // Keep active selectedCase up-to-date with fresh backend data
+        setSelectedCase((prev) => {
+          if (!prev) return null;
+          const updated = formattedCases.find((c) => c.id === prev.id);
+          return updated || prev;
+        });
       } else {
         setCases([]);
       }
@@ -516,13 +532,31 @@ const RescueManagement = () => {
       });
       setUsers(Array.from(userMap.values()));
 
-      // Process Vehicles
+      // Process Vehicles (Merge fleet endpoint with rescue availability)
+      const vehicleMap = new Map<string, Record<string, unknown>>();
       if (vehiclesRes.status === "fulfilled") {
         const rawVehicles = unwrapList(vehiclesRes.value?.data ?? vehiclesRes.value);
-        setVehicles(rawVehicles as Record<string, unknown>[]);
-      } else {
-        setVehicles([]);
+        (rawVehicles as Record<string, unknown>[]).forEach((v) => {
+          const vId = toSafeStr(v.id || v.vehicle_id || v.license_plate);
+          if (vId) vehicleMap.set(vId, v);
+        });
       }
+      if (vehiclesAvailRes.status === "fulfilled") {
+        const rawAvail = unwrapList(vehiclesAvailRes.value?.data ?? vehiclesAvailRes.value);
+        (rawAvail as Record<string, unknown>[]).forEach((v) => {
+          const vId = toSafeStr(v.vehicle_id || v.id || v.license_plate);
+          if (vId && !vehicleMap.has(vId)) {
+            vehicleMap.set(vId, {
+              ...v,
+              id: vId,
+              vehicle_id: vId,
+              registration_number: v.license_plate || v.registration_number,
+              status: v.availability || v.operational_status || v.status,
+            });
+          }
+        });
+      }
+      setVehicles(Array.from(vehicleMap.values()));
     } catch (err: unknown) {
       const e = err as { response?: { data?: { detail?: string; message?: string } } };
       setError(e?.response?.data?.detail || e?.response?.data?.message || "Failed to load rescue operations data.");

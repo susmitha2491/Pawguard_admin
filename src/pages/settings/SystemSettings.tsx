@@ -10,9 +10,11 @@ import {
   FaSync,
   FaLock,
   FaClock,
+  FaExclamationTriangle,
 } from "react-icons/fa";
 import settingsService from "../../services/settingsService";
 import { notifyDataChanged } from "../../utils/dataSync";
+import { extractErrorMessage } from "../../utils/errorUtils";
 
 const SystemSettings = () => {
   const { addToast } = useToast();
@@ -20,6 +22,7 @@ const SystemSettings = () => {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [backendError, setBackendError] = useState<string | null>(null);
 
   // General Settings
   const [generalForm, setGeneralForm] = useState({
@@ -33,10 +36,17 @@ const SystemSettings = () => {
   // Security Settings
   const [securityForm, setSecurityForm] = useState({
     min_length: 10,
-    require_special_char: true,
-    require_numbers: true,
     require_uppercase: true,
+    require_lowercase: true,
+    require_digit: true,
+    require_special_char: true,
+    require_special: true,
+    require_numbers: true,
+    max_age_days: 90,
+    password_history_count: 5,
     max_login_attempts: 5,
+    lockout_duration_minutes: 15,
+    is_active: true,
     session_timeout_minutes: 30,
     totp_mfa_required_for_admins: true,
   });
@@ -55,11 +65,14 @@ const SystemSettings = () => {
     smtp_port: 587,
     sender_email: "notifications@pawguard.org",
     enable_email_alerts: true,
+    mail_username: "",
   });
 
   const fetchAllSettings = async () => {
     try {
       setLoading(true);
+      setBackendError(null);
+
       const [genRes, secRes, bizRes, mailRes] = await Promise.allSettled([
         settingsService.getGeneralSettings(),
         settingsService.getPasswordPolicy(),
@@ -67,24 +80,77 @@ const SystemSettings = () => {
         settingsService.getEmailSettings(),
       ]);
 
+      const errors: string[] = [];
+
       if (genRes.status === "fulfilled" && genRes.value) {
         const data = genRes.value.data || genRes.value;
         setGeneralForm((prev) => ({ ...prev, ...data }));
+      } else if (genRes.status === "rejected") {
+        errors.push(`General Config: ${extractErrorMessage(genRes.reason, "Failed to load general settings")}`);
       }
+
       if (secRes.status === "fulfilled" && secRes.value) {
         const data = secRes.value.data || secRes.value;
-        setSecurityForm((prev) => ({ ...prev, ...data }));
+        setSecurityForm((prev) => {
+          const updated = { ...prev, ...data };
+          if (data.require_special !== undefined && data.require_special_char === undefined) {
+            updated.require_special_char = Boolean(data.require_special);
+          }
+          if (data.require_special_char !== undefined) {
+            updated.require_special = Boolean(data.require_special_char);
+          }
+          if (data.require_digit !== undefined && data.require_numbers === undefined) {
+            updated.require_numbers = Boolean(data.require_digit);
+          }
+          if (data.require_numbers !== undefined && data.require_digit === undefined) {
+            updated.require_digit = Boolean(data.require_numbers);
+          }
+          return updated;
+        });
+      } else if (secRes.status === "rejected") {
+        errors.push(`Security Policy: ${extractErrorMessage(secRes.reason, "Failed to load security policy")}`);
       }
+
       if (bizRes.status === "fulfilled" && bizRes.value) {
         const data = bizRes.value.data || bizRes.value;
-        setBusinessForm((prev) => ({ ...prev, ...data }));
+        if (Array.isArray(data)) {
+          setBusinessForm((prev) => {
+            const updated = { ...prev };
+            data.forEach((item: any) => {
+              const k = item.rule_key || item.key;
+              const v = item.rule_value !== undefined ? item.rule_value : item.value;
+              if (k && k in updated) {
+                (updated as any)[k] = typeof (updated as any)[k] === "number" ? Number(v) : v;
+              }
+            });
+            return updated;
+          });
+        } else if (data && typeof data === "object") {
+          setBusinessForm((prev) => ({ ...prev, ...data }));
+        }
+      } else if (bizRes.status === "rejected") {
+        errors.push(`Business Rules: ${extractErrorMessage(bizRes.reason, "Failed to load business rules")}`);
       }
+
       if (mailRes.status === "fulfilled" && mailRes.value) {
         const data = mailRes.value.data || mailRes.value;
-        setEmailForm((prev) => ({ ...prev, ...data }));
+        setEmailForm((prev) => ({
+          ...prev,
+          ...data,
+          smtp_server: data.mail_host || data.smtp_server || prev.smtp_server,
+          smtp_port: data.mail_port !== undefined ? Number(data.mail_port) : (data.smtp_port !== undefined ? Number(data.smtp_port) : prev.smtp_port),
+          sender_email: data.mail_from || data.sender_email || prev.sender_email,
+          enable_email_alerts: data.mail_use_tls !== undefined ? Boolean(data.mail_use_tls) : (data.enable_email_alerts !== undefined ? Boolean(data.enable_email_alerts) : prev.enable_email_alerts),
+        }));
+      } else if (mailRes.status === "rejected") {
+        errors.push(`Email Config: ${extractErrorMessage(mailRes.reason, "Failed to load email config")}`);
       }
-    } catch {
-      // Gracefully maintain baseline defaults if backend endpoint returns schema wrapper
+
+      if (errors.length > 0) {
+        setBackendError(errors.join(" | "));
+      }
+    } catch (err: any) {
+      setBackendError(extractErrorMessage(err, "Failed to load settings configuration."));
     } finally {
       setLoading(false);
     }
@@ -98,11 +164,15 @@ const SystemSettings = () => {
     e.preventDefault();
     try {
       setSaving(true);
+      setBackendError(null);
       await settingsService.updateGeneralSettings(generalForm);
       addToast("General platform settings saved successfully!", "success");
       notifyDataChanged();
-    } catch {
-      addToast("General settings saved locally.", "info");
+      await fetchAllSettings();
+    } catch (err: any) {
+      const msg = extractErrorMessage(err, "Failed to save general platform settings.");
+      setBackendError(`General Settings Save Error: ${msg}`);
+      addToast(msg, "error");
     } finally {
       setSaving(false);
     }
@@ -112,11 +182,22 @@ const SystemSettings = () => {
     e.preventDefault();
     try {
       setSaving(true);
-      await settingsService.updatePasswordPolicy(securityForm);
+      setBackendError(null);
+      const payload = {
+        ...securityForm,
+        require_special: securityForm.require_special_char,
+        require_special_char: securityForm.require_special_char,
+        require_digit: securityForm.require_digit,
+        require_numbers: securityForm.require_digit,
+      };
+      await settingsService.updatePasswordPolicy(payload);
       addToast("Security & Password governance policy updated successfully!", "success");
       notifyDataChanged();
-    } catch {
-      addToast("Security policy saved locally.", "info");
+      await fetchAllSettings();
+    } catch (err: any) {
+      const msg = extractErrorMessage(err, "Failed to update security policy.");
+      setBackendError(`Security Policy Update Error: ${msg}`);
+      addToast(msg, "error");
     } finally {
       setSaving(false);
     }
@@ -126,11 +207,24 @@ const SystemSettings = () => {
     e.preventDefault();
     try {
       setSaving(true);
-      await settingsService.updateBusinessRule("general_rules", businessForm);
+      setBackendError(null);
+      const ruleEntries = Object.entries(businessForm);
+      await Promise.all(
+        ruleEntries.map(([rule_key, val]) =>
+          settingsService.updateBusinessRule(rule_key, {
+            rule_value: String(val),
+            module: "general",
+            is_active: true,
+          })
+        )
+      );
       addToast("Business operation rules updated successfully!", "success");
       notifyDataChanged();
-    } catch {
-      addToast("Business operation rules updated locally.", "info");
+      await fetchAllSettings();
+    } catch (err: any) {
+      const msg = extractErrorMessage(err, "Failed to update business rules.");
+      setBackendError(`Business Rules Update Error: ${msg}`);
+      addToast(msg, "error");
     } finally {
       setSaving(false);
     }
@@ -140,11 +234,26 @@ const SystemSettings = () => {
     e.preventDefault();
     try {
       setSaving(true);
-      await settingsService.updateEmailSettings(emailForm);
+      setBackendError(null);
+      const payload = {
+        ...emailForm,
+        mail_host: emailForm.smtp_server,
+        mail_port: Number(emailForm.smtp_port),
+        mail_from: emailForm.sender_email,
+        mail_use_tls: Boolean(emailForm.enable_email_alerts),
+        smtp_server: emailForm.smtp_server,
+        smtp_port: Number(emailForm.smtp_port),
+        sender_email: emailForm.sender_email,
+        enable_email_alerts: Boolean(emailForm.enable_email_alerts),
+      };
+      await settingsService.updateEmailSettings(payload);
       addToast("Email server configuration updated successfully!", "success");
       notifyDataChanged();
-    } catch {
-      addToast("Email configuration updated locally.", "info");
+      await fetchAllSettings();
+    } catch (err: any) {
+      const msg = extractErrorMessage(err, "Failed to update email settings.");
+      setBackendError(`Email Settings Update Error: ${msg}`);
+      addToast(msg, "error");
     } finally {
       setSaving(false);
     }
@@ -207,6 +316,31 @@ const SystemSettings = () => {
           </button>
         </div>
       </div>
+
+      {backendError && (
+        <div
+          style={{
+            marginBottom: "24px",
+            padding: "16px 20px",
+            borderRadius: "12px",
+            background: "#FEF2F2",
+            border: "1px solid #FCA5A5",
+            color: "#991B1B",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "12px",
+            fontSize: "13.5px",
+          }}
+        >
+          <FaExclamationTriangle size={18} style={{ color: "#DC2626", marginTop: "2px", flexShrink: 0 }} />
+          <div>
+            <div style={{ fontWeight: 700, fontSize: "14px", marginBottom: "2px" }}>
+              Backend Settings Service Alert
+            </div>
+            <div>{backendError}</div>
+          </div>
+        </div>
+      )}
 
       {/* Metric Cards */}
       <div
@@ -399,6 +533,88 @@ const SystemSettings = () => {
                 onChange={(e) => setSecurityForm({ ...securityForm, session_timeout_minutes: Number(e.target.value) })}
                 style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px" }}
               />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                  Max Password Age (Days)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={securityForm.max_age_days}
+                  onChange={(e) => setSecurityForm({ ...securityForm, max_age_days: Number(e.target.value) })}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px" }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                  Password History Count
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={50}
+                  value={securityForm.password_history_count}
+                  onChange={(e) => setSecurityForm({ ...securityForm, password_history_count: Number(e.target.value) })}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px" }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                  Lockout Duration (Mins)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={1440}
+                  value={securityForm.lockout_duration_minutes}
+                  onChange={(e) => setSecurityForm({ ...securityForm, lockout_duration_minutes: Number(e.target.value) })}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px" }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", background: "#F8FAFC", padding: "16px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", fontWeight: 600, color: "#0F172A", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={securityForm.require_uppercase}
+                  onChange={(e) => setSecurityForm({ ...securityForm, require_uppercase: e.target.checked })}
+                />
+                Require Uppercase Letter
+              </label>
+
+              <label style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", fontWeight: 600, color: "#0F172A", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={securityForm.require_lowercase}
+                  onChange={(e) => setSecurityForm({ ...securityForm, require_lowercase: e.target.checked })}
+                />
+                Require Lowercase Letter
+              </label>
+
+              <label style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", fontWeight: 600, color: "#0F172A", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={securityForm.require_digit}
+                  onChange={(e) => setSecurityForm({ ...securityForm, require_digit: e.target.checked, require_numbers: e.target.checked })}
+                />
+                Require Digit / Number
+              </label>
+
+              <label style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", fontWeight: 600, color: "#0F172A", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={securityForm.require_special_char}
+                  onChange={(e) => setSecurityForm({ ...securityForm, require_special_char: e.target.checked, require_special: e.target.checked })}
+                />
+                Require Special Character
+              </label>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "12px", background: "#F8FAFC", padding: "16px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>

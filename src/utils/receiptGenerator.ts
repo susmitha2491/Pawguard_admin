@@ -215,7 +215,7 @@ export function generateOfficialDonationReceiptPdf(data: DonationReceiptData): B
   const streamBytes = new TextEncoder().encode(streamInstructions);
   const streamLength = streamBytes.length;
 
-  let pdfHeader = "%PDF-1.4\n%\xe2\xe3\xcf\xd3\n";
+  const pdfHeader = "%PDF-1.4\n%\xe2\xe3\xcf\xd3\n";
   const offsets: number[] = [];
 
   let body = "";

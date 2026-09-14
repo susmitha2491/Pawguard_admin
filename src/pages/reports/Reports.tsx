@@ -3697,46 +3697,255 @@ const Reports = () => {
 
   // ADOPTION OPERATIONS REPORT VIEW
   const renderAdoptionReports = () => {
-    const approvedAdoptions = adoptions.filter((a) => ["approved", "completed"].includes(String(a.status).toLowerCase()));
-    const pendingAdoptions = adoptions.filter((a) => ["applied", "pending", "under_review"].includes(String(a.status).toLowerCase()));
-    const adoptableDogs = shelterDogs.filter((d) => d.is_adoptable || String(d.status).toLowerCase() === "adoptable");
+    const totalAppsCount = adoptions.length;
+    const approvedAdoptions = adoptions.filter((a) =>
+      ["approved", "completed"].includes(String(a.status || "").toLowerCase())
+    );
+    const pendingAdoptions = adoptions.filter((a) =>
+      ["applied", "pending", "under_review", "submitted", "screening", "interview", "home_check", "vetting"].includes(
+        String(a.status || "").toLowerCase()
+      )
+    );
+    const rejectedAdoptions = adoptions.filter((a) =>
+      String(a.status || "").toLowerCase() === "rejected"
+    );
+    const adoptableDogs = shelterDogs.filter(
+      (d) => d.is_adoptable || String(d.status || "").toLowerCase() === "adoptable"
+    );
+
+    // 1. Adoption Application Conversion Rate (%)
+    // Calculated from approved/completed placements out of total applications
+    const conversionRateNum = totalAppsCount > 0 ? (approvedAdoptions.length / totalAppsCount) * 100 : 0;
+    const conversionRateStr = totalAppsCount > 0 ? conversionRateNum.toFixed(1) + "%" : "0.0%";
+
+    // 2. Average Application-to-Completion Time (in days) using actual timestamps only
+    let totalProcessingDays = 0;
+    let processedCount = 0;
+    adoptions.forEach((a) => {
+      const startStr = a.submitted_at || a.created_at || a.date;
+      const endStr = a.completed_at || (["approved", "completed"].includes(String(a.status || "").toLowerCase()) ? a.updated_at : null);
+      if (startStr && endStr && startStr !== "-" && endStr !== "-") {
+        const start = new Date(startStr).getTime();
+        const end = new Date(endStr).getTime();
+        if (!isNaN(start) && !isNaN(end) && end >= start) {
+          const diffDays = (end - start) / (1000 * 60 * 60 * 24);
+          totalProcessingDays += diffDays;
+          processedCount++;
+        }
+      }
+    });
+    const avgProcessingDaysStr = processedCount > 0 ? `${(totalProcessingDays / processedCount).toFixed(1)} days` : "Data unavailable";
+
+    // 3. Application Rejection Reasons Breakdown (using canonical rejection_reason or reason field; fallback "Not specified")
+    const rejectionReasonMap: Record<string, number> = {};
+    rejectedAdoptions.forEach((a) => {
+      const rawReason = a.rejection_reason || a.reason;
+      const key = rawReason && String(rawReason).trim() ? String(rawReason).trim() : "Not specified";
+      rejectionReasonMap[key] = (rejectionReasonMap[key] || 0) + 1;
+    });
+
+    const rejectionBreakdown = Object.entries(rejectionReasonMap).map(([reason, count]) => ({
+      reason,
+      count,
+      pct: rejectedAdoptions.length > 0 ? ((count / rejectedAdoptions.length) * 100).toFixed(1) + "%" : "0%",
+    }));
+
+    // 4. Post-Adoption Follow-Up Compliance Rate (%)
+    // Evaluates actual follow_ups / follow_up_records exposed by backend response
+    let totalFollowUpsDue = 0;
+    let completedFollowUpsCount = 0;
+    let overdueFollowUpsCount = 0;
+    let pendingFollowUpsCount = 0;
+    let hasRealFollowUpData = false;
+
+    adoptions.forEach((a) => {
+      const fuList = (a.follow_ups || a.follow_up_records || a.followups) as any[];
+      if (Array.isArray(fuList) && fuList.length > 0) {
+        hasRealFollowUpData = true;
+        fuList.forEach((fu) => {
+          totalFollowUpsDue++;
+          const statusStr = String(fu.status || fu.state || fu.compliance_status || "").toLowerCase();
+          if (["completed", "verified", "submitted", "passed"].includes(statusStr) || fu.is_completed || fu.completed_at) {
+            completedFollowUpsCount++;
+          } else if (["overdue", "late", "missed"].includes(statusStr) || fu.is_overdue) {
+            overdueFollowUpsCount++;
+          } else {
+            pendingFollowUpsCount++;
+          }
+        });
+      }
+    });
+
+    const followUpComplianceRateStr = hasRealFollowUpData && totalFollowUpsDue > 0
+      ? `${Math.round((completedFollowUpsCount / totalFollowUpsDue) * 100)}%`
+      : "Data unavailable";
+
+    const followUpComplianceDetail = hasRealFollowUpData && totalFollowUpsDue > 0
+      ? `${completedFollowUpsCount}/${totalFollowUpsDue} Check-ins Verified`
+      : "No post-adoption follow-up records available";
 
     const adoptionStatCards = [
-      { title: "Total Adoption Applications", value: loading ? "..." : String(adoptions.length), trend: "Applications Pipeline", color: "#2563EB", icon: <FaHeart /> },
-      { title: "Completed Adoptions", value: loading ? "..." : String(approvedAdoptions.length), trend: "Successful Homes", color: "#10B981", icon: <FaCheckCircle /> },
-      { title: "Pending Review", value: loading ? "..." : String(pendingAdoptions.length), trend: "Requires Action", color: "#F59E0B", icon: <FaClipboardList /> },
-      { title: "Available Adoptable Dogs", value: loading ? "..." : String(adoptableDogs.length), trend: "Ready for Adoption", color: "#6366F1", icon: <FaPaw /> },
+      { title: "Total Applications", value: loading ? "..." : String(totalAppsCount), trend: "Adoption Pipeline", color: "#2563EB", icon: <FaHeart /> },
+      { title: "Completed Adoptions", value: loading ? "..." : String(approvedAdoptions.length), trend: "Placed in Homes", color: "#10B981", icon: <FaCheckCircle /> },
+      { title: "Adoption Conversion Rate", value: loading ? "..." : conversionRateStr, trend: `${approvedAdoptions.length} of ${totalAppsCount} converted`, color: "#8B5CF6", icon: <FaChartLine /> },
+      { title: "Avg. Application-to-Completion Time", value: loading ? "..." : avgProcessingDaysStr, trend: processedCount > 0 ? "Actual placement cycle" : "No timestamp data available", color: "#06B6D4", icon: <FaClock /> },
+      { title: "Follow-Up Compliance", value: loading ? "..." : followUpComplianceRateStr, trend: followUpComplianceDetail, color: "#10B981", icon: <FaCheckDouble /> },
+      { title: "Adoptable Dogs Roster", value: loading ? "..." : String(adoptableDogs.length), trend: "Ready for Placement", color: "#6366F1", icon: <FaPaw /> },
     ];
 
     return (
       <div style={{ width: "100%", boxSizing: "border-box" }}>
         <div style={{ marginBottom: "24px", background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "24px", borderRadius: "16px", color: "#fff" }}>
-          <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Adoption Operations &amp; Placement Analytics</h1>
+          <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800 }}>Adoption Pipeline Analysis &amp; Placement Reports</h1>
           <p style={{ margin: "6px 0 0", color: "#94A3B8", fontSize: "14px" }}>
-            Analytical overview of adoption application pipelines, approved placements, adopter inquiries, and adoptable dog rosters.
+            Comprehensive analytics overview of adoption conversion rates, application turnaround times, rejection reasons, and post-adoption follow-up compliance.
           </p>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", marginBottom: "24px" }}>
+        {/* Export Action Buttons */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px", marginBottom: "24px" }}>
           <QuickActionCard
             icon={<FaFileAlt />}
             title="Export Adoptions Pipeline (CSV)"
-            subtitle="Full adoptions application raw dataset"
+            subtitle="Full adoption applications raw dataset CSV"
             color="#2563EB"
             onClick={() => {
-              const headers = "Adoption_ID,Applicant_Name,Dog_ID,Status,Applied_Date";
-              const rows = adoptions.map((a) => `"${a.id || "-"}","${a.applicant_name || a.adopter_name || "Applicant"}","${a.dog_id || "-"}","${a.status || "pending"}","${a.created_at || "-"}"`);
+              const headers = "Application_ID,Applicant_Name,Applicant_Email,Dog_ID,Dog_Name,Status,Applied_Date,Completed_Date,Rejection_Reason";
+              const rows = adoptions.map((a) => {
+                const rawR = a.rejection_reason || a.reason;
+                const rText = String(a.status).toLowerCase() === "rejected" ? String(rawR || "Not specified").replace(/"/g, '""') : "";
+                return `"${a.id || "-"}","${a.applicant_name || a.adopter_name || "Applicant"}","${a.applicant_email || a.adopter_email || "-"}","${a.dog_id || "-"}","${a.petName || a.dog_name || "Canine"}","${a.status || "submitted"}","${a.created_at || a.date || "-"}","${a.completed_at || "-"}","${rText}"`;
+              });
               handleExportCSV("adoptions_pipeline_report", headers, rows);
+            }}
+          />
+          <QuickActionCard
+            icon={<FaFileDownload />}
+            title="Export Adoption Report (PDF)"
+            subtitle="Printable adoption pipeline & placement analytics PDF"
+            color="#7C3AED"
+            onClick={async () => {
+              addToast("Preparing Adoption Analytics PDF...", "info");
+              try {
+                await reportsService.generateAndDownloadReport({ report_type: "adoption", format: "pdf" });
+                addToast("Adoption report PDF downloaded successfully!", "success");
+              } catch {
+                const pdfHeaders = ["Analytics Category / Metric", "Value / Performance Summary"];
+                const pdfRows = [
+                  ["Total Adoption Applications Received", totalAppsCount],
+                  ["Approved & Completed Placements", approvedAdoptions.length],
+                  ["Adoption Pipeline Conversion Rate (%)", conversionRateStr],
+                  ["Applications Pending Review & Action", pendingAdoptions.length],
+                  ["Average Application-to-Completion Time", avgProcessingDaysStr],
+                  ["Post-Adoption Follow-Up Compliance Rate", followUpComplianceRateStr],
+                  ["Total Rejected Applications Logged", rejectedAdoptions.length],
+                  ["Available Adoptable Dogs Roster", adoptableDogs.length],
+                ];
+                handleExportPDF(
+                  "Adoption Pipeline Analysis & Placement Report",
+                  "Official analytical audit of adoption application pipelines, conversion rates, turnaround times, rejection reasons, and follow-up compliance.",
+                  pdfHeaders,
+                  pdfRows
+                );
+              }
             }}
           />
         </div>
 
+        {/* Primary Stat Cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "24px" }}>
           {adoptionStatCards.map((card) => (
             <StatCard key={card.title} {...card} />
           ))}
         </div>
 
+        {/* Adoption Pipeline Analytics Section */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px", marginBottom: "24px" }}>
+          {/* Average Application-to-Completion Time */}
+          <div className="soft-card" style={{ padding: "20px" }}>
+            <h3 style={{ margin: "0 0 14px", fontSize: "16px", fontWeight: 700, color: "#0F172A", display: "flex", alignItems: "center", gap: "8px" }}>
+              <FaClock style={{ color: "#06B6D4" }} /> Average Application-to-Completion Time
+            </h3>
+            <p style={{ margin: "0 0 16px", fontSize: "13px", color: "#64748B" }}>
+              Actual placement duration computed from application submission to completion timestamps.
+            </p>
+            <div style={{ textAlign: "center", padding: "16px", background: "#ECFEFF", borderRadius: "12px", border: "1px solid #A5F3FC", marginBottom: "16px" }}>
+              <div style={{ fontSize: "28px", fontWeight: 800, color: "#0891B2" }}>{avgProcessingDaysStr}</div>
+              <div style={{ fontSize: "12px", fontWeight: 600, color: "#0E7490", marginTop: "4px" }}>
+                {processedCount > 0 ? `Calculated across ${processedCount} completed application records` : "No timestamp data available in dataset"}
+              </div>
+            </div>
+          </div>
+
+          {/* Post-Adoption Follow-Up Compliance */}
+          <div className="soft-card" style={{ padding: "20px" }}>
+            <h3 style={{ margin: "0 0 14px", fontSize: "16px", fontWeight: 700, color: "#0F172A", display: "flex", alignItems: "center", gap: "8px" }}>
+              <FaCheckCircle style={{ color: "#10B981" }} /> Post-Adoption Follow-Up Compliance
+            </h3>
+            <p style={{ margin: "0 0 16px", fontSize: "13px", color: "#64748B" }}>
+              Adherence to mandatory post-adoption welfare check-ins and verified proof submissions.
+            </p>
+            {hasRealFollowUpData ? (
+              <>
+                <div style={{ textAlign: "center", padding: "16px", background: "#F0FDF4", borderRadius: "12px", border: "1px solid #BBF7D0", marginBottom: "16px" }}>
+                  <div style={{ fontSize: "32px", fontWeight: 800, color: "#166534" }}>{followUpComplianceRateStr}</div>
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#15803D", marginTop: "4px" }}>Overall Compliance Rate</div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#475569" }}>
+                    <span>Scheduled Post-Adoption Check-ins:</span>
+                    <strong>{totalFollowUpsDue}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#475569" }}>
+                    <span>Completed / Verified Welfare Proofs:</span>
+                    <strong style={{ color: "#166534" }}>{completedFollowUpsCount}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#475569" }}>
+                    <span>Pending / Scheduled Check-ins:</span>
+                    <strong style={{ color: "#2563EB" }}>{pendingFollowUpsCount}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#475569" }}>
+                    <span>Overdue Check-in Follow-ups:</span>
+                    <strong style={{ color: overdueFollowUpsCount > 0 ? "#DC2626" : "#166534" }}>
+                      {overdueFollowUpsCount}
+                    </strong>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign: "center", padding: "20px 16px", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0", marginBottom: "12px" }}>
+                <div style={{ fontSize: "20px", fontWeight: 700, color: "#64748B" }}>Data unavailable</div>
+                <div style={{ fontSize: "12px", color: "#94A3B8", marginTop: "6px" }}>No post-adoption follow-up check-in records are logged in the current dataset.</div>
+              </div>
+            )}
+          </div>
+
+          {/* Application Rejection Reasons Breakdown */}
+          <div className="soft-card" style={{ padding: "20px" }}>
+            <h3 style={{ margin: "0 0 14px", fontSize: "16px", fontWeight: 700, color: "#0F172A", display: "flex", alignItems: "center", gap: "8px" }}>
+              <FaExclamationTriangle style={{ color: "#F59E0B" }} /> Application Rejection Reasons ({rejectedAdoptions.length})
+            </h3>
+            <p style={{ margin: "0 0 16px", fontSize: "13px", color: "#64748B" }}>
+              Categorized reasons for declined or rejected adoption applications.
+            </p>
+            {rejectionBreakdown.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "24px 12px", color: "#64748B", fontSize: "13px", background: "#F8FAFC", borderRadius: "8px" }}>
+                No application rejections currently logged in the system.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {rejectionBreakdown.map((item, idx) => (
+                  <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#FEF2F2", borderRadius: "8px", border: "1px solid #FECACA" }}>
+                    <span style={{ fontSize: "12px", fontWeight: 600, color: "#991B1B" }}>{item.reason}</span>
+                    <span style={{ fontSize: "12px", fontWeight: 800, color: "#7F1D1D" }}>{item.count} ({item.pct})</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Application & Placement Table */}
         <div className="soft-card" style={{ padding: "20px" }}>
           <h3 style={{ margin: "0 0 16px", fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
             Recent Adoption Applications &amp; Placements ({adoptions.length})
@@ -3751,6 +3960,7 @@ const Reports = () => {
                     <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>APPLICATION ID</th>
                     <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>APPLICANT / ADOPTER</th>
                     <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>DOG ID</th>
+                    <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>APPLIED DATE</th>
                     <th style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>STATUS</th>
                   </tr>
                 </thead>
@@ -3760,8 +3970,9 @@ const Reports = () => {
                       <td style={{ padding: "10px", fontFamily: "monospace", fontSize: "12px" }}>{String(a.id).slice(0, 8)}</td>
                       <td style={{ padding: "10px", fontWeight: 700, color: "#0F172A" }}>{a.applicant_name || a.adopter_name || "Applicant"}</td>
                       <td style={{ padding: "10px", fontSize: "13px", fontFamily: "monospace" }}>{String(a.dog_id || a.dogId || "-").slice(0, 8)}</td>
+                      <td style={{ padding: "10px", fontSize: "12px", color: "#64748B" }}>{String(a.created_at || a.date || "-").slice(0, 10)}</td>
                       <td style={{ padding: "10px" }}>
-                        <span style={{ padding: "3px 10px", borderRadius: "999px", fontSize: "11px", fontWeight: 800, background: ["approved", "completed"].includes(String(a.status).toLowerCase()) ? "#D1FAE5" : "#FEF3C7", color: ["approved", "completed"].includes(String(a.status).toLowerCase()) ? "#065F46" : "#B45309" }}>
+                        <span style={{ padding: "3px 10px", borderRadius: "999px", fontSize: "11px", fontWeight: 800, background: ["approved", "completed"].includes(String(a.status).toLowerCase()) ? "#D1FAE5" : String(a.status).toLowerCase() === "rejected" ? "#FEE2E2" : "#FEF3C7", color: ["approved", "completed"].includes(String(a.status).toLowerCase()) ? "#065F46" : String(a.status).toLowerCase() === "rejected" ? "#991B1B" : "#B45309" }}>
                           {String(a.status || "applied").toUpperCase()}
                         </span>
                       </td>

@@ -29,6 +29,8 @@ export interface RescueCasePayload {
 export interface DispatchPayload {
   id?: string;
   case_id?: string;
+  coordinator_id?: string;
+  assigned_coordinator_id?: string;
   vehicle_id?: string;
   driver_id?: string;
   agent_id?: string;
@@ -352,6 +354,9 @@ export const rescueService = {
       throw new Error("A target rescue case (case_id) is required to dispatch a team.");
     }
     const payload: Record<string, unknown> = {};
+    const coordId = data.assigned_coordinator_id || data.coordinator_id;
+    if (coordId) payload.assigned_coordinator_id = coordId;
+
     if (data.assigned_vehicle_id) payload.assigned_vehicle_id = data.assigned_vehicle_id;
     else if (data.vehicle_id) payload.assigned_vehicle_id = data.vehicle_id;
     const agentIds = data.agent_ids && data.agent_ids.length > 0 ? data.agent_ids : data.agent_id ? [data.agent_id] : [];

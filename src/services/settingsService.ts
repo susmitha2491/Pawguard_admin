@@ -13,9 +13,16 @@ export interface GeneralSettingsPayload {
 export interface PasswordPolicyPayload {
   min_length?: number;
   require_special_char?: boolean;
+  require_special?: boolean;
   require_numbers?: boolean;
+  require_digit?: boolean;
   require_uppercase?: boolean;
+  require_lowercase?: boolean;
+  max_age_days?: number;
+  password_history_count?: number;
   max_login_attempts?: number;
+  lockout_duration_minutes?: number;
+  is_active?: boolean;
   session_timeout_minutes?: number;
   totp_mfa_required_for_admins?: boolean;
   [key: string]: unknown;
@@ -26,10 +33,20 @@ export interface BusinessRulesPayload {
   quarantine_period_days?: number;
   rescue_dispatch_timeout_minutes?: number;
   auto_archive_tickets_days?: number;
+  rule_value?: string;
+  description?: string;
+  module?: string;
+  is_active?: boolean;
   [key: string]: unknown;
 }
 
 export interface EmailSettingsPayload {
+  mail_host?: string;
+  mail_port?: number;
+  mail_from?: string;
+  mail_use_tls?: boolean;
+  mail_username?: string;
+  mail_password?: string;
   smtp_server?: string;
   smtp_port?: number;
   sender_email?: string;

@@ -4,7 +4,7 @@ import Select, { type SelectOption } from "../common/Select";
 import { useToast } from "../../context/ToastContext";
 import rescueService from "../../services/rescueService";
 import { notifyDataChanged } from "../../utils/dataSync";
-import { normalizeRole } from "../../utils/roleUtils";
+import { normalizeRole, getCurrentUser } from "../../utils/roleUtils";
 
 export interface RescueAssignModalProps {
   isOpen: boolean;
@@ -134,30 +134,48 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
   });
 
   const safeUsersList: Record<string, unknown>[] = useMemo(() => {
-    if (!users) return [];
-    if (Array.isArray(users)) return users;
-    const obj = users as Record<string, unknown>;
-    if (Array.isArray(obj.data)) return obj.data as Record<string, unknown>[];
-    if (Array.isArray(obj.items)) return obj.items as Record<string, unknown>[];
-    if (obj.data && typeof obj.data === "object") {
-      const inner = obj.data as Record<string, unknown>;
-      if (Array.isArray(inner.items)) return inner.items as Record<string, unknown>[];
-      if (Array.isArray(inner.data)) return inner.data as Record<string, unknown>[];
+    const list: Record<string, unknown>[] = [];
+    if (users) {
+      if (Array.isArray(users)) list.push(...users);
+      else if (typeof users === "object") {
+        const obj = users as Record<string, unknown>;
+        if (Array.isArray(obj.data)) list.push(...(obj.data as Record<string, unknown>[]));
+        else if (Array.isArray(obj.items)) list.push(...(obj.items as Record<string, unknown>[]));
+        else if (obj.data && typeof obj.data === "object") {
+          const inner = obj.data as Record<string, unknown>;
+          if (Array.isArray(inner.items)) list.push(...(inner.items as Record<string, unknown>[]));
+          else if (Array.isArray(inner.data)) list.push(...(inner.data as Record<string, unknown>[]));
+        }
+      }
     }
-    return [];
+
+    // Ensure currently authenticated user (Rescue Centre Admin / Coordinator) is included
+    const me = getCurrentUser();
+    if (me && typeof me === "object") {
+      const meId = String((me as any).id || (me as any).user_id || (me as any).userId || "");
+      if (meId && !list.some((u) => String((u as any).id || (u as any).user_id || (u as any).userId || (u as any).agent_id || "") === meId)) {
+        list.unshift(me as unknown as Record<string, unknown>);
+      }
+    }
+
+    return list;
   }, [users]);
 
   useEffect(() => {
     if (rescue && isOpen) {
-      const preAgentId = rescue.assigned_agent_id || String((rescue.rawItem as any)?.assigned_agent_id || (rescue.raw as any)?.assigned_agent_id || "");
+      const rawD = (rescue.rawItem as any)?.dispatch || (rescue.raw as any)?.dispatch || {};
+      const preAgentId = rescue.assigned_agent_id || String((rescue.rawItem as any)?.assigned_agent_id || (rescue.raw as any)?.assigned_agent_id || rawD?.assigned_agent_id || "");
       const agentIsEligible = safeUsersList.some(
         (u) => String((u as any).id || (u as any).user_id || (u as any).userId || (u as any).agent_id || "") === preAgentId && isRescueAgentUser(u)
       );
 
+      const preCoordId = rescue.coordinator_id || String((rescue.rawItem as any)?.coordinator_id || (rescue.raw as any)?.coordinator_id || rawD?.assigned_coordinator_id || "");
+      const preVehicleId = rescue.assigned_vehicle_id || String((rescue.rawItem as any)?.assigned_vehicle_id || (rescue.raw as any)?.assigned_vehicle_id || rawD?.assigned_vehicle_id || rawD?.vehicle_id || "");
+
       setAssignForm({
-        coordinator_id: rescue.coordinator_id || String((rescue.rawItem as any)?.coordinator_id || (rescue.raw as any)?.coordinator_id || ""),
+        coordinator_id: preCoordId,
         agent_id: agentIsEligible ? preAgentId : "",
-        vehicle_id: rescue.assigned_vehicle_id || String((rescue.rawItem as any)?.assigned_vehicle_id || (rescue.raw as any)?.assigned_vehicle_id || ""),
+        vehicle_id: preVehicleId,
         notes: "",
       });
     }
@@ -204,6 +222,7 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
       // 2. Assign Vehicle and Field Agent(s) Dispatch
       await rescueService.createDispatch({
         case_id: realId,
+        coordinator_id: assignForm.coordinator_id.trim(),
         assigned_vehicle_id: assignForm.vehicle_id.trim(),
         agent_ids: [assignForm.agent_id.trim()],
         agent_id: assignForm.agent_id.trim(),
@@ -277,11 +296,11 @@ export const RescueAssignModal: React.FC<RescueAssignModalProps> = ({
 
   const vehicleOptions: SelectOption[] = useMemo(() => {
     return vehicles.map((v) => {
-      const vId = String((v as any).id || "");
+      const vId = String((v as any).id || (v as any).vehicle_id || (v as any).vehicleId || "");
       const rawReg = (v as any).registration_number || (v as any).vehicle_number || (v as any).license_plate || (v as any).vehicle_code || (v as any).plate;
       const displayReg = rawReg && !isUuidString(String(rawReg)) ? String(rawReg) : `Vehicle #${vId.substring(0, 8)}`;
       const rawModel = String((v as any).make_model || (v as any).model || (v as any).vehicle_type || (v as any).type || "").trim();
-      const rawStatus = String((v as any).status || "").toLowerCase().trim();
+      const rawStatus = String((v as any).status || (v as any).operational_status || (v as any).availability || "").toLowerCase().trim();
       const isAvail = !rawStatus || rawStatus === "active" || rawStatus === "available" || rawStatus === "ready" || rawStatus === "idle";
       const displayStatus = rawStatus ? rawStatus.replace(/_/g, " ") : "available";
       return {
