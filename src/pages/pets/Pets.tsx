@@ -289,11 +289,11 @@ const GeneralDogManagement = () => {
     if (!dog) return false;
     const status = String(dog.status || "").toLowerCase();
     if (status === "adopted") return false;
+    if (dog.is_adoptable === false || dog.is_adoptable === "false") return false;
     return Boolean(
       dog.is_adoptable === true ||
       dog.is_adoptable === "true" ||
-      status === "adoptable" ||
-      String(dog.adoption_status || "").toLowerCase() === "ready for adoption"
+      status === "adoptable"
     );
   };
 
@@ -775,7 +775,7 @@ const GeneralDogManagement = () => {
       return;
     }
     try {
-      await petService.markDogAdoptable(id);
+      await petService.markDogAdoptable(id, dog);
       addToast(`${dog.name} is now marked Ready for Adoption!`, "success");
       setIsAdoptableModalOpen(false);
       fetchDogs();
@@ -3629,7 +3629,7 @@ const extractTagData = (res: any) => {
                   return;
                 }
                 try {
-                  await petService.markDogAdoptable(dId);
+                  await petService.markDogAdoptable(dId, dog);
                   addToast(`${dog.name || "Dog"} is now marked Ready for Adoption!`, "success");
                   const updated = { ...dog, is_adoptable: true, status: "shelter" };
                   setSelectedViewDog(updated);

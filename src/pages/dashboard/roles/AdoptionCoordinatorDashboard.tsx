@@ -130,7 +130,7 @@ const AdoptionCoordinatorDashboard = () => {
 
   useDataSync(fetchDashboard);
 
-  const completedCount = adoptionSummary?.completed_adoptions ?? adoptionSummary?.approved_adoptions ?? adoptions.filter((a) => ["completed", "approved"].includes(String(a.status).toLowerCase())).length;
+  const completedCount = adoptionSummary?.completed_adoptions ?? adoptions.filter((a) => String(a.status).toLowerCase() === "completed").length;
   const pendingCount = adoptionSummary?.pending_review ?? adoptionSummary?.pending_applications ?? adoptions.filter((a) => ["submitted", "vetting", "screening", "interview", "home_check"].includes(String(a.status).toLowerCase())).length;
   const homeVisitsCount = adoptionSummary?.home_visits_scheduled ?? adoptions.filter((a) => a.home_inspection_scheduled_at || String(a.status).toLowerCase() === "home_check").length;
   const adoptableCountFinal = adoptionSummary?.adoptable_dogs_count ?? adoptableDogsCount;
@@ -158,7 +158,7 @@ const AdoptionCoordinatorDashboard = () => {
     } else if (["home_check", "interview"].includes(status)) {
       navigate(`/adoptions?tab=queue&status=${status}&appId=${encodeURIComponent(appId)}`);
     } else if (status === "approved") {
-      navigate(`/adoptions?tab=scoring&status=approved&appId=${encodeURIComponent(appId)}`);
+      navigate(`/adoptions?tab=queue&status=approved&appId=${encodeURIComponent(appId)}`);
     } else if (status === "completed") {
       navigate(`/adoptions?tab=completed&status=completed&appId=${encodeURIComponent(appId)}`);
     } else if (status === "rejected") {

@@ -24,6 +24,7 @@ import adoptionService, {
   type AdoptionScoreCreatePayload,
 } from "../../services/adoptionService";
 import petService from "../../services/petService";
+import dogService from "../../services/dogService";
 import IdentityVerificationPanel from "../../components/adoptions/IdentityVerificationPanel";
 import type { AdopterIdentityVerification } from "../../types/identityVerification";
 import { notifyDataChanged } from "../../utils/dataSync";
@@ -537,18 +538,25 @@ const Adoptions = () => {
       setIsSubmitting(true);
       await adoptionService.updateAdoptionStatus(appId, newStatus);
 
-      // If application is approved, update dog master profile and automatically provision Companion Pet profile
+      // Status-specific follow-up actions:
       if (newStatus === "approved") {
+        addToast("Adoption application approved! Candidate is now ready for final adoption completion.", "success");
+      } else if (newStatus === "completed") {
         const dogIdToUpdate = String(targetApp?.dog_id || targetApp?.petId || selectedAdoption?.dog_id || selectedAdoption?.petId || "");
         if (dogIdToUpdate) {
+          // Authoritatively mark the dog master record as adopted and non-adoptable
           await petService.updatePet(dogIdToUpdate, {
             status: "adopted",
             is_adoptable: false,
-            adoption_status: "Approved",
+            adoption_status: "Adopted",
+          }).catch(() => null);
+
+          await dogService.updateAdoptability(dogIdToUpdate, {
+            is_adoptable: false,
           }).catch(() => null);
         }
 
-        // Automatically provision Companion Pet record & safety tag in backend upon approval
+        // Automatically provision Companion Pet record & safety tag in backend upon completion
         try {
           const compRes = await adoptionService.createCompanionPetFromAdoption(appId);
           const compData = compRes?.data || compRes || {};
@@ -559,9 +567,14 @@ const Adoptions = () => {
         } catch {
           // Ignore if companion pet already exists or backend handles creation automatically
         }
+
+        addToast("Adoption finalized and completed successfully! Dog master record updated to adopted.", "success");
+      } else if (newStatus === "rejected") {
+        addToast("Adoption application rejected.", "info");
+      } else {
+        addToast(`Adoption application updated to ${newStatus}.`, "success");
       }
 
-      addToast(`Adoption application approved and completed successfully!`, "success");
       await fetchAdoptions();
       notifyDataChanged();
       setSelectedAdoption((prev) => {
@@ -570,7 +583,7 @@ const Adoptions = () => {
         }
         return prev;
       });
-      if (newStatus === "approved" || newStatus === "rejected") {
+      if (newStatus === "completed" || newStatus === "rejected") {
         setIsDetailsModalOpen(false);
       }
     } catch (err: any) {
@@ -1008,6 +1021,33 @@ const Adoptions = () => {
                           </>
                         )}
 
+                        {statusStr === "approved" && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveMenuId(null);
+                                void handleStatusChange(rowId, "completed");
+                              }}
+                              style={{ ...menuItemStyle, color: "#059669", fontWeight: 700 }}
+                            >
+                              <FaCheckDouble style={{ marginRight: "8px", color: "#059669" }} /> Finalize Adoption
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveMenuId(null);
+                                void handleStatusChange(rowId, "rejected");
+                              }}
+                              style={{ ...menuItemStyle, color: "#DC2626" }}
+                            >
+                              Reject
+                            </button>
+                          </>
+                        )}
+
                         {statusStr !== "approved" && statusStr !== "completed" && statusStr !== "rejected" && (
                           <button
                             type="button"
@@ -1395,6 +1435,45 @@ const Adoptions = () => {
                           </button>
                         );
                       })()}
+                    </Can>
+                  )}
+                  {currentStatus === "approved" && (
+                    <Can permission={["approve_adoptions", "manage_adoptions"]}>
+                      <button
+                        type="button"
+                        disabled={isSubmitting}
+                        onClick={() => void handleStatusChange(String(selectedAdoption.id), "completed")}
+                        style={{
+                          padding: "10px 18px",
+                          borderRadius: "8px",
+                          border: "none",
+                          background: "#10B981",
+                          color: "#FFF",
+                          fontWeight: 700,
+                          cursor: isSubmitting ? "not-allowed" : "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                        }}
+                      >
+                        <FaCheckDouble /> {isSubmitting ? "Finalizing..." : "Finalize & Complete Adoption"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSubmitting}
+                        onClick={() => void handleStatusChange(String(selectedAdoption.id), "rejected")}
+                        style={{
+                          padding: "10px 18px",
+                          borderRadius: "8px",
+                          border: "1px solid #FCA5A5",
+                          background: "#FEF2F2",
+                          color: "#DC2626",
+                          fontWeight: 600,
+                          cursor: isSubmitting ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        Reject
+                      </button>
                     </Can>
                   )}
                   {currentStatus !== "approved" && currentStatus !== "completed" && (
