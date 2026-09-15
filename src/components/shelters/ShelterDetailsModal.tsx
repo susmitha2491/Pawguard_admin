@@ -3,6 +3,9 @@ import Modal from "../common/Modal";
 import DataTable, { type Column } from "../common/DataTable";
 import shelterService from "../../services/shelterService";
 import dogService from "../../services/dogService";
+import PetDetailsModal from "./PetDetailsModal";
+import SectionDetailsModal from "./SectionDetailsModal";
+import KennelDetailsModal from "./KennelDetailsModal";
 import {
   FaBuilding,
   FaMapMarkerAlt,
@@ -13,6 +16,7 @@ import {
   FaExclamationTriangle,
   FaEdit,
   FaLayerGroup,
+  FaEye,
 } from "react-icons/fa";
 
 interface ShelterDetailsModalProps {
@@ -22,7 +26,7 @@ interface ShelterDetailsModalProps {
   onEditFacility?: (facility: any) => void;
   onAddSection?: (facility: any) => void;
   onAddKennel?: (facility: any) => void;
-  onAssignAnimal?: (facility: any) => void;
+  onAssignAnimal?: (facility: any, dog?: any) => void;
 }
 
 const unwrapList = (v: any) => {
@@ -71,6 +75,9 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
   const [sections, setSections] = useState<any[]>([]);
   const [kennels, setKennels] = useState<any[]>([]);
   const [animals, setAnimals] = useState<any[]>([]);
+  const [selectedPetForDetails, setSelectedPetForDetails] = useState<any | null>(null);
+  const [selectedSectionForDetails, setSelectedSectionForDetails] = useState<any | null>(null);
+  const [selectedKennelForDetails, setSelectedKennelForDetails] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -79,6 +86,9 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
       setSections([]);
       setKennels([]);
       setAnimals([]);
+      setSelectedPetForDetails(null);
+      setSelectedSectionForDetails(null);
+      setSelectedKennelForDetails(null);
       setError(null);
       setLoading(false);
       return;
@@ -89,6 +99,9 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
     setSections([]);
     setKennels([]);
     setAnimals([]);
+    setSelectedPetForDetails(null);
+    setSelectedSectionForDetails(null);
+    setSelectedKennelForDetails(null);
     setError(null);
     setLoading(true);
 
@@ -127,6 +140,7 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
             const kList = unwrapList(kRes).map((k: any) => ({
               ...k,
               facility_id: facilityId,
+              facility_name: facData?.name || "Shelter Facility",
               section_id: sId,
               section_name: sec.name,
               section_type: sec.section_type,
@@ -242,6 +256,7 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
             is_occupied: isOccupiedByCurrentDog,
             assigned_dog_name: assignedDog?.name || null,
             assigned_dog_reg: assignedDog?.registration_number || null,
+            assignedDogObject: assignedDog || null,
           };
         });
 
@@ -282,27 +297,80 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Facility Capacity & Occupancy KPI calculations strictly scoped to this facility's CURRENT animals
+  // Single-Modal Navigation Stack: Exactly one modal is rendered at a time without stacking
+  if (selectedPetForDetails) {
+    return (
+      <PetDetailsModal
+        isOpen={true}
+        dog={selectedPetForDetails}
+        facilityName={facility?.name || "Shelter Facility"}
+        onClose={() => setSelectedPetForDetails(null)}
+        onAllocateKennel={(dog) => {
+          setSelectedPetForDetails(null);
+          if (onAssignAnimal) onAssignAnimal(facility, dog);
+        }}
+      />
+    );
+  }
+
+  if (selectedKennelForDetails) {
+    return (
+      <KennelDetailsModal
+        isOpen={true}
+        kennel={selectedKennelForDetails}
+        facilityName={facility?.name || "Shelter Facility"}
+        sectionName={selectedKennelForDetails.section_name}
+        sectionType={selectedKennelForDetails.section_type}
+        onClose={() => setSelectedKennelForDetails(null)}
+        onSelectDog={(dog) => setSelectedPetForDetails(dog)}
+        onOpenAssign={
+          onAssignAnimal
+            ? () => {
+                const k = selectedKennelForDetails;
+                setSelectedKennelForDetails(null);
+                onAssignAnimal(facility, k.assignedDogObject);
+              }
+            : undefined
+        }
+      />
+    );
+  }
+
+  if (selectedSectionForDetails) {
+    return (
+      <SectionDetailsModal
+        isOpen={true}
+        section={selectedSectionForDetails}
+        facility={facility}
+        kennels={kennels}
+        animals={animals}
+        onClose={() => setSelectedSectionForDetails(null)}
+        onSelectKennel={(k) => setSelectedKennelForDetails(k)}
+        onSelectDog={(dog) => setSelectedPetForDetails(dog)}
+        onAddKennel={
+          onAddKennel
+            ? () => {
+                setSelectedSectionForDetails(null);
+                onAddKennel(facility);
+              }
+            : undefined
+        }
+      />
+    );
+  }
+
+  // Facility Capacity & Physical Kennel KPI calculations strictly scoped to this facility
   const declaredCap = Number(facility?.total_capacity ?? facility?.capacity ?? 0);
-  const kennelCapSum = kennels.reduce((acc, k) => acc + (Number(k.capacity) || 1), 0);
-  const sectionCapSum = sections.reduce((acc, s) => acc + (Number(s.capacity) || 0), 0);
+  const configuredSectionsCount = sections.length;
+  const configuredKennelsCount = kennels.length;
+  const occupiedKennelsCount = kennels.filter((k) => k.is_occupied).length;
+  const availableKennelsCount = Math.max(0, configuredKennelsCount - occupiedKennelsCount);
+  const animalsHousedCount = animals.length;
 
-  const totalCap = declaredCap > 0
-    ? declaredCap
-    : (sectionCapSum > 0 ? sectionCapSum : (kennelCapSum > 0 ? kennelCapSum : kennels.length));
-
-  // Authoritative Occupancy Calculation without Double Counting or Exited Dogs:
-  const countedDogIds = new Set(animals.map((d: any) => String(d.id || d.dog_id || "").toLowerCase().trim()).filter(Boolean));
-  const extraOccupiedKennels = kennels.filter((k: any) => {
-    if (!k.is_occupied) return false;
-    const occDogId = k.occupied_by_dog_id ? String(k.occupied_by_dog_id).toLowerCase().trim() : null;
-    if (occDogId && countedDogIds.has(occDogId)) return false;
-    return true;
-  }).length;
-
-  const occupiedCount = animals.length + extraOccupiedKennels;
-  const availableCap = totalCap > 0 ? Math.max(0, totalCap - occupiedCount) : 0;
-  const occupancyPct = totalCap > 0 ? Math.round((occupiedCount / totalCap) * 100) : 0;
+  // Occupancy percentage based on declared facility capacity (or physical kennels if no capacity declared)
+  const occupancyBase = declaredCap > 0 ? declaredCap : configuredKennelsCount;
+  const occupancyCount = declaredCap > 0 ? animalsHousedCount : occupiedKennelsCount;
+  const occupancyPct = occupancyBase > 0 ? Math.round((occupancyCount / occupancyBase) * 100) : 0;
 
   const medicalQuarantineAnimals = animals.filter((a) => {
     if (!a || typeof a !== "object") return false;
@@ -312,49 +380,121 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
   });
 
   const sectionColumns: Column<any>[] = [
-    { key: "name", header: "Section / Ward Name", render: (_v, row) => <strong>{row.name}</strong> },
+    {
+      key: "name",
+      header: "Section / Ward Name",
+      render: (_v, row) => (
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <FaLayerGroup style={{ color: "#0D9488", fontSize: "14px" }} />
+          <strong style={{ color: "#0F172A", fontSize: "13px" }}>{row.name}</strong>
+        </div>
+      ),
+    },
     {
       key: "section_type",
       header: "Ward Type",
       render: (_v, row) => (
-        <span style={{ textTransform: "capitalize", background: "#EFF6FF", color: "#1D4ED8", padding: "2px 8px", borderRadius: "4px", fontSize: "12px", fontWeight: 600, border: "1px solid #BFDBFE" }}>
+        <span
+          style={{
+            textTransform: "capitalize",
+            background: "#EFF6FF",
+            color: "#1D4ED8",
+            padding: "2px 8px",
+            borderRadius: "4px",
+            fontSize: "12px",
+            fontWeight: 600,
+            border: "1px solid #BFDBFE",
+          }}
+        >
           {row.section_type || "general"}
         </span>
       ),
     },
-    { key: "capacity", header: "Total Capacity", render: (_v, row) => <span style={{ fontWeight: 600 }}>{row.capacity ?? "Unspecified"}</span> },
+    {
+      key: "capacity",
+      header: "Ward Capacity",
+      render: (_v, row) => <span style={{ fontWeight: 600, color: "#334155" }}>{row.capacity ?? "Unspecified"}</span>,
+    },
     {
       key: "configured_kennels",
       header: "Configured Kennels",
       render: (_v, row) => {
-        const secKennels = kennels.filter((k) => String(k.section_id).toLowerCase() === String(row.id).toLowerCase() || k.section_name === row.name);
-        return <span>{secKennels.length} unit(s)</span>;
+        const secKennels = kennels.filter(
+          (k) => String(k.section_id).toLowerCase() === String(row.id).toLowerCase() || k.section_name === row.name
+        );
+        return <span style={{ fontWeight: 600, color: "#7C3AED" }}>{secKennels.length} unit(s)</span>;
       },
     },
     {
       key: "occupied_kennels",
       header: "Occupied",
       render: (_v, row) => {
-        const secKennels = kennels.filter((k) => String(k.section_id).toLowerCase() === String(row.id).toLowerCase() || k.section_name === row.name);
+        const secKennels = kennels.filter(
+          (k) => String(k.section_id).toLowerCase() === String(row.id).toLowerCase() || k.section_name === row.name
+        );
         const occupied = secKennels.filter((k) => k.is_occupied).length;
-        return <span style={{ color: occupied > 0 ? "#1E3A8A" : "#64748B", fontWeight: occupied > 0 ? 700 : 500 }}>{occupied}</span>;
+        return (
+          <span style={{ color: occupied > 0 ? "#DC2626" : "#64748B", fontWeight: occupied > 0 ? 700 : 500 }}>
+            {occupied}
+          </span>
+        );
       },
     },
     {
       key: "available_kennels",
       header: "Available",
       render: (_v, row) => {
-        const secKennels = kennels.filter((k) => String(k.section_id).toLowerCase() === String(row.id).toLowerCase() || k.section_name === row.name);
+        const secKennels = kennels.filter(
+          (k) => String(k.section_id).toLowerCase() === String(row.id).toLowerCase() || k.section_name === row.name
+        );
         const occupied = secKennels.filter((k) => k.is_occupied).length;
-        const cap = Number(row.capacity || secKennels.length || 0);
-        const avail = cap > 0 ? Math.max(0, cap - occupied) : Math.max(0, secKennels.length - occupied);
-        return <span style={{ color: "#16A34A", fontWeight: 600 }}>{avail}</span>;
+        const avail = Math.max(0, secKennels.length - occupied);
+        return <span style={{ color: "#16A34A", fontWeight: 700 }}>{avail}</span>;
       },
+    },
+    {
+      key: "actions",
+      header: "Action",
+      render: (_v, row) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedSectionForDetails(row);
+          }}
+          style={{
+            padding: "4px 10px",
+            background: "#EFF6FF",
+            color: "#1D4ED8",
+            border: "1px solid #BFDBFE",
+            borderRadius: "6px",
+            fontSize: "12px",
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+        >
+          <FaEye /> View Section
+        </button>
+      ),
     },
   ];
 
   const kennelColumns: Column<any>[] = [
-    { key: "identifier", header: "Kennel Unit ID", render: (_v, row) => <strong>Unit {row.identifier}</strong> },
+    {
+      key: "identifier",
+      header: "Kennel Unit ID",
+      render: (_v, row) => (
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <FaBed style={{ color: "#7C3AED", fontSize: "14px" }} />
+          <strong style={{ color: "#0F172A", fontSize: "13px" }}>
+            Unit {row.identifier || (row.id ? String(row.id).slice(0, 8) : "—")}
+          </strong>
+        </div>
+      ),
+    },
     { key: "section_name", header: "Section / Ward", render: (_v, row) => row.section_name || "General" },
     { key: "capacity", header: "Capacity", render: (_v, row) => row.capacity ?? 1 },
     {
@@ -364,26 +504,172 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
         const st = String(row.sanitation_state || "clean").toLowerCase();
         let bg = "#DCFCE7";
         let color = "#166534";
-        if (st === "needs_cleaning") { bg = "#FEF3C7"; color = "#92400E"; }
-        else if (st === "disinfecting" || st === "out_of_service") { bg = "#FEE2E2"; color = "#991B1B"; }
+        if (st === "needs_cleaning") {
+          bg = "#FEF3C7";
+          color = "#92400E";
+        } else if (st === "disinfecting" || st === "out_of_service") {
+          bg = "#FEE2E2";
+          color = "#991B1B";
+        }
         return (
-          <span style={{ padding: "2px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: 700, background: bg, color }}>
+          <span
+            style={{
+              padding: "2px 8px",
+              borderRadius: "12px",
+              fontSize: "11px",
+              fontWeight: 700,
+              background: bg,
+              color,
+            }}
+          >
             {st.replace(/_/g, " ").toUpperCase()}
           </span>
         );
       },
     },
     {
-      key: "is_occupied",
-      header: "Occupancy & Assigned Dog",
-      render: (_v, row) =>
-        row.is_occupied ? (
-          <span style={{ color: "#DC2626", fontWeight: 600 }}>
-            Occupied {row.assigned_dog_name ? `(${row.assigned_dog_name})` : ""}
+      key: "status",
+      header: "Occupancy Status",
+      render: (_v, row) => {
+        const isMaintenance =
+          String(row.operational_status || row.status || "").toLowerCase() === "maintenance" ||
+          String(row.sanitation_state || "").toLowerCase() === "out_of_service";
+        const isInactive = row.is_active === false || String(row.status || "").toLowerCase() === "inactive";
+
+        if (isMaintenance) {
+          return (
+            <span
+              style={{
+                padding: "2px 8px",
+                borderRadius: "12px",
+                fontSize: "11px",
+                fontWeight: 700,
+                background: "#FEF3C7",
+                color: "#92400E",
+              }}
+            >
+              MAINTENANCE
+            </span>
+          );
+        }
+        if (isInactive) {
+          return (
+            <span
+              style={{
+                padding: "2px 8px",
+                borderRadius: "12px",
+                fontSize: "11px",
+                fontWeight: 700,
+                background: "#F1F5F9",
+                color: "#64748B",
+              }}
+            >
+              INACTIVE
+            </span>
+          );
+        }
+        if (row.is_occupied) {
+          return (
+            <span
+              style={{
+                padding: "2px 8px",
+                borderRadius: "12px",
+                fontSize: "11px",
+                fontWeight: 700,
+                background: "#FEE2E2",
+                color: "#991B1B",
+              }}
+            >
+              OCCUPIED
+            </span>
+          );
+        }
+        return (
+          <span
+            style={{
+              padding: "2px 8px",
+              borderRadius: "12px",
+              fontSize: "11px",
+              fontWeight: 700,
+              background: "#DCFCE7",
+              color: "#166534",
+            }}
+          >
+            AVAILABLE
           </span>
-        ) : (
-          <span style={{ color: "#16A34A", fontWeight: 600 }}>Available</span>
-        ),
+        );
+      },
+    },
+    {
+      key: "assigned_dog_name",
+      header: "Assigned Dog",
+      render: (_v, row) => {
+        if (row.is_occupied && row.assigned_dog_name) {
+          const assignedDog =
+            row.assignedDogObject ||
+            animals.find(
+              (a) =>
+                String(a.kennel_id ?? a.kennelId ?? "").toLowerCase().trim() === String(row.id).toLowerCase().trim() ||
+                (row.occupied_by_dog_id &&
+                  String(a.id ?? "").toLowerCase().trim() === String(row.occupied_by_dog_id ?? "").toLowerCase().trim())
+            );
+          return (
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                if (assignedDog) setSelectedPetForDetails(assignedDog);
+              }}
+              style={{ cursor: assignedDog ? "pointer" : "default" }}
+              title={assignedDog ? "Click to view Pet Details" : undefined}
+            >
+              <strong style={{ color: "#1D4ED8", textDecoration: assignedDog ? "underline" : "none" }}>
+                {row.assigned_dog_name}
+              </strong>
+              {row.assigned_dog_reg && (
+                <div style={{ fontSize: "11px", color: "#64748B" }}>
+                  <code>{row.assigned_dog_reg}</code>
+                </div>
+              )}
+            </div>
+          );
+        }
+        if (row.is_occupied && row.occupied_by_dog_id) {
+          return (
+            <code style={{ fontSize: "11px", color: "#64748B", background: "#F1F5F9", padding: "2px 6px", borderRadius: "4px" }}>
+              Dog: {String(row.occupied_by_dog_id).slice(0, 8)}...
+            </code>
+          );
+        }
+        return <span style={{ color: "#94A3B8" }}>—</span>;
+      },
+    },
+    {
+      key: "actions",
+      header: "Action",
+      render: (_v, row) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedKennelForDetails(row);
+          }}
+          style={{
+            padding: "4px 10px",
+            background: "#EFF6FF",
+            color: "#1D4ED8",
+            border: "1px solid #BFDBFE",
+            borderRadius: "6px",
+            fontSize: "12px",
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+        >
+          <FaEye /> View Unit
+        </button>
+      ),
     },
   ];
 
@@ -397,18 +683,93 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
         </code>
       ),
     },
-    { key: "name", header: "Animal / Dog Name", render: (_v, row) => <strong>{row.name}</strong> },
+    { key: "name", header: "Dog Name", render: (_v, row) => <strong>{row.name}</strong> },
     { key: "breed", header: "Breed", render: (_v, row) => row.breed || "-" },
     { key: "gender", header: "Gender", render: (_v, row) => <span style={{ textTransform: "capitalize" }}>{row.gender || "-"}</span> },
-    { key: "section_name", header: "Current Section", render: (_v, row) => <span>{row.section_name || "General"}</span> },
-    { key: "kennel_identifier", header: "Current Kennel", render: (_v, row) => <span>{row.kennel_identifier || "Unassigned"}</span> },
+    { key: "section_name", header: "Section / Ward", render: (_v, row) => <span>{row.section_name || "General"}</span> },
+    { key: "kennel_identifier", header: "Kennel", render: (_v, row) => <span>{row.kennel_identifier || "Unassigned"}</span> },
     {
       key: "status",
-      header: "Current Status",
+      header: "Status",
       render: (_v, row) => (
-        <span style={{ padding: "2px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: 700, background: "#F1F5F9", color: "#334155", textTransform: "uppercase" }}>
+        <span
+          style={{
+            padding: "2px 8px",
+            borderRadius: "12px",
+            fontSize: "11px",
+            fontWeight: 700,
+            background: "#F1F5F9",
+            color: "#334155",
+            textTransform: "uppercase",
+          }}
+        >
           {row.status || "SHELTER"}
         </span>
+      ),
+    },
+    {
+      key: "medical_status",
+      header: "Medical Status",
+      render: (_v, row) => {
+        const isQuarantine = row.is_quarantine_passed === false;
+        if (isQuarantine) {
+          return (
+            <span
+              style={{
+                padding: "2px 8px",
+                borderRadius: "12px",
+                fontSize: "11px",
+                fontWeight: 700,
+                background: "#FEF2F2",
+                color: "#991B1B",
+              }}
+            >
+              QUARANTINE
+            </span>
+          );
+        }
+        return (
+          <span
+            style={{
+              padding: "2px 8px",
+              borderRadius: "12px",
+              fontSize: "11px",
+              fontWeight: 700,
+              background: "#DCFCE7",
+              color: "#166534",
+            }}
+          >
+            CLEARED
+          </span>
+        );
+      },
+    },
+    {
+      key: "actions",
+      header: "Action",
+      render: (_v, row) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedPetForDetails(row);
+          }}
+          style={{
+            padding: "4px 10px",
+            background: "#EFF6FF",
+            color: "#1D4ED8",
+            border: "1px solid #BFDBFE",
+            borderRadius: "6px",
+            fontSize: "12px",
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+        >
+          <FaEye /> View Pet
+        </button>
       ),
     },
   ];
@@ -436,18 +797,63 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
       key: "status",
       header: "Medical Status",
       render: (_v, row) => (
-        <span style={{ textTransform: "uppercase", fontSize: "11px", fontWeight: 700, color: "#1D4ED8", background: "#EFF6FF", padding: "2px 8px", borderRadius: "4px" }}>
+        <span
+          style={{
+            textTransform: "uppercase",
+            fontSize: "11px",
+            fontWeight: 700,
+            color: "#1D4ED8",
+            background: "#EFF6FF",
+            padding: "2px 8px",
+            borderRadius: "4px",
+          }}
+        >
           {row.status || "MEDICAL_HOLD"}
         </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: "Action",
+      render: (_v, row) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedPetForDetails(row);
+          }}
+          style={{
+            padding: "4px 10px",
+            background: "#EFF6FF",
+            color: "#1D4ED8",
+            border: "1px solid #BFDBFE",
+            borderRadius: "6px",
+            fontSize: "12px",
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+        >
+          <FaEye /> View Pet
+        </button>
       ),
     },
   ];
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={facility?.name ? `Facility Details — ${facility.name}` : "Shelter Facility Details"} size="xl">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={facility?.name ? `Facility Details — ${facility.name}` : "Shelter Facility Details"}
+      size="xl"
+    >
       {loading ? (
         <div style={{ padding: "40px", textAlign: "center", color: "#64748B" }}>
-          <div className="spinner" style={{ marginBottom: "12px" }}>Loading facility details...</div>
+          <div className="spinner" style={{ marginBottom: "12px" }}>
+            Loading facility details...
+          </div>
         </div>
       ) : error ? (
         <div style={{ padding: "24px", background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "8px", color: "#991B1B" }}>
@@ -465,6 +871,7 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
               {onEditFacility && (
                 <button
+                  type="button"
                   onClick={() => onEditFacility(facility)}
                   style={{
                     padding: "6px 12px",
@@ -485,6 +892,7 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
               )}
               {onAddSection && (
                 <button
+                  type="button"
                   onClick={() => onAddSection(facility)}
                   style={{
                     padding: "6px 12px",
@@ -505,6 +913,7 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
               )}
               {onAddKennel && (
                 <button
+                  type="button"
                   onClick={() => onAddKennel(facility)}
                   style={{
                     padding: "6px 12px",
@@ -525,6 +934,7 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
               )}
               {onAssignAnimal && (
                 <button
+                  type="button"
                   onClick={() => onAssignAnimal(facility)}
                   style={{
                     padding: "6px 12px",
@@ -546,7 +956,7 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
             </div>
           </div>
 
-          {/* Facility Capacity Summary Bar */}
+          {/* Facility Capacity & Physical Kennel Summary Bar */}
           <div
             style={{
               display: "grid",
@@ -559,35 +969,52 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
             }}
           >
             <div>
-              <div style={{ fontSize: "11px", textTransform: "uppercase", color: "#64748B", fontWeight: 600 }}>Total Capacity</div>
-              <div style={{ fontSize: "20px", fontWeight: 700, color: "#0F172A" }}>{totalCap || "Unspecified"}</div>
+              <div style={{ fontSize: "11px", textTransform: "uppercase", color: "#64748B", fontWeight: 600 }}>Facility Capacity</div>
+              <div style={{ fontSize: "20px", fontWeight: 700, color: "#0F172A" }}>{declaredCap || "Unspecified"}</div>
+              <div style={{ fontSize: "11px", color: "#64748B" }}>Overall Building Max</div>
             </div>
             <div>
-              <div style={{ fontSize: "11px", textTransform: "uppercase", color: "#64748B", fontWeight: 600 }}>Occupied</div>
-              <div style={{ fontSize: "20px", fontWeight: 700, color: "#1E3A8A" }}>{occupiedCount}</div>
+              <div style={{ fontSize: "11px", textTransform: "uppercase", color: "#64748B", fontWeight: 600 }}>Animals Housed</div>
+              <div style={{ fontSize: "20px", fontWeight: 700, color: "#1E3A8A" }}>{animalsHousedCount}</div>
+              <div style={{ fontSize: "11px", color: "#64748B" }}>In Facility Care</div>
             </div>
             <div>
-              <div style={{ fontSize: "11px", textTransform: "uppercase", color: "#64748B", fontWeight: 600 }}>Available</div>
-              <div style={{ fontSize: "20px", fontWeight: 700, color: "#16A34A" }}>{availableCap}</div>
+              <div style={{ fontSize: "11px", textTransform: "uppercase", color: "#64748B", fontWeight: 600 }}>Sections / Wards</div>
+              <div style={{ fontSize: "20px", fontWeight: 700, color: "#0D9488" }}>{configuredSectionsCount}</div>
+              <div style={{ fontSize: "11px", color: "#64748B" }}>Configured Wards</div>
             </div>
             <div>
-              <div style={{ fontSize: "11px", textTransform: "uppercase", color: "#64748B", fontWeight: 600 }}>Occupancy %</div>
-              <div style={{ fontSize: "20px", fontWeight: 700, color: occupancyPct > 90 ? "#DC2626" : "#0D9488" }}>
+              <div style={{ fontSize: "11px", textTransform: "uppercase", color: "#64748B", fontWeight: 600 }}>Configured Kennels</div>
+              <div style={{ fontSize: "20px", fontWeight: 700, color: "#7C3AED" }}>{configuredKennelsCount}</div>
+              <div style={{ fontSize: "11px", color: "#64748B" }}>Physical Units</div>
+            </div>
+            <div>
+              <div style={{ fontSize: "11px", textTransform: "uppercase", color: "#64748B", fontWeight: 600 }}>Available Kennels</div>
+              <div style={{ fontSize: "20px", fontWeight: 700, color: availableKennelsCount > 0 ? "#16A34A" : "#64748B" }}>
+                {availableKennelsCount}
+              </div>
+              <div style={{ fontSize: "11px", color: "#64748B" }}>{occupiedKennelsCount} Occupied</div>
+            </div>
+            <div>
+              <div style={{ fontSize: "11px", textTransform: "uppercase", color: "#64748B", fontWeight: 600 }}>Facility Occupancy</div>
+              <div style={{ fontSize: "20px", fontWeight: 700, color: occupancyPct > 90 ? "#DC2626" : "#0F172A" }}>
                 {occupancyPct}%
               </div>
+              <div style={{ fontSize: "11px", color: "#64748B" }}>Of Facility Capacity</div>
             </div>
           </div>
 
           {/* Tabs Navigation Header */}
           <div style={{ display: "flex", gap: "8px", borderBottom: "1px solid #E2E8F0", paddingBottom: "8px", overflowX: "auto" }}>
             {[
-              { id: "kennels", label: "Sections & Kennels", icon: <FaBed /> },
+              { id: "kennels", label: `Sections & Kennels (${configuredKennelsCount})`, icon: <FaBed /> },
               { id: "info", label: "Overview & Contact", icon: <FaBuilding /> },
-              { id: "animals", label: "Current Animals", icon: <FaPaw /> },
-              { id: "medical", label: "Medical & Quarantine", icon: <FaUserMd /> },
+              { id: "animals", label: `Current Animals (${animalsHousedCount})`, icon: <FaPaw /> },
+              { id: "medical", label: `Medical & Quarantine (${medicalQuarantineAnimals.length})`, icon: <FaUserMd /> },
             ].map((tab) => (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => setActiveTab(tab.id as any)}
                 style={{
                   display: "flex",
@@ -613,21 +1040,136 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
           {/* Tab 1: Sections & Kennels (Primary View) */}
           {activeTab === "kennels" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              <h4 style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", margin: 0 }}>Facility Sections & Wards</h4>
-              <DataTable
-                columns={sectionColumns}
-                data={sections}
-                loading={loading}
-                emptyMessage="No sections configured for this facility."
-              />
+              {/* Informative Guidance Banner if Sections or Kennels are not yet configured */}
+              {sections.length === 0 && (
+                <div
+                  style={{
+                    padding: "14px 16px",
+                    background: "#FFFBEB",
+                    border: "1px solid #FDE68A",
+                    borderRadius: "8px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "12px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                    <FaLayerGroup style={{ color: "#D97706", fontSize: "16px", marginTop: "2px", flexShrink: 0 }} />
+                    <div style={{ fontSize: "13px", color: "#92400E", lineHeight: 1.4 }}>
+                      <strong>No physical sections or wards configured yet.</strong>
+                      <div style={{ fontSize: "12px", color: "#B45309", marginTop: "2px" }}>
+                        This facility has an overall capacity of {declaredCap || "unspecified"}, but no physical sections (e.g. Quarantine, General, Recovery) have been registered. Click <strong>Add Section</strong> to configure wards and kennel units.
+                      </div>
+                    </div>
+                  </div>
+                  {onAddSection && (
+                    <button
+                      type="button"
+                      onClick={() => onAddSection(facility)}
+                      style={{
+                        padding: "6px 12px",
+                        background: "#0D9488",
+                        color: "#FFF",
+                        border: "none",
+                        borderRadius: "6px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                    >
+                      <FaLayerGroup /> Add Section
+                    </button>
+                  )}
+                </div>
+              )}
 
-              <h4 style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", marginTop: "8px", margin: 0 }}>Registered Kennel Units</h4>
-              <DataTable
-                columns={kennelColumns}
-                data={kennels}
-                loading={loading}
-                emptyMessage="No kennels configured for this facility."
-              />
+              {sections.length > 0 && kennels.length === 0 && (
+                <div
+                  style={{
+                    padding: "14px 16px",
+                    background: "#EFF6FF",
+                    border: "1px solid #BFDBFE",
+                    borderRadius: "8px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "12px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                    <FaBed style={{ color: "#2563EB", fontSize: "16px", marginTop: "2px", flexShrink: 0 }} />
+                    <div style={{ fontSize: "13px", color: "#1E40AF", lineHeight: 1.4 }}>
+                      <strong>No physical kennel units configured yet.</strong>
+                      <div style={{ fontSize: "12px", color: "#1D4ED8", marginTop: "2px" }}>
+                        Sections are set up, but no individual kennel units have been registered. Click <strong>Add Kennel Unit</strong> to register units for dog allocation.
+                      </div>
+                    </div>
+                  </div>
+                  {onAddKennel && (
+                    <button
+                      type="button"
+                      onClick={() => onAddKennel(facility)}
+                      style={{
+                        padding: "6px 12px",
+                        background: "#7C3AED",
+                        color: "#FFF",
+                        border: "none",
+                        borderRadius: "6px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                    >
+                      <FaBed /> Add Kennel Unit
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                  <h4 style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", margin: 0 }}>
+                    Facility Sections & Wards ({sections.length})
+                  </h4>
+                  <div style={{ fontSize: "12px", color: "#64748B" }}>
+                    Click any row to open Section Details and view its kennels.
+                  </div>
+                </div>
+                <DataTable
+                  columns={sectionColumns}
+                  data={sections}
+                  loading={loading}
+                  onRowClick={(row) => setSelectedSectionForDetails(row)}
+                  emptyMessage="No sections configured for this facility."
+                />
+              </div>
+
+              <div style={{ marginTop: "8px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                  <h4 style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", margin: 0 }}>
+                    Registered Kennel Units ({kennels.length})
+                  </h4>
+                  <div style={{ fontSize: "12px", color: "#64748B" }}>
+                    Click any unit to open Kennel Details and sanitation records.
+                  </div>
+                </div>
+                <DataTable
+                  columns={kennelColumns}
+                  data={kennels}
+                  loading={loading}
+                  onRowClick={(row) => setSelectedKennelForDetails(row)}
+                  emptyMessage="No kennels configured for this facility."
+                />
+              </div>
             </div>
           )}
 
@@ -684,6 +1226,7 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
                 columns={animalColumns}
                 data={animals}
                 loading={loading}
+                onRowClick={(row) => setSelectedPetForDetails(row)}
                 emptyMessage="No dogs are currently housed in this facility."
               />
             </div>
@@ -696,6 +1239,7 @@ export const ShelterDetailsModal: React.FC<ShelterDetailsModalProps> = ({
                 columns={medicalColumns}
                 data={medicalQuarantineAnimals}
                 loading={loading}
+                onRowClick={(row) => setSelectedPetForDetails(row)}
                 emptyMessage="No critical, medical, or quarantine cases in this facility."
               />
             </div>

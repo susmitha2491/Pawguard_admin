@@ -51,13 +51,17 @@ export const KennelAssignmentModal: React.FC<KennelAssignmentModalProps> = ({
     if (!isOpen) return;
     setEmergencyOverride(false);
     setOverrideNotes("");
+    setSelectedDogId(preselectedDogId || "");
+    setSelectedFacilityId(preselectedFacilityId || "");
+    setSelectedKennelId(preselectedKennelId || "");
+    setSelectedSectionId("");
 
     const loadInitialData = async () => {
       setLoading(true);
       try {
         const [facRes, dogRes] = await Promise.all([
-          shelterService.getShelters({ page: 1, page_size: 20 }),
-          petService.getPets({ page: 1, page_size: 20 }),
+          shelterService.getShelters({ page: 1, page_size: 50 }),
+          petService.getPets({ page: 1, page_size: 100 }),
         ]);
 
         const facList = unwrapList(facRes);
@@ -66,8 +70,21 @@ export const KennelAssignmentModal: React.FC<KennelAssignmentModalProps> = ({
         const dogList = unwrapList(dogRes);
         setDogs(dogList);
 
-        if (preselectedFacilityId) {
-          const secRes = await shelterService.getFacilitySections(preselectedFacilityId);
+        let targetFacId = preselectedFacilityId;
+        if (!targetFacId && preselectedDogId) {
+          const preDog = dogList.find(
+            (d: any) => String(d.id || d.dog_id || "") === String(preselectedDogId)
+          );
+          if (preDog) {
+            targetFacId = preDog.shelter_facility_id || preDog.shelter_id || preDog.facility_id || "";
+            if (targetFacId) {
+              setSelectedFacilityId(String(targetFacId));
+            }
+          }
+        }
+
+        if (targetFacId) {
+          const secRes = await shelterService.getFacilitySections(targetFacId);
           setSections(unwrapList(secRes));
         }
       } catch {
@@ -78,7 +95,7 @@ export const KennelAssignmentModal: React.FC<KennelAssignmentModalProps> = ({
     };
 
     loadInitialData();
-  }, [isOpen, preselectedFacilityId, addToast]);
+  }, [isOpen, preselectedFacilityId, preselectedDogId, preselectedKennelId, addToast]);
 
   const handleFacilityChange = async (facId: string) => {
     setSelectedFacilityId(facId);

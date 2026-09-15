@@ -1069,7 +1069,7 @@ const VolunteerManagement = () => {
   }
 
   return (
-    <div style={{ padding: "16px", maxWidth: "1400px", margin: "0 auto", boxSizing: "border-box" }}>
+    <div style={{ width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}>
       {/* Banner */}
       <div
         style={{

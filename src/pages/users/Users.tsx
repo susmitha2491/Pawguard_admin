@@ -31,7 +31,13 @@ import authService from "../../services/auth/authService";
 import shelterService from "../../services/shelterService";
 import PasswordInput from "../../components/auth/PasswordInput";
 import { notifyDataChanged } from "../../utils/dataSync";
-import { normalizeRole, getCurrentUserRole, getCurrentUser } from "../../utils/roleUtils";
+import {
+  normalizeRole,
+  getCurrentUserRole,
+  getCurrentUser,
+  getRoleTitle,
+  isAdminPortalRole,
+} from "../../utils/roleUtils";
 import { formatDateTime } from "../../utils/dateUtils";
 import { describePermission } from "../../utils/permissionsCatalog";
 
@@ -128,6 +134,8 @@ const resolveUserId = (userObj?: Record<string, unknown> | UserPayload | UserTab
 
 const formatRole = (role: string): string => {
   if (!role) return "General Public";
+  const title = getRoleTitle(role);
+  if (title && title !== "Unknown Role") return title;
   return role
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -169,9 +177,13 @@ const ROLE_FILTER_OPTIONS: Array<{ value: string; label: string; backendRoles: s
   { value: "shelter_manager", label: "Shelter", backendRoles: ["shelter_manager"] },
   { value: "adoption_coordinator", label: "Adoption", backendRoles: ["adoption_coordinator"] },
   { value: "foster_coordinator", label: "Foster Care", backendRoles: ["foster_coordinator"] },
-  { value: "volunteer_coordinator", label: "Volunteer", backendRoles: ["volunteer_coordinator"] },
+  { value: "volunteer_coordinator", label: "Volunteer Coordinator", backendRoles: ["volunteer_coordinator"] },
   { value: "inventory_manager", label: "Inventory", backendRoles: ["inventory_manager"] },
   { value: "finance_user", label: "Finance", backendRoles: ["finance_user"] },
+  { value: "volunteer", label: "Volunteer", backendRoles: ["volunteer"] },
+  { value: "foster_family", label: "Foster Family", backendRoles: ["foster_family"] },
+  { value: "donor", label: "Donor", backendRoles: ["donor"] },
+  { value: "general_public_user", label: "General Public", backendRoles: ["general_public", "general_public_user"] },
 ];
 
 const RESCUE_PERMITTED_ROLES = ["rescue_centre_admin", "rescue_coordinator", "rescue_agent", "rescue_staff"];
@@ -190,35 +202,14 @@ const SHELTER_ROLE_FILTER_OPTIONS: Array<{ value: string; label: string; backend
 ];
 
 
-const INTERNAL_ADMIN_PORTAL_ROLES = [
-  "super_admin",
-  "rescue_centre_admin",
-  "rescue_coordinator",
-  "rescue_agent",
-  "veterinarian",
-  "shelter_manager",
-  "adoption_coordinator",
-  "foster_coordinator",
-  "volunteer_coordinator",
-  "inventory_manager",
-  "finance_user",
-];
 
 /**
- * Checks if any of the user's assigned roles belong to one of the exact 11 internal Admin Portal roles.
+ * Checks if any of the user's assigned roles belong to one of the exact 14 approved Admin Portal roles.
  */
 const hasAdminPortalAccess = (roles?: string[] | string | null): boolean => {
   if (!roles) return false;
   const rolesArr = Array.isArray(roles) ? roles : [roles];
-  return rolesArr.some((r) => {
-    const lower = String(r).toLowerCase().trim();
-    return INTERNAL_ADMIN_PORTAL_ROLES.some(
-      (intRole) =>
-        lower === intRole ||
-        lower === intRole.replace(/_/g, "-") ||
-        lower === intRole.replace(/_/g, " ")
-    );
-  });
+  return rolesArr.some((r) => isAdminPortalRole(r));
 };
 
 interface ApiErrorShape {
@@ -742,6 +733,11 @@ const Users = () => {
 
   const handleRequestPasswordReset = async () => {
     if (!selectedUserProfile?.email) return;
+    const targetRole = selectedUserProfile.roles?.[0] || selectedUserProfile.role;
+    if (!isAdminPortalRole(targetRole)) {
+      addToast("Access Denied: General Public Users must reset their passwords via the public website.", "error");
+      return;
+    }
     try {
       setIsResettingPassword(true);
       await authService.requestPasswordReset(selectedUserProfile.email);
@@ -756,6 +752,11 @@ const Users = () => {
 
   const handleConfirmPasswordReset = async (e: React.FormEvent) => {
     e.preventDefault();
+    const targetRole = selectedUserProfile?.roles?.[0] || selectedUserProfile?.role;
+    if (!isAdminPortalRole(targetRole)) {
+      addToast("Access Denied: General Public Users must reset their passwords via the public website.", "error");
+      return;
+    }
     if (!resetToken || !newPassword) {
       addToast("Please enter both reset token and new password.", "error");
       return;
@@ -1296,8 +1297,8 @@ const Users = () => {
       },
       {
         title: "Admin Portal Users",
-        value: loading ? "..." : `${staffUsers.length} Staff`,
-        trend: "Authorized Internal Staff Roles",
+        value: loading ? "..." : `${staffUsers.length} Admin Portal Users`,
+        trend: "Authorized Admin Portal Roles",
         color: "#1E3A8A",
         icon: <FaUserShield />,
         onClick: () => {
@@ -2111,26 +2112,28 @@ const Users = () => {
               </h4>
 
               <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-                <button
-                  type="button"
-                  onClick={handleRequestPasswordReset}
-                  disabled={isResettingPassword}
-                  style={{
-                    padding: "9px 16px",
-                    borderRadius: "8px",
-                    background: "#2563EB",
-                    color: "#FFFFFF",
-                    border: "none",
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    cursor: isResettingPassword ? "wait" : "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                  }}
-                >
-                  <FaKey size={13} /> {isResettingPassword ? "Initializing Reset..." : "Set / Reset Login Password"}
-                </button>
+                {isAdminPortalRole(selectedUserProfile.roles?.[0] || selectedUserProfile.role) && (
+                  <button
+                    type="button"
+                    onClick={handleRequestPasswordReset}
+                    disabled={isResettingPassword}
+                    style={{
+                      padding: "9px 16px",
+                      borderRadius: "8px",
+                      background: "#2563EB",
+                      color: "#FFFFFF",
+                      border: "none",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: isResettingPassword ? "wait" : "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <FaKey size={13} /> {isResettingPassword ? "Initializing Reset..." : "Set / Reset Login Password"}
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -2301,7 +2304,7 @@ const Users = () => {
               </div>
 
               {/* Confirm Password Reset Form inline if token is generated */}
-              {isResetTokenFormOpen && (
+              {isResetTokenFormOpen && isAdminPortalRole(selectedUserProfile.roles?.[0] || selectedUserProfile.role) && (
                 <form onSubmit={handleConfirmPasswordReset} style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid #E2E8F0", display: "flex", flexDirection: "column", gap: "12px" }}>
                   <div style={{ fontSize: "13px", fontWeight: 700, color: "#1E40AF" }}>
                     Enter Password Reset Confirmation Token
@@ -2411,6 +2414,9 @@ const Users = () => {
                   <option value="volunteer_coordinator">Volunteer Coordinator</option>
                   <option value="inventory_manager">Inventory Manager</option>
                   <option value="finance_user">Finance Officer</option>
+                  <option value="volunteer">Volunteer</option>
+                  <option value="foster_family">Foster Family</option>
+                  <option value="donor">Donor</option>
                 </>
               )}
             </select>
@@ -2510,6 +2516,9 @@ const Users = () => {
                   <option value="volunteer_coordinator">Volunteer Coordinator</option>
                   <option value="inventory_manager">Inventory Manager</option>
                   <option value="finance_user">Finance Officer</option>
+                  <option value="volunteer">Volunteer</option>
+                  <option value="foster_family">Foster Family</option>
+                  <option value="donor">Donor</option>
                 </>
               )}
             </select>

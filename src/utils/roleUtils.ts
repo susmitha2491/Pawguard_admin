@@ -1,7 +1,7 @@
 import type { UserRole, User } from "../types/auth";
 import { getStoredUser } from "./authStorage";
 
-export const ALLOWED_INTERNAL_ROLES: UserRole[] = [
+export const ADMIN_PORTAL_ROLES: UserRole[] = [
   "super_admin",
   "rescue_centre_admin",
   "rescue_coordinator",
@@ -16,8 +16,9 @@ export const ALLOWED_INTERNAL_ROLES: UserRole[] = [
   "volunteer",
   "foster_family",
   "donor",
-  "general_public_user",
 ];
+
+export const ALLOWED_INTERNAL_ROLES: UserRole[] = ADMIN_PORTAL_ROLES;
 
 /**
   Extract role string safely from any raw input (string, object, array).
@@ -227,9 +228,13 @@ export const normalizeRole = (rawInput?: unknown): UserRole | null => {
   return null;
 };
 
-export const isInternalRole = (rawInput?: unknown): boolean => {
+export const isAdminPortalRole = (rawInput?: unknown): boolean => {
   const role = normalizeRole(rawInput);
-  return role !== null && ALLOWED_INTERNAL_ROLES.includes(role);
+  return role !== null && ADMIN_PORTAL_ROLES.includes(role);
+};
+
+export const isInternalRole = (rawInput?: unknown): boolean => {
+  return isAdminPortalRole(rawInput);
 };
 
 export const getCurrentUser = (): User | null => {

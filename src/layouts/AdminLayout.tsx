@@ -165,7 +165,6 @@ const AdminLayout = () => {
             maxWidth: "100%",
             minWidth: 0,
             boxSizing: "border-box",
-            margin: "0 auto",
           }}
         >
           <Outlet />

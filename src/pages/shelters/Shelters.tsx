@@ -19,6 +19,7 @@ import shelterService from "../../services/shelterService";
 import ShelterDetailsModal from "../../components/shelters/ShelterDetailsModal";
 import KennelDetailsModal from "../../components/shelters/KennelDetailsModal";
 import KennelAssignmentModal from "../../components/shelters/KennelAssignmentModal";
+import PetDetailsModal from "../../components/shelters/PetDetailsModal";
 import { notifyDataChanged, useDataSync } from "../../utils/dataSync";
 import { getCurrentUser, normalizeRole } from "../../utils/roleUtils";
 
@@ -198,6 +199,7 @@ export const Shelters = () => {
   const [isShelterDetailsOpen, setIsShelterDetailsOpen] = useState(false);
   const [selectedKennelForDetails, setSelectedKennelForDetails] = useState<any | null>(null);
   const [isKennelDetailsOpen, setIsKennelDetailsOpen] = useState(false);
+  const [selectedPetForDetails, setSelectedPetForDetails] = useState<any | null>(null);
 
   // Form states
   const [selectedFacility, setSelectedFacility] = useState<any | null>(null);
@@ -532,7 +534,9 @@ export const Shelters = () => {
       addToast(`Section "${sectionForm.name}" created successfully!`, "success");
       setIsSectionModalOpen(false);
       setSectionForm({ ...emptySectionForm });
-      fetchAllKennelsWorkspace();
+      await fetchAllShelters();
+      await fetchAllKennelsWorkspace();
+      notifyDataChanged();
     } catch (err: any) {
       const msg = err?.response?.data?.detail || err?.response?.data?.message || "Failed to create section.";
       addToast(msg, "error");
@@ -557,7 +561,9 @@ export const Shelters = () => {
       addToast(`Kennel Unit "${kennelForm.identifier}" created successfully!`, "success");
       setIsKennelCreateModalOpen(false);
       setKennelForm({ ...emptyKennelForm });
-      fetchAllKennelsWorkspace();
+      await fetchAllShelters();
+      await fetchAllKennelsWorkspace();
+      notifyDataChanged();
     } catch (err: any) {
       const msg = err?.response?.data?.detail || err?.response?.data?.message || "Failed to create kennel unit.";
       addToast(msg, "error");
@@ -572,6 +578,7 @@ export const Shelters = () => {
       await shelterService.updateKennelSanitation(kennelId);
       addToast(`Kennel "${identifier}" marked as CLEAN.`, "success");
       fetchAllKennelsWorkspace();
+      notifyDataChanged();
     } catch (err: any) {
       const msg = err?.response?.data?.detail || err?.response?.data?.message || "Failed to update sanitation state.";
       addToast(msg, "error");
@@ -587,39 +594,41 @@ export const Shelters = () => {
     const activeShelters = allShelters.filter((s) => (s.status || "active").toLowerCase() === "active").length;
 
     // 3. Physical Kennels Counts
+    const activeKennels = allKennels.filter(
+      (k) => k.is_active !== false && String(k.status || "").toLowerCase() !== "inactive"
+    );
     const occupiedKennelsCount = allKennels.filter((k) => k.is_occupied).length;
     const totalKennelsCount = allKennels.length;
-    const availableKennelsCount = Math.max(0, totalKennelsCount - occupiedKennelsCount);
+    const availableKennelsCount = Math.max(
+      0,
+      activeKennels.filter(
+        (k) =>
+          !k.is_occupied &&
+          String(k.operational_status || k.status || "").toLowerCase() !== "maintenance" &&
+          String(k.sanitation_state || "").toLowerCase() !== "out_of_service"
+      ).length
+    );
 
-    // 4. Capacity Calculations
-    const declaredCapacity = allShelters.reduce((acc, s) => acc + (Number(s.total_capacity || s.capacity) || 0), 0);
-    const sectionCapacitySum = allSections.reduce((acc, s) => acc + (Number(s.capacity) || 0), 0);
-    const kennelCapacitySum = allKennels.reduce((acc, k) => acc + (Number(k.capacity) || 1), 0);
+    // 4. Facility Capacity (Sum of declared total_capacity of facilities — Building envelope)
+    const facilityCapacity = allShelters.reduce(
+      (acc, s) => acc + (Number(s.total_capacity ?? s.capacity) || 0),
+      0
+    );
 
-    const totalCapacity = declaredCapacity > 0
-      ? declaredCapacity
-      : (sectionCapacitySum > 0 ? sectionCapacitySum : (kennelCapacitySum > 0 ? kennelCapacitySum : totalKennelsCount));
-
-    const occupiedCount = occupiedKennelsCount;
-    const availableCount = totalCapacity > 0
-      ? Math.max(0, totalCapacity - occupiedCount)
-      : availableKennelsCount;
-
-    // 5. Occupancy Rate (%) - Calculated strictly from matching scope dataset
-    const effectiveCapacity = totalCapacity || totalKennelsCount;
-    const occupancyPct = effectiveCapacity > 0
-      ? Math.round((occupiedCount / effectiveCapacity) * 100)
-      : 0;
+    // 5. Kennel Occupancy Rate (%) - Calculated strictly from physical kennels
+    const kennelOccupancyPct =
+      totalKennelsCount > 0 ? Math.round((occupiedKennelsCount / totalKennelsCount) * 100) : 0;
 
     return {
       totalShelters,
       activeShelters,
-      totalCapacity,
-      occupiedCount,
-      availableCount,
-      occupancyPct,
+      facilityCapacity,
+      totalKennelsCount,
+      occupiedKennelsCount,
+      availableKennelsCount,
+      kennelOccupancyPct,
     };
-  }, [allShelters, allKennels, allSections, totalCount]);
+  }, [allShelters, allKennels, totalCount]);
 
   // Filtered Kennels list for Kennels tab
   const filteredKennels = useMemo(() => {
@@ -647,26 +656,70 @@ export const Shelters = () => {
       render: (_v, row) => (
         <div>
           <strong style={{ fontSize: "14px", color: "#0F172A" }}>{row.name}</strong>
-          {row.id && (
-            <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>
-              ID: <code style={{ background: "#F1F5F9", padding: "1px 5px", borderRadius: "3px" }}>{row.id}</code>
-            </div>
-          )}
+          <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>
+            <span style={{ textTransform: "capitalize", fontWeight: 600 }}>{row.facility_type || "shelter"}</span>
+            {row.address && <span> • {row.address}</span>}
+          </div>
         </div>
       ),
     },
     {
-      key: "facility_type",
-      header: "Type",
+      key: "total_capacity",
+      header: "Facility Capacity",
       render: (_v, row) => (
-        <span style={{ textTransform: "capitalize", background: "#F1F5F9", color: "#334155", padding: "2px 8px", borderRadius: "4px", fontSize: "12px", fontWeight: 600, border: "1px solid #E2E8F0" }}>
-          {row.facility_type || "shelter"}
-        </span>
+        <div>
+          <span style={{ fontWeight: 700, color: "#0F172A", fontSize: "13px" }}>
+            {row.total_capacity ?? row.capacity ?? "Unspecified"}
+          </span>
+          <div style={{ fontSize: "11px", color: "#64748B" }}>Building Max</div>
+        </div>
       ),
     },
-    { key: "address", header: "Location / Address", render: (_v, row) => row.address || "Unspecified" },
-    { key: "phone", header: "Contact Phone", render: (_v, row) => <span style={{ wordBreak: "break-all" }}>{row.phone || "—"}</span> },
-    { key: "total_capacity", header: "Capacity", render: (_v, row) => <span style={{ fontWeight: 600, color: "#0F172A" }}>{row.total_capacity ?? "Unspecified"}</span> },
+    {
+      key: "total_kennels",
+      header: "Total Kennels",
+      render: (_v, row) => {
+        const facKennels = allKennels.filter(
+          (k) => String(k.facility_id).toLowerCase().trim() === String(row.id).toLowerCase().trim()
+        );
+        return (
+          <span style={{ fontWeight: 600, color: facKennels.length > 0 ? "#7C3AED" : "#64748B" }}>
+            {facKennels.length} unit{facKennels.length === 1 ? "" : "s"}
+          </span>
+        );
+      },
+    },
+    {
+      key: "occupied_kennels",
+      header: "Occupied Kennels",
+      render: (_v, row) => {
+        const facKennels = allKennels.filter(
+          (k) => String(k.facility_id).toLowerCase().trim() === String(row.id).toLowerCase().trim()
+        );
+        const occupied = facKennels.filter((k) => k.is_occupied).length;
+        return (
+          <span style={{ fontWeight: 600, color: occupied > 0 ? "#1E3A8A" : "#64748B" }}>
+            {occupied}
+          </span>
+        );
+      },
+    },
+    {
+      key: "available_kennels",
+      header: "Available Kennels",
+      render: (_v, row) => {
+        const facKennels = allKennels.filter(
+          (k) => String(k.facility_id).toLowerCase().trim() === String(row.id).toLowerCase().trim()
+        );
+        const occupied = facKennels.filter((k) => k.is_occupied).length;
+        const available = Math.max(0, facKennels.length - occupied);
+        return (
+          <span style={{ fontWeight: 700, color: available > 0 ? "#16A34A" : "#64748B" }}>
+            {available}
+          </span>
+        );
+      },
+    },
     {
       key: "status",
       header: "Status",
@@ -1002,11 +1055,12 @@ export const Shelters = () => {
           }}
         >
           <div style={{ fontSize: "11px", fontWeight: 600, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.03em" }}>
-            Total Capacity
+            Facility Capacity
           </div>
           <div style={{ fontSize: "22px", fontWeight: 700, color: "#0F172A", marginTop: "4px" }}>
-            {computedStats.totalCapacity}
+            {computedStats.facilityCapacity}
           </div>
+          <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>Declared Building Max</div>
         </div>
 
         <div
@@ -1027,8 +1081,9 @@ export const Shelters = () => {
             Occupied Kennels
           </div>
           <div style={{ fontSize: "22px", fontWeight: 700, color: "#1E3A8A", marginTop: "4px" }}>
-            {computedStats.occupiedCount}
+            {computedStats.occupiedKennelsCount}
           </div>
+          <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>Physical Units with Pets</div>
         </div>
 
         <div
@@ -1048,13 +1103,14 @@ export const Shelters = () => {
           <div style={{ fontSize: "11px", fontWeight: 600, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.03em" }}>
             Available Kennels
           </div>
-          <div style={{ fontSize: "22px", fontWeight: 700, color: "#15803D", marginTop: "4px" }}>
-            {computedStats.availableCount}
+          <div style={{ fontSize: "22px", fontWeight: 700, color: computedStats.availableKennelsCount > 0 ? "#15803D" : "#64748B", marginTop: "4px" }}>
+            {computedStats.availableKennelsCount}
           </div>
+          <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>Physical Vacant Units</div>
         </div>
 
         <div
-          onClick={() => setActiveTab("facilities")}
+          onClick={() => setActiveTab("kennels")}
           style={{
             background: "#FFFFFF",
             padding: "14px 16px",
@@ -1065,11 +1121,12 @@ export const Shelters = () => {
           }}
         >
           <div style={{ fontSize: "11px", fontWeight: 600, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.03em" }}>
-            Occupancy Rate
+            Kennel Occupancy Rate
           </div>
-          <div style={{ fontSize: "22px", fontWeight: 700, color: computedStats.occupancyPct > 85 ? "#DC2626" : "#0F172A", marginTop: "4px" }}>
-            {computedStats.occupancyPct}%
+          <div style={{ fontSize: "22px", fontWeight: 700, color: computedStats.kennelOccupancyPct > 85 ? "#DC2626" : "#0F172A", marginTop: "4px" }}>
+            {computedStats.kennelOccupancyPct}%
           </div>
+          <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>Of Physical Units</div>
         </div>
       </div>
 
@@ -1596,14 +1653,21 @@ export const Shelters = () => {
           setSectionForm({ ...emptySectionForm, facility_id: fac.id });
           setIsSectionModalOpen(true);
         }}
-        onAddKennel={() => {
+        onAddKennel={(fac) => {
           setIsShelterDetailsOpen(false);
-          setKennelForm({ ...emptyKennelForm });
+          const facSec = allSections.find((s) => s.facility_id === fac?.id);
+          setKennelForm({
+            ...emptyKennelForm,
+            section_id: facSec?.id || "",
+          });
           setIsKennelCreateModalOpen(true);
         }}
-        onAssignAnimal={(fac) => {
+        onAssignAnimal={(fac, dog) => {
           setIsShelterDetailsOpen(false);
-          setPreselectedKennelForAssign({ facility_id: fac.id });
+          setPreselectedKennelForAssign({
+            facility_id: fac?.id,
+            preselectedDogId: dog?.id || dog?.dog_id,
+          });
           setIsAssignModalOpen(true);
         }}
       />
@@ -1616,11 +1680,37 @@ export const Shelters = () => {
           setSelectedKennelForDetails(null);
         }}
         onRefresh={() => fetchAllKennelsWorkspace()}
+        onSelectDog={(dog) => {
+          setIsKennelDetailsOpen(false);
+          setSelectedPetForDetails(dog);
+        }}
         onOpenAssign={(kennel) => {
           setPreselectedKennelForAssign(kennel);
           setIsAssignModalOpen(true);
         }}
       />
+
+      {selectedPetForDetails && (
+        <PetDetailsModal
+          isOpen={true}
+          dog={selectedPetForDetails}
+          facilityName={selectedKennelForDetails?.facility_name || "Shelter Facility"}
+          onClose={() => {
+            setSelectedPetForDetails(null);
+            if (selectedKennelForDetails) {
+              setIsKennelDetailsOpen(true);
+            }
+          }}
+          onAllocateKennel={(dog) => {
+            setSelectedPetForDetails(null);
+            setPreselectedKennelForAssign({
+              facility_id: selectedKennelForDetails?.facility_id,
+              preselectedDogId: dog?.id || dog?.dog_id,
+            });
+            setIsAssignModalOpen(true);
+          }}
+        />
+      )}
 
       <KennelAssignmentModal
         isOpen={isAssignModalOpen}

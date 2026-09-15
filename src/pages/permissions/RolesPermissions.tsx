@@ -23,7 +23,7 @@ import {
   FaIdBadge,
 } from "react-icons/fa";
 import userService, { type UserPayload } from "../../services/userService";
-import { normalizeRole, ALLOWED_INTERNAL_ROLES, getRoleTitle, getCurrentUserRole, isInternalRole } from "../../utils/roleUtils";
+import { normalizeRole, ALLOWED_INTERNAL_ROLES, getRoleTitle, getCurrentUserRole, isInternalRole, isAdminPortalRole } from "../../utils/roleUtils";
 import { formatDateTime } from "../../utils/dateUtils";
 import {
   setRolePermissionOverrides,
@@ -742,6 +742,11 @@ const RolesPermissions = () => {
     if (!selectedAccount) return;
     if (!isSuperAdmin) {
       addToast("Access Denied: Only a Super Administrator can reset account passwords.", "error");
+      return;
+    }
+    if (!isAdminPortalRole(selectedAccount.role)) {
+      addToast("Access Denied: General Public Users must manage their passwords via the public website.", "error");
+      setIsChangingPassword(false);
       return;
     }
     if (!newPassword) {
@@ -1830,7 +1835,7 @@ const RolesPermissions = () => {
         title={
           isEditingAccount
             ? `Edit Account Profile — ${selectedAccount?.name || "User"}`
-            : isChangingPassword
+            : isChangingPassword && isAdminPortalRole(selectedAccount?.role)
             ? `Change Password — ${selectedAccount?.name || "User"}`
             : `Account Details & Profile — ${selectedAccount?.name || "Staff Member"}`
         }
@@ -1980,7 +1985,7 @@ const RolesPermissions = () => {
                   </button>
                 </div>
               </form>
-            ) : isChangingPassword ? (
+            ) : isChangingPassword && isAdminPortalRole(selectedAccount.role) ? (
               /* Change Password Form */
               <form
                 onSubmit={(e) => {
@@ -2189,21 +2194,23 @@ const RolesPermissions = () => {
                         >
                           <FaEdit size={13} /> Edit Profile
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setIsChangingPassword(true)}
-                          style={{
-                            ...primaryButtonStyle,
-                            background: "#0F766E",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "6px",
-                            fontSize: "13px",
-                            padding: "8px 14px",
-                          }}
-                        >
-                          <FaKey size={13} /> Change Password
-                        </button>
+                        {isAdminPortalRole(selectedAccount.role) && (
+                          <button
+                            type="button"
+                            onClick={() => setIsChangingPassword(true)}
+                            style={{
+                              ...primaryButtonStyle,
+                              background: "#0F766E",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              fontSize: "13px",
+                              padding: "8px 14px",
+                            }}
+                          >
+                            <FaKey size={13} /> Change Password
+                          </button>
+                        )}
                       </>
                     )}
                     <button

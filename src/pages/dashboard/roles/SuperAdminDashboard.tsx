@@ -9,6 +9,7 @@ import {
   FaHouse,
   FaHandsHolding,
   FaIndianRupeeSign,
+  FaMagnifyingGlass,
 } from "react-icons/fa6";
 import { FaRegClock, FaShieldAlt, FaSync } from "react-icons/fa";
 import useExecutiveDashboard from "../../../hooks/useExecutiveDashboard";
@@ -34,6 +35,66 @@ const formatINR = (amount: number): string =>
     maximumFractionDigits: 2,
   }).format(amount);
 
+interface AdminDashboardSummaryResponse {
+  users?: {
+    total_users?: number;
+    active_users?: number;
+    verified_users?: number;
+  };
+  dogs?: {
+    total_dogs?: number;
+    adoptable_dogs?: number;
+    by_status?: Record<string, number>;
+  };
+  rescues?: {
+    total?: number;
+    by_status?: Record<string, number>;
+  };
+  adoptions?: {
+    pending?: number;
+    by_status?: Record<string, number>;
+    adoption_rate_pct?: number;
+  };
+  donations?: {
+    total_donations?: number;
+    total_raised?: number;
+  };
+  shelters?: {
+    capacity?: number;
+    occupied?: number;
+    occupancy_pct?: number;
+  };
+  volunteers?: {
+    total?: number;
+    by_status?: Record<string, number>;
+    hours_logged?: number;
+  };
+  grievances?: {
+    open?: number;
+    by_status?: Record<string, number>;
+  };
+  lost_found?: {
+    active_lost?: number;
+    active_found?: number;
+  };
+  notifications?: {
+    unread?: number;
+    total?: number;
+  };
+  fosters?: {
+    total_fosters?: number;
+    available?: number;
+    active_placements?: number;
+  };
+}
+
+const formatByStatus = (byStatus?: Record<string, number>): string => {
+  if (!byStatus || typeof byStatus !== "object") return "";
+  const entries = Object.entries(byStatus).filter(([_, count]) => typeof count === "number");
+  if (entries.length === 0) return "";
+  return entries.map(([status, count]) => `${count} ${status.replace(/_/g, " ")}`).join(" · ");
+};
+
 const SuperAdminDashboard = () => {
   const navigate = useNavigate();
   const {
@@ -43,13 +104,11 @@ const SuperAdminDashboard = () => {
     shelters,
     rescues,
     adoptions,
-    fosters,
     volunteers,
     donations,
     inventory,
     medical,
     finance,
-    financeSummary,
     activities,
     loading,
     error,
@@ -68,153 +127,121 @@ const SuperAdminDashboard = () => {
   const displayName = user?.name || "Administrator";
   const roleTitle = getRoleTitle(getCurrentUserRole() ?? "super_admin");
 
-  const safeNumber = (val: unknown): number => {
-    if (val === null || val === undefined) return 0;
-    if (typeof val === "number") return isNaN(val) ? 0 : val;
-    if (typeof val === "object") {
-      const obj = val as Record<string, unknown>;
-      const inner = obj.count ?? obj.total ?? obj.total_count ?? obj.length;
-      if (typeof inner === "number") return isNaN(inner) ? 0 : inner;
-      if (typeof inner === "string") {
-        const n = Number(inner);
-        return isNaN(n) ? 0 : n;
-      }
-      return 0;
-    }
-    const n = Number(val);
-    return isNaN(n) ? 0 : n;
-  };
+  const summaryData = (summary ?? {}) as AdminDashboardSummaryResponse;
 
-  // 1. Total Users
-  const totalUsers = users.length > 0 ? users.length : safeNumber(summary.total_users ?? summary.users_count ?? summary.users);
-  const activeUsersCount = users.filter((u) => u.is_active !== false && String(u.status || "").toLowerCase() !== "inactive").length;
+  // 1. Users
+  const totalUsers = summaryData.users?.total_users ?? 0;
+  const activeUsers = summaryData.users?.active_users ?? 0;
+  const verifiedUsers = summaryData.users?.verified_users ?? 0;
 
-  // 2. Rescued Dogs
-  const totalDogs = dogs.length > 0 ? dogs.length : safeNumber(summary.total_dogs ?? summary.dogs_count ?? summary.dogs);
-  const rescuedDogsCount = dogs.filter((d) =>
-    Boolean(d.rescue_case_id || String(d.status || d.current_status || "").toLowerCase().includes("rescue"))
-  ).length;
+  // 2. Dogs
+  const totalDogs = summaryData.dogs?.total_dogs ?? 0;
+  const adoptableDogs = summaryData.dogs?.adoptable_dogs ?? 0;
+  const dogStatusBreakdown = formatByStatus(summaryData.dogs?.by_status);
 
-  // 3. Shelters
-  const totalShelters = shelters.length > 0 ? shelters.length : safeNumber(summary.total_shelters ?? summary.shelters_count ?? summary.shelters);
-  const activeSheltersCount = shelters.filter((s) => s.status !== "inactive" && s.is_active !== false).length;
+  // 3. Rescues
+  const totalRescues = summaryData.rescues?.total ?? 0;
+  const rescueStatusBreakdown = formatByStatus(summaryData.rescues?.by_status);
 
-  // 4. Active Rescues (matching PawGuard lifecycle: reported -> verified -> dispatched -> located -> rescued -> admitted)
-  const activeRescuesList = rescues.filter((r) =>
-    /reported|verified|dispatched|located|rescued|admitted|pending|in_progress|open/i.test(
-      String(r.status || r.stage || r.dispatch_status || "")
-    )
-  );
-  const activeRescuesCount = rescues.length > 0 ? activeRescuesList.length : safeNumber(summary.active_rescues ?? summary.rescues_count);
-  const awaitingDispatchCount = rescues.filter((r) =>
-    /reported|pending|new/i.test(String(r.status || r.stage || ""))
-  ).length;
+  // 4. Adopted Dogs (Authoritative count from dogs registry status breakdown)
+  const adoptedDogsCount = summaryData.dogs?.by_status?.adopted ?? 0;
 
-  // 5. Pending Adoptions (submitted, screening, interview, home_check, vetting)
-  const pendingAdoptionsList = adoptions.filter((a) =>
-    /submitted|screening|interview|home_check|vetting|pending|in_review/i.test(String(a.status || ""))
-  );
-  const pendingAdoptionsCount = adoptions.length > 0 ? pendingAdoptionsList.length : safeNumber(summary.pending_adoptions ?? summary.adoptions_count);
-  const newAdoptionAppsCount = adoptions.filter((a) => String(a.status || "").toLowerCase() === "submitted").length;
+  // 5. Shelter Capacity
+  const shelterCapacity = summaryData.shelters?.capacity ?? 0;
+  const shelterOccupied = summaryData.shelters?.occupied ?? 0;
+  const shelterOccupancyPct = summaryData.shelters?.occupancy_pct ?? 0;
 
-  // 6. Active Fosters
-  const activeFostersList = fosters.filter((f) =>
-    /active|placed|approved|in_progress|pending/i.test(String(f.status || f.placement_status || ""))
-  );
-  const activeFostersCount = fosters.length > 0 ? activeFostersList.length : safeNumber(summary.active_foster_placements ?? summary.fosters_count);
+  // 6. Foster Families
+  const totalFosterFamilies = summaryData.fosters?.total_fosters ?? 0;
+  const availableFosterFamilies = summaryData.fosters?.available ?? 0;
+  const activeFosterPlacements = summaryData.fosters?.active_placements ?? 0;
 
   // 7. Volunteers
-  const totalVolunteers = volunteers.length > 0 ? volunteers.length : safeNumber(summary.volunteers_count ?? summary.volunteers ?? summary.total_volunteers);
-  const activeVolunteersCount = volunteers.filter((v) => v.is_active !== false && String(v.status || "").toLowerCase() !== "rejected").length;
+  const totalVolunteers = summaryData.volunteers?.total ?? 0;
+  const activeVolunteers = summaryData.volunteers?.by_status?.active ?? 0;
+  const volunteerStatusBreakdown = formatByStatus(summaryData.volunteers?.by_status);
+  const volunteerHoursLogged = summaryData.volunteers?.hours_logged ?? 0;
 
-  // 8. Donations (INR ₹) — aligned with Finance.tsx calculation & financeSummary source
-  const finObj = ((financeSummary as any)?.data ?? financeSummary ?? (summary as any)?.data ?? summary ?? {}) as Record<string, unknown>;
+  // 8. Lost & Found
+  const activeLost = summaryData.lost_found?.active_lost ?? 0;
+  const activeFound = summaryData.lost_found?.active_found ?? 0;
+  const totalLostFound = activeLost + activeFound;
 
-  const totalIncomeVal =
-    finObj.total_income ??
-    finObj.total_revenue ??
-    finObj.total_revenue_collected ??
-    finObj.total_donations_amount ??
-    finObj.total_amount ??
-    finObj.revenue ??
-    finObj.total_raised ??
-    0;
-
-  const totalDonationAmount = safeNumber(totalIncomeVal);
-
-  const summarySuccessfulDonations =
-    finObj.successful_donations ??
-    finObj.successful_donations_count ??
-    finObj.completed_donations ??
-    finObj.total_donations;
-
-  const successfulCount = summarySuccessfulDonations !== undefined && summarySuccessfulDonations !== null
-    ? safeNumber(summarySuccessfulDonations)
-    : (donations.length > 0 ? donations.length : 0);
+  // 9. Donations
+  const totalDonationsCount = summaryData.donations?.total_donations ?? 0;
+  const totalRaisedAmount = summaryData.donations?.total_raised ?? 0;
 
   const kpis = [
     {
       title: "Total Users",
       value: totalUsers,
-      subtitle: `${activeUsersCount} active accounts`,
+      subtitle: `${activeUsers} active · ${verifiedUsers} verified`,
       icon: <FaUsers />,
       color: "#1E3A8A",
       path: "/users",
     },
     {
-      title: "Rescued Dogs",
+      title: "Total Dogs",
       value: totalDogs,
-      subtitle: `${totalDogs} registered dogs${rescuedDogsCount > 0 ? ` · ${rescuedDogsCount} rescued` : ""}`,
+      subtitle: `${adoptableDogs} adoptable${dogStatusBreakdown ? ` · ${dogStatusBreakdown}` : ""}`,
       icon: <FaPaw />,
       color: "#15803D",
       path: "/pets",
     },
     {
-      title: "Shelters",
-      value: totalShelters,
-      subtitle: `${activeSheltersCount} active facilities`,
-      icon: <FaBuilding />,
-      color: "#1E3A8A",
-      path: "/shelters",
-    },
-    {
-      title: "Active Rescues",
-      value: activeRescuesCount,
-      subtitle: activeRescuesCount > 0 ? `${awaitingDispatchCount} awaiting dispatch` : "No active rescue incidents",
+      title: "Total Rescues",
+      value: totalRescues,
+      subtitle: rescueStatusBreakdown || `${totalRescues} total rescues`,
       icon: <FaTruckMedical />,
-      color: activeRescuesCount > 0 ? "#DC2626" : "#1E3A8A",
-      path: "/rescues",
+      color: totalRescues > 0 ? "#DC2626" : "#1E3A8A",
+      path: "/rescue-requests",
     },
     {
-      title: "Pending Adoptions",
-      value: pendingAdoptionsCount,
-      subtitle: pendingAdoptionsCount > 0 ? `${newAdoptionAppsCount} new applications` : "No pending adoptions",
+      title: "Adopted Dogs",
+      value: adoptedDogsCount,
+      subtitle: `${adoptedDogsCount} adopted dogs`,
       icon: <FaHeart />,
       color: "#15803D",
       path: "/adoptions",
     },
     {
-      title: "Active Fosters",
-      value: activeFostersCount,
-      subtitle: activeFostersCount > 0 ? `${fosters.length} total placements` : "No active foster placements",
+      title: "Shelter Capacity",
+      value: `${shelterOccupied} / ${shelterCapacity}`,
+      subtitle: `${shelterOccupied} occupied · ${shelterOccupancyPct}% occupancy`,
+      icon: <FaBuilding />,
+      color: "#4F46E5",
+      path: "/shelters",
+    },
+    {
+      title: "Foster Families",
+      value: totalFosterFamilies,
+      subtitle: `${availableFosterFamilies} available · ${activeFosterPlacements} active placements`,
       icon: <FaHouse />,
-      color: "#15803D",
+      color: "#8B5CF6",
       path: "/fosters",
     },
     {
-      title: "Volunteers",
+      title: "Total Volunteers",
       value: totalVolunteers,
-      subtitle: totalVolunteers > 0 ? `${activeVolunteersCount} active volunteers` : "No volunteer records",
+      subtitle: `${volunteerStatusBreakdown || `${activeVolunteers} active`} · ${volunteerHoursLogged} hrs logged`,
       icon: <FaHandsHolding />,
-      color: "#1E3A8A",
+      color: "#0284C7",
       path: "/volunteers",
     },
     {
+      title: "Lost & Found",
+      value: totalLostFound,
+      subtitle: `${activeLost} active lost · ${activeFound} active found`,
+      icon: <FaMagnifyingGlass />,
+      color: "#EA580C",
+      path: "/lost-and-found",
+    },
+    {
       title: "Donations",
-      value: formatINR(totalDonationAmount),
-      subtitle: successfulCount > 0 ? `${successfulCount} successful donations` : "No donations recorded",
+      value: formatINR(totalRaisedAmount),
+      subtitle: `${totalDonationsCount} total donations`,
       icon: <FaIndianRupeeSign />,
-      color: "#1E3A8A",
+      color: "#0D9488",
       path: "/finance",
     },
   ];

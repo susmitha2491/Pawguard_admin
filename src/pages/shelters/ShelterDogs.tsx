@@ -307,8 +307,11 @@ const ShelterDogs = () => {
   };
 
   // Cage Allocation State
+  const [selectedCageDog, setSelectedCageDog] = useState<any | null>(null);
   const [cageSections, setCageSections] = useState<any[]>([]);
+  const [cageSectionsLoading, setCageSectionsLoading] = useState(false);
   const [cageKennels, setCageKennels] = useState<any[]>([]);
+  const [cageKennelsLoading, setCageKennelsLoading] = useState(false);
   const [cageSel, setCageSel] = useState({ facilityId: "", sectionId: "", kennelId: "", dogId: "" });
   const [cageLoading, setCageLoading] = useState(false);
   const [emergencyOverride, setEmergencyOverride] = useState(false);
@@ -959,11 +962,33 @@ const ShelterDogs = () => {
 
   // Cage Allocation Handlers
   const openCageModal = async (dog?: any) => {
+    setSelectedCageDog(dog || null);
+
+    const targetDogId = dog ? dogId(dog) : "";
+
+    let targetFacilityId = "";
+    if (dog) {
+      const directId = dog.shelter_facility_id || dog.shelter_id || dog.facility_id || dog.shelter?.id || dog.facility?.id;
+      if (directId && facilities.some((f) => f.id === directId || f.facility_id === directId)) {
+        targetFacilityId = directId;
+      } else if (dog.shelter_name) {
+        const matched = facilities.find((f) => (f.name || "").toLowerCase() === (dog.shelter_name || "").toLowerCase());
+        if (matched) {
+          targetFacilityId = matched.id || matched.facility_id;
+        }
+      }
+      if (!targetFacilityId && facilities.length > 0) {
+        targetFacilityId = facilities[0].id || facilities[0].facility_id;
+      }
+    } else {
+      targetFacilityId = facilities[0]?.id || facilities[0]?.facility_id || "";
+    }
+
     setCageSel({
-      facilityId: facilities[0]?.id || "",
+      facilityId: targetFacilityId,
       sectionId: "",
       kennelId: "",
-      dogId: dog ? dogId(dog) : "",
+      dogId: targetDogId,
     });
     setEmergencyOverride(false);
     setOverrideNotes("");
@@ -971,8 +996,16 @@ const ShelterDogs = () => {
     setCageKennels([]);
     setIsCageModalOpen(true);
 
-    if (facilities[0]?.id) {
-      onFacilityChange(facilities[0].id);
+    if (targetFacilityId) {
+      setCageSectionsLoading(true);
+      try {
+        const res = await shelterService.getFacilitySections(targetFacilityId);
+        setCageSections(unwrapList(res));
+      } catch {
+        setCageSections([]);
+      } finally {
+        setCageSectionsLoading(false);
+      }
     }
   };
 
@@ -985,11 +1018,14 @@ const ShelterDogs = () => {
       setCageSections([]);
       return;
     }
+    setCageSectionsLoading(true);
     try {
       const res = await shelterService.getFacilitySections(facilityId);
       setCageSections(unwrapList(res));
     } catch {
       setCageSections([]);
+    } finally {
+      setCageSectionsLoading(false);
     }
   };
 
@@ -1001,11 +1037,24 @@ const ShelterDogs = () => {
       setCageKennels([]);
       return;
     }
+    setCageKennelsLoading(true);
     try {
       const res = await shelterService.getSectionKennels(sectionId);
-      setCageKennels(unwrapList(res));
+      const rawKennels = unwrapList(res);
+      const availableKennels = rawKennels.filter((k: any) => {
+        const isOccupied = Boolean(
+          k.is_occupied ||
+          k.occupied ||
+          (k.current_occupancy && k.capacity && k.current_occupancy >= k.capacity)
+        );
+        const isInactive = k.is_active === false || k.status === "inactive" || k.status === "maintenance";
+        return !isOccupied && !isInactive;
+      });
+      setCageKennels(availableKennels);
     } catch {
       setCageKennels([]);
+    } finally {
+      setCageKennelsLoading(false);
     }
   };
 
@@ -1048,11 +1097,31 @@ const ShelterDogs = () => {
     try {
       setCageLoading(true);
       await shelterService.assignDogToKennel(cageSel.kennelId, cageSel.dogId, payload);
-      addToast("Dog successfully assigned to cage/kennel!", "success");
+      const dogName = selectedCageDog?.name || "Dog";
+      addToast(`Kennel successfully allocated to ${dogName}!`, "success");
       setIsCageModalOpen(false);
+      setSelectedCageDog(null);
       setEmergencyOverride(false);
       setOverrideNotes("");
-      fetchShelterDogsData();
+
+      // Optimistically update selectedDog state if open
+      setSelectedDog((prev: any) => {
+        if (!prev) return null;
+        if (dogId(prev) === cageSel.dogId) {
+          const assignedKennelObj = cageKennels.find((k) => k.id === cageSel.kennelId);
+          const kennelLabel = assignedKennelObj?.identifier || assignedKennelObj?.name || `Kennel ${cageSel.kennelId.slice(0, 8)}`;
+          return {
+            ...prev,
+            kennel_assignment: kennelLabel,
+            kennel_identifier: kennelLabel,
+            kennel_id: cageSel.kennelId,
+            section_id: cageSel.sectionId,
+          };
+        }
+        return prev;
+      });
+
+      await fetchShelterDogsData();
       notifyDataChanged();
     } catch (err: any) {
       const status = err?.response?.status;
@@ -1713,33 +1782,140 @@ const ShelterDogs = () => {
       {/* KENNEL ALLOCATION MODAL */}
       <Modal
         isOpen={isCageModalOpen}
-        onClose={() => setIsCageModalOpen(false)}
-        title="Allocate Dog to Kennel Unit"
+        onClose={() => {
+          setIsCageModalOpen(false);
+          setSelectedCageDog(null);
+        }}
+        title={selectedCageDog?.name ? `Allocate Kennel — ${selectedCageDog.name}` : "Allocate Dog to Kennel Unit"}
         maxWidth="680px"
       >
         <form onSubmit={handleAssignCageSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "4px" }}>
-              1. Select Registered Dog *
-            </label>
-            <select
-              value={cageSel.dogId}
-              onChange={(e) => setCageSel({ ...cageSel, dogId: e.target.value })}
-              style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+          {selectedCageDog ? (
+            /* Selected Dog Context & Current Kennel Assignment Status */
+            <div
+              style={{
+                background: "#F8FAFC",
+                border: "1px solid #E2E8F0",
+                borderRadius: "10px",
+                padding: "14px 16px",
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "12px",
+              }}
             >
-              <option value="">Select dog...</option>
-              {dogs.map((d) => (
-                <option key={dogId(d)} value={dogId(d)}>
-                  {d.name} ({d.registration_number || dogId(d)}) — {d.breed || "Dog"} [{d.shelter_name || "Unassigned"}]
-                </option>
-              ))}
-            </select>
-          </div>
+              <div>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Selected Dog
+                </div>
+                <div style={{ fontSize: "16px", fontWeight: 800, color: "#0F172A", marginTop: "2px" }}>
+                  {selectedCageDog.name}
+                </div>
+                <div style={{ fontSize: "12px", color: "#64748B", marginTop: "1px" }}>
+                  Reg: <span style={{ fontFamily: "monospace", fontWeight: 600, color: "#334155" }}>{selectedCageDog.registration_number || selectedCageDog.id}</span>
+                </div>
+              </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Current Kennel
+                </div>
+                <div style={{ marginTop: "4px" }}>
+                  {selectedCageDog.kennel_assignment && selectedCageDog.kennel_assignment !== "Unassigned" ? (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        padding: "3px 10px",
+                        borderRadius: "6px",
+                        background: "#DBEAFE",
+                        color: "#1D4ED8",
+                        fontWeight: 700,
+                        fontSize: "12px",
+                      }}
+                    >
+                      <FaBed /> {selectedCageDog.kennel_assignment}
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        padding: "3px 10px",
+                        borderRadius: "6px",
+                        background: "#F1F5F9",
+                        color: "#64748B",
+                        fontWeight: 600,
+                        fontSize: "12px",
+                      }}
+                    >
+                      Unassigned
+                    </span>
+                  )}
+                </div>
+                {selectedCageDog.kennel_assignment && selectedCageDog.kennel_assignment !== "Unassigned" && (
+                  <div style={{ fontSize: "11px", color: "#64748B", marginTop: "4px" }}>
+                    Dog is currently housed. Selecting a new kennel will reassign this dog.
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* Fallback Dog Selector for Generic Modal Entry Point */
             <div>
               <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "4px" }}>
-                2. Shelter Facility *
+                Select Registered Dog *
+              </label>
+              <select
+                value={cageSel.dogId}
+                onChange={(e) => setCageSel({ ...cageSel, dogId: e.target.value })}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+              >
+                <option value="">Select dog...</option>
+                {dogs.map((d) => (
+                  <option key={dogId(d)} value={dogId(d)}>
+                    {d.name} ({d.registration_number || dogId(d)}) — {d.breed || "Dog"} [{d.shelter_name || "Unassigned"}]
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Shelter Facility (Locked to dog's shelter context if preselected, or dropdown if generic) */}
+          {selectedCageDog ? (
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "6px" }}>
+                Shelter Facility
+              </label>
+              <div
+                style={{
+                  padding: "10px 14px",
+                  background: "#F8FAFC",
+                  border: "1px solid #CBD5E1",
+                  borderRadius: "8px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  color: "#0F172A",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span>
+                  {facilities.find((f) => f.id === cageSel.facilityId || f.facility_id === cageSel.facilityId)?.name ||
+                    selectedCageDog?.shelter_name ||
+                    "Central Shelter Facility"}
+                </span>
+                <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 500 }}>
+                  (Shelter Context)
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "4px" }}>
+                Shelter Facility *
               </label>
               <select
                 value={cageSel.facilityId}
@@ -1752,43 +1928,88 @@ const ShelterDogs = () => {
                 ))}
               </select>
             </div>
+          )}
 
-            <div>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "4px" }}>
-                3. Facility Section / Ward *
-              </label>
-              <select
-                value={cageSel.sectionId}
-                onChange={(e) => onSectionChange(e.target.value)}
-                disabled={!cageSel.facilityId}
-                style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
-              >
-                <option value="">Choose section...</option>
-                {cageSections.map((sec) => (
-                  <option key={sec.id} value={sec.id}>{sec.name}</option>
-                ))}
-              </select>
-            </div>
+          {/* Facility Section / Ward */}
+          <div>
+            <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "6px" }}>
+              Facility Section / Ward *
+            </label>
+            <select
+              value={cageSel.sectionId}
+              onChange={(e) => onSectionChange(e.target.value)}
+              disabled={!cageSel.facilityId || cageSectionsLoading}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: "8px",
+                border: "1px solid #CBD5E1",
+                fontSize: "13px",
+                boxSizing: "border-box",
+                background: !cageSel.facilityId ? "#F8FAFC" : "#FFF",
+                color: "#0F172A",
+              }}
+            >
+              <option value="">
+                {cageSectionsLoading
+                  ? "Loading facility sections..."
+                  : cageSections.length === 0
+                  ? "No sections available for this facility"
+                  : "Select section / ward..."}
+              </option>
+              {cageSections.map((sec) => (
+                <option key={sec.id} value={sec.id}>
+                  {sec.name} {sec.section_type ? `(${sec.section_type})` : ""} {sec.capacity ? `— Capacity: ${sec.capacity}` : ""}
+                </option>
+              ))}
+            </select>
+            {cageSections.length === 0 && !cageSectionsLoading && cageSel.facilityId && (
+              <div style={{ fontSize: "12px", color: "#DC2626", marginTop: "4px" }}>
+                No sections/wards registered for this facility.
+              </div>
+            )}
           </div>
 
+          {/* Available Target Kennel Unit */}
           <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "4px" }}>
-              4. Available Target Kennel Unit *
+            <label style={{ display: "block", fontSize: "13px", fontWeight: 700, color: "#1E293B", marginBottom: "6px" }}>
+              Available Kennel Unit *
             </label>
             <select
               value={cageSel.kennelId}
               onChange={(e) => setCageSel({ ...cageSel, kennelId: e.target.value })}
-              disabled={!cageSel.sectionId}
-              style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "13px", boxSizing: "border-box" }}
+              disabled={!cageSel.sectionId || cageKennelsLoading}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: "8px",
+                border: "1px solid #CBD5E1",
+                fontSize: "13px",
+                boxSizing: "border-box",
+                background: !cageSel.sectionId ? "#F8FAFC" : "#FFF",
+                color: "#0F172A",
+              }}
             >
-              <option value="">Choose kennel unit...</option>
+              <option value="">
+                {!cageSel.sectionId
+                  ? "Select a section first..."
+                  : cageKennelsLoading
+                  ? "Loading available kennels..."
+                  : cageKennels.length === 0
+                  ? "No available kennels in this section"
+                  : "Select available kennel..."}
+              </option>
               {cageKennels.map((k) => (
-                <option key={k.id} value={k.id} disabled={k.is_occupied}>
-                  Unit {k.identifier || k.name || k.id} (Capacity: {k.capacity ?? 1}) — [{k.sanitation_state || "clean"}]{" "}
-                  {k.is_occupied ? "— OCCUPIED (FULL)" : "— AVAILABLE"}
+                <option key={k.id} value={k.id}>
+                  Unit {k.identifier || k.name || k.id} {k.capacity ? `(Capacity: ${k.capacity})` : ""} — [{k.sanitation_state || "clean"}] — AVAILABLE
                 </option>
               ))}
             </select>
+            {cageSel.sectionId && !cageKennelsLoading && cageKennels.length === 0 && (
+              <div style={{ fontSize: "12px", color: "#D97706", marginTop: "4px" }}>
+                No available (unoccupied) kennels found in this section.
+              </div>
+            )}
           </div>
 
           {/* Clinical Section / Veterinary Sign-Off & Emergency Override Banner */}
@@ -1873,7 +2094,16 @@ const ShelterDogs = () => {
           )}
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px", borderTop: "1px solid #E2E8F0", paddingTop: "12px" }}>
-            <button type="button" onClick={() => setIsCageModalOpen(false)} style={{ padding: "9px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9" }}>Cancel</button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsCageModalOpen(false);
+                setSelectedCageDog(null);
+              }}
+              style={{ padding: "9px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9", color: "#334155", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
+            >
+              Cancel
+            </button>
             <button
               type="submit"
               disabled={
@@ -1892,6 +2122,7 @@ const ShelterDogs = () => {
                     : "#2563EB",
                 color: "#FFF",
                 fontWeight: 700,
+                fontSize: "13px",
                 cursor:
                   cageLoading || !cageSel.kennelId || !cageSel.dogId || (isClinicalSection && emergencyOverride && !overrideNotes.trim())
                     ? "not-allowed"
