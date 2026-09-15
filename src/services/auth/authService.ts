@@ -90,44 +90,6 @@ const confirmPasswordReset = async (token: string, newPassword: string) => {
   return response;
 };
 
-/**
- * Verify TOTP 6-digit MFA code for 2-step login.
- * Matches MFALoginVerifyRequest schema: { pre_auth_token, code, device }
- */
-const verifyMfa = async (preAuthToken: string, code: string) => {
-  const response = await axios.post("/auth/mfa/verify", {
-    pre_auth_token: preAuthToken,
-    code: code.trim(),
-    device: { device_type: "web" },
-  });
-  return response;
-};
-
-/**
- * Request TOTP enrollment for current authenticated user.
- * Returns QR code image URL and secret key.
- */
-const enrollMfa = async () => {
-  const response = await axios.post("/auth/mfa/enroll");
-  return response.data;
-};
-
-/**
- * Confirm TOTP enrollment with a 6-digit code.
- */
-const confirmMfaEnroll = async (code: string) => {
-  const response = await axios.post("/auth/mfa/enroll/confirm", { code: code.trim() });
-  return response.data;
-};
-
-/**
- * Disable TOTP MFA for current authenticated user.
- */
-const disableMfa = async (code: string) => {
-  const response = await axios.post("/auth/mfa/disable", { code: code.trim() });
-  return response.data;
-};
-
 const authService = {
   login,
   getMe,
@@ -137,10 +99,6 @@ const authService = {
   logout,
   requestPasswordReset,
   confirmPasswordReset,
-  verifyMfa,
-  enrollMfa,
-  confirmMfaEnroll,
-  disableMfa,
 };
 
 export default authService;
