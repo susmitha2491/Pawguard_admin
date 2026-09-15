@@ -641,7 +641,7 @@ const FosterFamilyDashboard: React.FC = () => {
             </p>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))", gap: "16px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: "20px" }}>
             {placements.map((p) => {
               const dog = p.dog || {};
               const dogName = dog.name || `Pet #${String(p.dog_id || "").slice(0, 8)}`;
@@ -973,7 +973,7 @@ const FosterFamilyDashboard: React.FC = () => {
       )}
 
       {/* 4 Clearly Identifiable Reporting Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))", gap: "16px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", gap: "22px" }}>
         {/* CARD 1: WEIGHT LOG */}
         <div
           style={{

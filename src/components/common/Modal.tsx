@@ -68,7 +68,7 @@ export const Modal: React.FC<ModalProps> = ({
         alignItems: "center",
         justifyContent: "center",
         zIndex,
-        padding: "clamp(8px, 2vw, 16px)",
+        padding: "16px",
       }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -78,9 +78,9 @@ export const Modal: React.FC<ModalProps> = ({
         style={{
           background: "#FFFFFF",
           borderRadius: "12px",
-          width: "min(100%, calc(100vw - 16px))",
+          width: "min(100%, calc(100vw - 32px))",
           maxWidth: resolvedMaxWidth,
-          maxHeight: "calc(100vh - 24px)",
+          maxHeight: "calc(100vh - 48px)",
           display: "flex",
           flexDirection: "column",
           boxShadow: "0 10px 25px -5px rgba(15, 23, 42, 0.15), 0 8px 10px -6px rgba(15, 23, 42, 0.08)",
@@ -91,20 +91,20 @@ export const Modal: React.FC<ModalProps> = ({
         {/* Header (Fixed at top) */}
         <div
           style={{
-            padding: "clamp(12px, 2vw, 18px) clamp(14px, 3vw, 24px)",
+            padding: "18px 24px",
             borderBottom: "1px solid #E2E8F0",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
             background: "#F8FAFC",
-            gap: "12px",
+            gap: "16px",
             flexShrink: 0,
           }}
         >
           <h3
             style={{
               margin: 0,
-              fontSize: "16px",
+              fontSize: "17px",
               fontWeight: 700,
               color: "#0F172A",
               wordBreak: "break-word",
@@ -147,7 +147,7 @@ export const Modal: React.FC<ModalProps> = ({
         {/* Content Body (Single Scrollbar) */}
         <div
           style={{
-            padding: "clamp(14px, 2.5vw, 20px) clamp(14px, 3vw, 24px)",
+            padding: "20px 24px",
             overflowY: "auto",
             flex: 1,
             wordBreak: "break-word",
@@ -160,14 +160,14 @@ export const Modal: React.FC<ModalProps> = ({
         {footer && (
           <div
             style={{
-              padding: "clamp(10px, 2vw, 14px) clamp(14px, 3vw, 24px)",
+              padding: "14px 24px",
               borderTop: "1px solid #E2E8F0",
               background: "#F8FAFC",
               display: "flex",
               alignItems: "center",
               justifyContent: "flex-end",
               flexWrap: "wrap",
-              gap: "10px",
+              gap: "12px",
               flexShrink: 0,
             }}
           >

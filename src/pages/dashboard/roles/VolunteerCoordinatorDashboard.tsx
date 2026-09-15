@@ -2021,7 +2021,7 @@ const VolunteerCoordinatorDashboard = () => {
               />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: "16px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "16px" }}>
               <div style={{ padding: "16px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
                 <h4 style={{ margin: "0 0 10px 0", fontSize: "14px", color: "#0F172A", fontWeight: 700 }}>Quick Actions</h4>
                 <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
@@ -3560,8 +3560,8 @@ const VolunteerCoordinatorDashboard = () => {
                           No shift attendance records logged for this volunteer yet.
                         </div>
                       ) : (
-                        <div className="table-responsive-container" style={{ maxHeight: "180px", overflowY: "auto", overflowX: "auto", background: "#FFF", borderRadius: "8px", border: "1px solid #CBD5E1" }}>
-                          <table style={{ width: "100%", minWidth: "420px", borderCollapse: "collapse", fontSize: "12px" }}>
+                        <div style={{ maxHeight: "180px", overflowY: "auto", background: "#FFF", borderRadius: "8px", border: "1px solid #CBD5E1" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
                             <thead>
                               <tr style={{ background: "#F1F5F9", textAlign: "left", color: "#475569" }}>
                                 <th style={{ padding: "8px 10px" }}>Shift Activity</th>

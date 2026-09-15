@@ -1809,14 +1809,14 @@ const Reports = () => {
         {!medicalReportError && medicalReport && (
           <>
             {/* 5 Stat cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))", gap: "16px", marginBottom: "24px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginBottom: "24px" }}>
               {statCards.map((card) => (
                 <StatCard key={card.title} {...card} />
               ))}
             </div>
 
             {/* Export actions */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: "16px", marginBottom: "24px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px", marginBottom: "24px" }}>
               <QuickActionCard
                 icon={<FaFileAlt />}
                 title="Export CSV"
@@ -2848,7 +2848,7 @@ const Reports = () => {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: "20px", marginBottom: "20px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px", marginBottom: "20px" }}>
             {/* Visual Heatmap Embed */}
             <div style={{ border: "1px solid #E2E8F0", borderRadius: "14px", padding: "16px", background: "#F8FAFC" }}>
               <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -2949,7 +2949,7 @@ const Reports = () => {
         </div>
 
         {/* SECTION 6: RESCUE STATUS DISTRIBUTION & SEVERITY / URGENCY TRIAGE */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: "24px", marginBottom: "24px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "24px", marginBottom: "24px" }}>
           {/* Rescue Status Distribution */}
           <div style={{ background: "#FFFFFF", borderRadius: "20px", padding: "24px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
             <h2 style={{ margin: "0 0 6px", fontSize: "18px", color: "#0F172A", fontWeight: 800 }}>Rescue Status Distribution</h2>
@@ -3803,7 +3803,7 @@ const Reports = () => {
         </div>
 
         {/* Export Action Buttons */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: "16px", marginBottom: "24px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px", marginBottom: "24px" }}>
           <QuickActionCard
             icon={<FaFileAlt />}
             title="Export Adoptions Pipeline (CSV)"
@@ -3853,14 +3853,14 @@ const Reports = () => {
         </div>
 
         {/* Primary Stat Cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: "16px", marginBottom: "24px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "24px" }}>
           {adoptionStatCards.map((card) => (
             <StatCard key={card.title} {...card} />
           ))}
         </div>
 
         {/* Adoption Pipeline Analytics Section */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: "20px", marginBottom: "24px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px", marginBottom: "24px" }}>
           {/* Average Application-to-Completion Time */}
           <div className="soft-card" style={{ padding: "20px" }}>
             <h3 style={{ margin: "0 0 14px", fontSize: "16px", fontWeight: 700, color: "#0F172A", display: "flex", alignItems: "center", gap: "8px" }}>

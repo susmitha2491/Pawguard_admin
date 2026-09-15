@@ -408,7 +408,7 @@ const Header = ({
         </div>
 
         {/* Right Controls: QR Scanner, Notifications, Settings, Profile & Logout */}
-        <div style={{ display: "flex", alignItems: "center", gap: isMobileScreen ? "6px" : "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           {/* QR Scanner Button (Authorized Roles Only) */}
           {isScannerAuthorizedRole(currentRole) && (
             <button
@@ -418,8 +418,8 @@ const Header = ({
                 background: "#F8FAFC",
                 border: "1px solid #E2E8F0",
                 borderRadius: "10px",
-                width: isMobileScreen ? "36px" : "40px",
-                height: isMobileScreen ? "36px" : "40px",
+                width: "40px",
+                height: "40px",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -433,14 +433,14 @@ const Header = ({
               onMouseEnter={(e) => (e.currentTarget.style.background = "#F1F5F9")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "#F8FAFC")}
             >
-              <FaQrcode size={isMobileScreen ? 16 : 18} />
+              <FaQrcode size={18} />
             </button>
           )}
 
           {/* Role-Specific Notifications */}
           <NotificationDropdown />
 
-          <div style={{ width: "1px", height: "20px", background: "#E2E8F0" }} />
+          <div style={{ width: "1px", height: "24px", background: "#E2E8F0" }} />
 
           {/* Authenticated User Profile Badge (Clickable) */}
           <div
@@ -448,9 +448,9 @@ const Header = ({
             style={{
               display: "flex",
               alignItems: "center",
-              gap: isMobileScreen ? "4px" : "8px",
+              gap: "10px",
               cursor: "pointer",
-              padding: "4px",
+              padding: "4px 8px",
               borderRadius: "8px",
               transition: "background 0.15s ease",
             }}
@@ -462,13 +462,13 @@ const Header = ({
               <img
                 src={user.avatar}
                 alt={displayName}
-                style={{ width: "32px", height: "32px", borderRadius: "50%", objectFit: "cover" }}
+                style={{ width: "36px", height: "36px", borderRadius: "50%", objectFit: "cover" }}
               />
             ) : (
               <div
                 style={{
-                  width: "32px",
-                  height: "32px",
+                  width: "36px",
+                  height: "36px",
                   borderRadius: "50%",
                   background: "#2563EB",
                   color: "#FFFFFF",
@@ -476,31 +476,29 @@ const Header = ({
                   alignItems: "center",
                   justifyContent: "center",
                   fontWeight: 800,
-                  fontSize: "13px",
+                  fontSize: "14px",
                 }}
               >
                 {(displayName || "U").charAt(0).toUpperCase()}
               </div>
             )}
 
-            {!isMobileScreen && (
-              <div style={{ display: "flex", flexDirection: "column" }}>
-                <span
-                  style={{
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    color: "#1E3A8A",
-                    background: "#EFF6FF",
-                    padding: "1px 6px",
-                    borderRadius: "4px",
-                    display: "inline-block",
-                    width: "fit-content",
-                  }}
-                >
-                  {roleTitle}
-                </span>
-              </div>
-            )}
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <span
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  color: "#1E3A8A",
+                  background: "#EFF6FF",
+                  padding: "1px 6px",
+                  borderRadius: "4px",
+                  display: "inline-block",
+                  width: "fit-content",
+                }}
+              >
+                {roleTitle}
+              </span>
+            </div>
           </div>
 
           {/* Logout Button */}
@@ -510,7 +508,7 @@ const Header = ({
               background: "#FEF2F2",
               border: "1px solid #FCA5A5",
               borderRadius: "8px",
-              padding: isMobileScreen ? "7px 9px" : "8px 12px",
+              padding: "8px 12px",
               display: "flex",
               alignItems: "center",
               gap: "6px",
@@ -522,7 +520,7 @@ const Header = ({
             title="Sign Out"
           >
             <FaSignOutAlt size={14} />
-            {!isMobileScreen && <span>Logout</span>}
+            <span>Logout</span>
           </button>
         </div>
       </header>
@@ -626,7 +624,7 @@ const Header = ({
                 />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))", gap: "12px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                 <div>
                   <label style={labelStyle}>Phone Number</label>
                   <input
@@ -660,7 +658,7 @@ const Header = ({
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))", gap: "12px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                 <div>
                   <label style={labelStyle}>State / Region</label>
                   <input

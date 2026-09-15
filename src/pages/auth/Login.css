@@ -207,45 +207,29 @@
   .auth-layout-container {
     grid-template-columns: 1fr !important;
   }
-  .auth-left-panel {
-    display: none !important;
-  }
   .login-card {
     max-width: 480px;
-    width: 100%;
-    margin: 0 auto;
   }
 }
 
 @media (max-width: 768px) {
   .login-card {
-    max-width: 100%;
-    width: 100%;
-    padding: 20px 16px;
-    border-radius: 16px;
+    max-width: 95%;
+    padding: 24px;
+    border-radius: 20px;
   }
 
   .login-title {
-    font-size: 24px;
+    font-size: 28px;
   }
 
   .login-subtitle {
     font-size: 13px;
-    margin-bottom: 16px;
   }
 
   .login-options {
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
     align-items: flex-start;
-  }
-}
-
-@media (max-width: 380px) {
-  .login-card {
-    padding: 16px 12px;
-  }
-  .login-title {
-    font-size: 22px;
   }
 }

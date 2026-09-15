@@ -1627,7 +1627,7 @@ const ShelterManagerDashboard = () => {
             ✓ No pending rescued animals awaiting intake handover at this time.
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", gap: "14px", overflow: "visible" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "14px", overflow: "visible" }}>
             {incomingRescues.map((c) => (
               <div key={c.id} style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "16px", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "12px", boxShadow: "0 2px 8px rgba(15, 23, 42, 0.04)" }}>
                 <div>

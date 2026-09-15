@@ -972,7 +972,7 @@ const renderStatusBadge = (val: string) => {
               </div>
 
               {/* 2-Column Balanced Grid: Section 1 (Dog Information) & Section 2 (Medical Summary) */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: "16px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: "16px" }}>
                 {/* SECTION 1: Dog Information */}
                 <div
                   style={{

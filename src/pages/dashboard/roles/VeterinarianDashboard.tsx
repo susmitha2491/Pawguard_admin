@@ -1284,7 +1284,7 @@ const VeterinarianDashboard = () => {
       )}
 
       {/* Quick Action Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))", gap: "12px", marginBottom: "20px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", marginBottom: "20px" }}>
         <QuickActionCard icon={<FaStethoscope />} title="Medical Examinations" subtitle="Exams & Diagnoses" color="#1E3A8A" onClick={() => navigate("/medical-records")} />
         <QuickActionCard icon={<FaSyringe />} title="Vaccinations & Medications" subtitle="Booster Reminders" color="#16A34A" onClick={() => navigate("/medical-reminders")} />
         <QuickActionCard icon={<FaFileMedical />} title="Health Certificates" subtitle="Medical clearance" color="#1E3A8A" onClick={() => navigate("/certificates")} />
@@ -1294,7 +1294,7 @@ const VeterinarianDashboard = () => {
       </div>
 
       {/* Headline Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: "16px", marginBottom: "24px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "24px" }}>
         {stats.map((item) => (
           <StatCard key={item.title} {...item} />
         ))}
