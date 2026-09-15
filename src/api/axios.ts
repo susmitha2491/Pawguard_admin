@@ -1,6 +1,6 @@
 import axios from "axios";
 import { notifyAuthChanged } from "../utils/dataSync";
-import { clearAuthData, isSessionExpired, getStoredUser, getAccessToken, updateLastActivity } from "../utils/authStorage";
+import { clearAuthData, isSessionExpired, getStoredUser, getAccessToken } from "../utils/authStorage";
 
 // Base API configuration: use relative /api/v1 in Vite dev mode (proxied to backend), or environment-configured URL
 const getBaseUrl = (): string => {
@@ -59,10 +59,18 @@ api.interceptors.request.use(
         if (isSessionExpired()) {
           clearAuthData();
           notifyAuthChanged();
-          window.location.href = "/";
-          return Promise.reject(new axios.Cancel("Session expired due to 15 minutes of inactivity."));
-        } else {
-          updateLastActivity();
+          if (typeof window !== "undefined") {
+            try {
+              sessionStorage.setItem(
+                "session_expired_message",
+                "Your session has expired due to inactivity. Please sign in again."
+              );
+            } catch {
+              /* ignore storage errors */
+            }
+            window.location.href = "/?expired=true";
+          }
+          return Promise.reject(new axios.Cancel("Session expired due to inactivity."));
         }
       }
     }

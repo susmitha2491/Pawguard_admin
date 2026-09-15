@@ -61,6 +61,47 @@ export const settingsService = {
     return response.data;
   },
 
+  // Save / Upsert system setting via POST /settings/system with existing cleanup
+  saveSystemSetting: async (key: string, value: string, category = "general", description?: string) => {
+    try {
+      const existingRes = await api.get("/settings/system");
+      const list = Array.isArray(existingRes.data?.data)
+        ? existingRes.data.data
+        : Array.isArray(existingRes.data)
+        ? existingRes.data
+        : [];
+      const existing = list.find((item: { id?: string; key?: string }) => item.key === key);
+      if (existing && existing.id) {
+        try {
+          await api.delete(`/settings/system/${existing.id}`);
+        } catch {
+          /* ignore deletion errors if already removed */
+        }
+      }
+    } catch {
+      /* ignore fetch errors */
+    }
+
+    const response = await api.post("/settings/system", {
+      key,
+      value: String(value),
+      category,
+      description: description || `System setting for ${key}`,
+      is_encrypted: false,
+      is_editable: true,
+    });
+
+    await publishActionEvent({
+      module: "settings",
+      action: "update",
+      title: "System Setting Updated",
+      message: `System setting "${key}" updated by Super Admin.`,
+      targetRoles: ["super_admin"],
+    });
+
+    return response.data;
+  },
+
   // PUT /settings/system
   updateSystemSettings: async (settings: Record<string, unknown>) => {
     const response = await api.put("/settings/system", settings);
@@ -101,7 +142,22 @@ export const settingsService = {
 
   // PUT /settings/password-policy
   updatePasswordPolicy: async (payload: PasswordPolicyPayload) => {
-    const response = await api.put("/settings/password-policy", payload);
+    // Only send fields defined in backend OpenAPI PasswordPolicyUpdate schema
+    const cleanPayload: Record<string, unknown> = {};
+    if (payload.min_length !== undefined) cleanPayload.min_length = Number(payload.min_length);
+    if (payload.require_uppercase !== undefined) cleanPayload.require_uppercase = Boolean(payload.require_uppercase);
+    if (payload.require_lowercase !== undefined) cleanPayload.require_lowercase = Boolean(payload.require_lowercase);
+    if (payload.require_digit !== undefined) cleanPayload.require_digit = Boolean(payload.require_digit);
+    else if (payload.require_numbers !== undefined) cleanPayload.require_digit = Boolean(payload.require_numbers);
+    if (payload.require_special_char !== undefined) cleanPayload.require_special_char = Boolean(payload.require_special_char);
+    else if (payload.require_special !== undefined) cleanPayload.require_special_char = Boolean(payload.require_special);
+    if (payload.max_age_days !== undefined) cleanPayload.max_age_days = Number(payload.max_age_days);
+    if (payload.password_history_count !== undefined) cleanPayload.password_history_count = Number(payload.password_history_count);
+    if (payload.max_login_attempts !== undefined) cleanPayload.max_login_attempts = Number(payload.max_login_attempts);
+    if (payload.lockout_duration_minutes !== undefined) cleanPayload.lockout_duration_minutes = Number(payload.lockout_duration_minutes);
+    if (payload.is_active !== undefined) cleanPayload.is_active = Boolean(payload.is_active);
+
+    const response = await api.put("/settings/password-policy", cleanPayload);
     await publishActionEvent({
       module: "settings",
       action: "update",

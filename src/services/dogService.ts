@@ -1,4 +1,5 @@
 import api from "../api/axios";
+import { formatAuthoritativeMediaUrl } from "../utils/imageUtils";
 
 export interface DogPayload {
   id?: string;
@@ -37,7 +38,25 @@ export const dogService = {
 
   // POST /dogs
   createDog: async (data: DogPayload) => {
-    const response = await api.post("/dogs", data);
+    const payload: DogPayload = { ...data };
+    if (data.photos || data.image_urls || data.photo_url) {
+      const rawPhotos = Array.isArray(data.photos)
+        ? data.photos
+        : Array.isArray(data.image_urls)
+        ? data.image_urls
+        : data.photo_url
+        ? [data.photo_url]
+        : [];
+      const photos = rawPhotos
+        .map((p: any) => (typeof p === "string" ? formatAuthoritativeMediaUrl(p) : typeof p?.url === "string" ? formatAuthoritativeMediaUrl(p.url) : ""))
+        .filter((p: string): p is string => Boolean(p && typeof p === "string" && p.trim() !== ""));
+      if (photos.length > 0) {
+        payload.photos = photos;
+        payload.image_urls = photos;
+        payload.photo_url = photos[0];
+      }
+    }
+    const response = await api.post("/dogs", payload);
     return response.data;
   },
 
@@ -49,7 +68,25 @@ export const dogService = {
 
   // PUT /dogs/{dog_id}
   updateDog: async (dogId: string, data: Partial<DogPayload>) => {
-    const response = await api.put(`/dogs/${dogId}`, data);
+    const payload: Partial<DogPayload> = { ...data };
+    if (data.photos || data.image_urls || data.photo_url) {
+      const rawPhotos = Array.isArray(data.photos)
+        ? data.photos
+        : Array.isArray(data.image_urls)
+        ? data.image_urls
+        : data.photo_url
+        ? [data.photo_url]
+        : [];
+      const photos = rawPhotos
+        .map((p: any) => (typeof p === "string" ? formatAuthoritativeMediaUrl(p) : typeof p?.url === "string" ? formatAuthoritativeMediaUrl(p.url) : ""))
+        .filter((p: string): p is string => Boolean(p && typeof p === "string" && p.trim() !== ""));
+      if (photos.length > 0) {
+        payload.photos = photos;
+        payload.image_urls = photos;
+        payload.photo_url = photos[0];
+      }
+    }
+    const response = await api.put(`/dogs/${dogId}`, payload);
     return response.data;
   },
 
@@ -115,9 +152,9 @@ export const dogService = {
       ? [existingPhotoUrl]
       : [];
     const preservedPhotos = rawExistingPhotos
-      .map((p: any) => (typeof p === "string" ? p : p?.url))
+      .map((p: any) => (typeof p === "string" ? formatAuthoritativeMediaUrl(p) : typeof p?.url === "string" ? formatAuthoritativeMediaUrl(p.url) : ""))
       .filter((p: string): p is string => Boolean(p && typeof p === "string" && p.trim() !== ""));
-    const preservedPhotoUrl = preservedPhotos[0] || existingPhotoUrl;
+    const preservedPhotoUrl = preservedPhotos[0] || (existingPhotoUrl ? formatAuthoritativeMediaUrl(existingPhotoUrl) : undefined);
 
     try {
       await api.post(`/medical/clearance/${cleanId}`, {

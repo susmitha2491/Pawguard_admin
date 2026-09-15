@@ -40,11 +40,19 @@ const ProtectedRoute = ({ allowedRoles, permission }: ProtectedRouteProps) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Enforce exact 900-second (15 minute) session inactivity timeout
+  // Enforce session inactivity timeout
   if (isSessionExpired()) {
     clearAuthData();
     notifyAuthChanged();
-    return <Navigate to="/" replace />;
+    try {
+      sessionStorage.setItem(
+        "session_expired_message",
+        "Your session has expired due to inactivity. Please sign in again."
+      );
+    } catch {
+      /* ignore storage errors */
+    }
+    return <Navigate to="/?expired=true" replace />;
   }
 
   // If user is not authenticated or not an internal staff role, redirect to Login page

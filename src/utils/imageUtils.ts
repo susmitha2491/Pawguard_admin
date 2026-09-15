@@ -1,8 +1,60 @@
+export const BACKEND_PUBLIC_ORIGIN = "https://pawguard-backend-mqri.onrender.com";
+
 /**
- * Image and media URL resolution utilities for PawGuard.
- * Ensures all media stored in Supabase private buckets or backend storage
- * is properly proxied through the backend media streaming endpoints.
+ * Transforms any raw media URL, Supabase bucket URL, object key, or relative media path
+ * into the backend's authoritative, publicly reachable media streaming URL.
+ * Used when saving dog records to ensure public adoption listings receive a reachable image.
  */
+export const formatAuthoritativeMediaUrl = (rawUrl?: string | null): string => {
+  if (!rawUrl || typeof rawUrl !== "string") return "";
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return "";
+
+  // 1. Immediate local blob URLs and base64 data URIs
+  if (trimmed.startsWith("blob:") || trimmed.startsWith("data:")) {
+    return trimmed;
+  }
+
+  // 2. Rewrite Supabase direct bucket URLs to backend public media stream
+  if (trimmed.includes("storage.supabase.co") && trimmed.includes("/pawguard-media/")) {
+    const filePath = trimmed.split("/pawguard-media/")[1]?.replace(/^\/+/, "");
+    if (filePath) {
+      return `${BACKEND_PUBLIC_ORIGIN}/api/v1/storage/media/original/${filePath}`;
+    }
+  }
+
+  // 3. Absolute URL with backend media endpoint
+  if (trimmed.includes("/api/v1/storage/media/")) {
+    const pathIdx = trimmed.indexOf("/api/v1/storage/media/");
+    return `${BACKEND_PUBLIC_ORIGIN}${trimmed.substring(pathIdx)}`;
+  }
+  if (trimmed.includes("/storage/media/")) {
+    const pathIdx = trimmed.indexOf("/storage/media/");
+    return `${BACKEND_PUBLIC_ORIGIN}/api/v1${trimmed.substring(pathIdx)}`;
+  }
+
+  // 4. Relative backend media route
+  if (trimmed.startsWith("/api/v1/storage/media/")) {
+    return `${BACKEND_PUBLIC_ORIGIN}${trimmed}`;
+  }
+  if (trimmed.startsWith("/storage/media/")) {
+    return `${BACKEND_PUBLIC_ORIGIN}/api/v1${trimmed}`;
+  }
+
+  // 5. Raw storage object keys
+  if (
+    trimmed.startsWith("dogs/") ||
+    trimmed.startsWith("adoptions/") ||
+    trimmed.startsWith("lost_found/") ||
+    trimmed.startsWith("shelters/") ||
+    trimmed.startsWith("cms/")
+  ) {
+    return `${BACKEND_PUBLIC_ORIGIN}/api/v1/storage/media/original/${trimmed}`;
+  }
+
+  // 6. External standard HTTP/HTTPS URLs
+  return trimmed;
+};
 
 /**
  * Resolves any raw media URL, relative storage key, or bucket URL
@@ -21,13 +73,13 @@ export const resolveImageUrl = (rawUrl?: string | null): string => {
   // 2. Rewrite Supabase direct bucket URLs to backend media proxy endpoint
   // e.g. https://...storage.supabase.co/storage/v1/object/public/pawguard-media/adoptions/xxx.jpg
   if (trimmed.includes("storage.supabase.co") && trimmed.includes("/pawguard-media/")) {
-    const filePath = trimmed.split("/pawguard-media/")[1];
+    const filePath = trimmed.split("/pawguard-media/")[1]?.replace(/^\/+/, "");
     if (filePath) {
-      return `/api/v1/storage/media/original/${filePath.replace(/^\/+/, "")}`;
+      return `/api/v1/storage/media/original/${filePath}`;
     }
   }
 
-  // 3. Absolute URL pointing to backend media endpoint (strip origin for reliable relative proxying)
+  // 3. Absolute URL pointing to backend media endpoint (strip origin for reliable relative proxying in dev)
   if (trimmed.includes("/api/v1/storage/media/")) {
     const pathIdx = trimmed.indexOf("/api/v1/storage/media/");
     return trimmed.substring(pathIdx);

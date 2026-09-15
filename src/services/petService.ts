@@ -2,7 +2,7 @@ import api from "../api/axios";
 import { publishActionEvent } from "../utils/eventSystem";
 import { getAccessToken } from "../utils/authStorage";
 import type { DogProfileCreate, DogProfileUpdate } from "../types/pipeline";
-import { resolveImageUrl } from "../utils/imageUtils";
+import { formatAuthoritativeMediaUrl } from "../utils/imageUtils";
 
 export interface PetPayload {
   id?: string;
@@ -353,7 +353,7 @@ export const petService = {
       : [];
 
     const photos = rawPhotos
-      .map((p) => (typeof p === "string" ? resolveImageUrl(p) : typeof (p as any)?.url === "string" ? resolveImageUrl((p as any).url) : ""))
+      .map((p) => (typeof p === "string" ? formatAuthoritativeMediaUrl(p) : typeof (p as any)?.url === "string" ? formatAuthoritativeMediaUrl((p as any).url) : ""))
       .filter((p): p is string => Boolean(p && typeof p === "string" && p.trim() !== ""));
 
     const weightVal = data.weight_kg !== undefined ? data.weight_kg : data.weight;
@@ -459,7 +459,7 @@ export const petService = {
         ? [data.photo_url]
         : [];
       const photos = rawPhotos
-        .map((p) => (typeof p === "string" ? resolveImageUrl(p) : typeof (p as any)?.url === "string" ? resolveImageUrl((p as any).url) : ""))
+        .map((p) => (typeof p === "string" ? formatAuthoritativeMediaUrl(p) : typeof (p as any)?.url === "string" ? formatAuthoritativeMediaUrl((p as any).url) : ""))
         .filter((p): p is string => Boolean(p && typeof p === "string" && p.trim() !== ""));
       if (photos.length > 0) {
         payload.photos = photos;
@@ -550,9 +550,9 @@ export const petService = {
       ? [existingPhotoUrl]
       : [];
     const preservedPhotos = rawExistingPhotos
-      .map((p: any) => (typeof p === "string" ? resolveImageUrl(p) : typeof p?.url === "string" ? resolveImageUrl(p.url) : ""))
+      .map((p: any) => (typeof p === "string" ? formatAuthoritativeMediaUrl(p) : typeof p?.url === "string" ? formatAuthoritativeMediaUrl(p.url) : ""))
       .filter((p: string): p is string => Boolean(p && typeof p === "string" && p.trim() !== ""));
-    const preservedPhotoUrl = preservedPhotos[0] || (existingPhotoUrl ? resolveImageUrl(existingPhotoUrl) : undefined);
+    const preservedPhotoUrl = preservedPhotos[0] || (existingPhotoUrl ? formatAuthoritativeMediaUrl(existingPhotoUrl) : undefined);
 
     // 2. Issue veterinary medical clearance if needed (POST /api/v1/medical/clearance/{cleanId})
     try {

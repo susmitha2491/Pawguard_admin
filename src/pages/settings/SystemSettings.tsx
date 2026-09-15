@@ -15,6 +15,7 @@ import {
 import settingsService from "../../services/settingsService";
 import { notifyDataChanged } from "../../utils/dataSync";
 import { extractErrorMessage } from "../../utils/errorUtils";
+import { getSessionTimeoutMinutes, setSessionTimeoutMinutes } from "../../utils/authStorage";
 
 const SystemSettings = () => {
   const { addToast } = useToast();
@@ -47,7 +48,7 @@ const SystemSettings = () => {
     max_login_attempts: 5,
     lockout_duration_minutes: 15,
     is_active: true,
-    session_timeout_minutes: 30,
+    session_timeout_minutes: getSessionTimeoutMinutes(),
     totp_mfa_required_for_admins: true,
   });
 
@@ -73,11 +74,12 @@ const SystemSettings = () => {
       setLoading(true);
       setBackendError(null);
 
-      const [genRes, secRes, bizRes, mailRes] = await Promise.allSettled([
+      const [genRes, secRes, bizRes, mailRes, sysRes] = await Promise.allSettled([
         settingsService.getGeneralSettings(),
         settingsService.getPasswordPolicy(),
         settingsService.getBusinessRules(),
         settingsService.getEmailSettings(),
+        settingsService.getSystemSettings(),
       ]);
 
       const errors: string[] = [];
@@ -105,10 +107,32 @@ const SystemSettings = () => {
           if (data.require_numbers !== undefined && data.require_digit === undefined) {
             updated.require_digit = Boolean(data.require_numbers);
           }
+          if (data.session_timeout_minutes !== undefined && Number(data.session_timeout_minutes) > 0) {
+            const timeout = Number(data.session_timeout_minutes);
+            updated.session_timeout_minutes = timeout;
+            setSessionTimeoutMinutes(timeout);
+          }
           return updated;
         });
       } else if (secRes.status === "rejected") {
         errors.push(`Security Policy: ${extractErrorMessage(secRes.reason, "Failed to load security policy")}`);
+      }
+
+      // Check system settings for persisted session_timeout_minutes
+      if (sysRes.status === "fulfilled" && sysRes.value) {
+        const items = Array.isArray(sysRes.value.data)
+          ? sysRes.value.data
+          : Array.isArray(sysRes.value)
+          ? sysRes.value
+          : [];
+        const timeoutSetting = items.find((s: { key?: string; value?: string }) => s.key === "session_timeout_minutes");
+        if (timeoutSetting && timeoutSetting.value) {
+          const parsed = parseInt(timeoutSetting.value, 10);
+          if (!isNaN(parsed) && parsed >= 1) {
+            setSecurityForm((prev) => ({ ...prev, session_timeout_minutes: parsed }));
+            setSessionTimeoutMinutes(parsed);
+          }
+        }
       }
 
       if (bizRes.status === "fulfilled" && bizRes.value) {
@@ -183,19 +207,45 @@ const SystemSettings = () => {
     try {
       setSaving(true);
       setBackendError(null);
-      const payload = {
-        ...securityForm,
-        require_special: securityForm.require_special_char,
-        require_special_char: securityForm.require_special_char,
-        require_digit: securityForm.require_digit,
-        require_numbers: securityForm.require_digit,
-      };
-      await settingsService.updatePasswordPolicy(payload);
-      addToast("Security & Password governance policy updated successfully!", "success");
+
+      const rawTimeout = Number(securityForm.session_timeout_minutes);
+      if (isNaN(rawTimeout) || rawTimeout < 5 || rawTimeout > 120) {
+        addToast("Session Inactivity Auto-Lockout must be between 5 and 120 minutes.", "error");
+        setSaving(false);
+        return;
+      }
+      const safeTimeout = Math.floor(rawTimeout);
+
+      // 1. Persist session inactivity timeout value using backend-supported system setting endpoint
+      await settingsService.saveSystemSetting(
+        "session_timeout_minutes",
+        String(safeTimeout),
+        "security",
+        "Session inactivity auto-lockout in minutes"
+      );
+
+      // 2. Update local session-timeout configuration used by authStorage/useInactivityTimeout & broadcast cross-tab
+      setSessionTimeoutMinutes(safeTimeout);
+
+      // 3. Attempt to persist the backend-supported password/security policy fields
+      let policyWarning: string | null = null;
+      try {
+        await settingsService.updatePasswordPolicy(securityForm);
+      } catch (policyErr: any) {
+        policyWarning = extractErrorMessage(policyErr, "database entity relations failed to load during serialization");
+      }
+
+      if (policyWarning) {
+        setBackendError(`Notice: Session Inactivity Auto-Lockout (${safeTimeout} mins) saved & active. Password policy response: ${policyWarning}`);
+        addToast(`Session Inactivity Auto-Lockout (${safeTimeout} mins) saved successfully!`, "success");
+      } else {
+        addToast("Security & Password governance policy saved successfully!", "success");
+      }
+
       notifyDataChanged();
       await fetchAllSettings();
     } catch (err: any) {
-      const msg = extractErrorMessage(err, "Failed to update security policy.");
+      const msg = extractErrorMessage(err, "Failed to update security settings.");
       setBackendError(`Security Policy Update Error: ${msg}`);
       addToast(msg, "error");
     } finally {
@@ -522,15 +572,18 @@ const SystemSettings = () => {
             </div>
 
             <div>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
                 Session Inactivity Auto-Lockout (Minutes)
               </label>
+              <div style={{ fontSize: "12px", color: "#64748B", marginBottom: "6px" }}>
+                Automatically signs users out after the configured period of inactivity.
+              </div>
               <input
                 type="number"
                 min={5}
                 max={120}
                 value={securityForm.session_timeout_minutes}
-                onChange={(e) => setSecurityForm({ ...securityForm, session_timeout_minutes: Number(e.target.value) })}
+                onChange={(e) => setSecurityForm({ ...securityForm, session_timeout_minutes: Math.max(0, Number(e.target.value)) })}
                 style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px" }}
               />
             </div>

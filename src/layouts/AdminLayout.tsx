@@ -9,9 +9,10 @@ import {
   getRoleTitle,
 } from "../utils/roleUtils";
 import useInactivityTimeout from "../hooks/useInactivityTimeout";
+import SessionWarningModal from "../components/auth/SessionWarningModal";
 
 const AdminLayout = () => {
-  useInactivityTimeout();
+  const { isWarningOpen, remainingSeconds, extendSession, logoutNow } = useInactivityTimeout();
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileScreen, setIsMobileScreen] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
@@ -170,6 +171,13 @@ const AdminLayout = () => {
           <Outlet />
         </main>
       </div>
+
+      <SessionWarningModal
+        isOpen={isWarningOpen}
+        remainingSeconds={remainingSeconds}
+        onExtend={extendSession}
+        onLogout={logoutNow}
+      />
     </div>
   );
 };

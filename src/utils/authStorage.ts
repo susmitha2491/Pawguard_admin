@@ -5,6 +5,7 @@
  * - Raw JWT access/refresh tokens are NOT stored in localStorage or sessionStorage.
  * - User session metadata (`user`), preferences (`remember_me`, `remember_email`), and
  *   session inactivity timestamp (`last_activity`) are persisted for UI role context.
+ * - Inactivity timeout is dynamically configurable via System Settings (default 30 minutes).
  */
 
 export const AUTH_STORAGE_KEYS = {
@@ -14,10 +15,36 @@ export const AUTH_STORAGE_KEYS = {
   lastActivity: "last_activity",
   accessToken: "access_token",
   refreshToken: "refresh_token",
+  sessionTimeoutMinutes: "session_timeout_minutes",
 } as const;
 
-/** Exact 900 seconds (15 minutes) session inactivity timeout. */
-export const SESSION_TIMEOUT_MS = 15 * 60 * 1000;
+export const DEFAULT_SESSION_TIMEOUT_MINUTES = 30;
+export const MIN_SESSION_TIMEOUT_MINUTES = 5;
+export const MAX_SESSION_TIMEOUT_MINUTES = 120;
+
+export type SessionSyncMessage =
+  | { type: "ACTIVITY"; timestamp: number }
+  | { type: "LOGOUT"; reason?: string }
+  | { type: "SETTINGS_UPDATED"; sessionTimeoutMinutes: number };
+
+let sessionChannel: BroadcastChannel | null = null;
+if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+  try {
+    sessionChannel = new BroadcastChannel("pawguard_session_sync");
+  } catch {
+    sessionChannel = null;
+  }
+}
+
+export const broadcastSessionEvent = (msg: SessionSyncMessage): void => {
+  if (sessionChannel) {
+    try {
+      sessionChannel.postMessage(msg);
+    } catch {
+      /* ignore channel send error */
+    }
+  }
+};
 
 const read = (key: string): string | null => {
   try {
@@ -61,8 +88,44 @@ const remove = (key: string): void => {
   }
 };
 
-export const updateLastActivity = (): void => {
-  const nowStr = Date.now().toString();
+/**
+ * Get configured session inactivity timeout in minutes (from System Settings / storage).
+ * Falls back to DEFAULT_SESSION_TIMEOUT_MINUTES (30 mins).
+ */
+export const getSessionTimeoutMinutes = (): number => {
+  const raw = read(AUTH_STORAGE_KEYS.sessionTimeoutMinutes);
+  if (!raw) return DEFAULT_SESSION_TIMEOUT_MINUTES;
+  const num = parseInt(raw, 10);
+  if (isNaN(num) || num < 1 || num > 1440) return DEFAULT_SESSION_TIMEOUT_MINUTES;
+  return num;
+};
+
+/**
+ * Persist configured session inactivity timeout (in minutes) and sync across tabs.
+ */
+export const setSessionTimeoutMinutes = (minutes: number): void => {
+  const safe = Math.max(1, Math.min(1440, Math.floor(minutes || DEFAULT_SESSION_TIMEOUT_MINUTES)));
+  write(AUTH_STORAGE_KEYS.sessionTimeoutMinutes, safe.toString());
+  broadcastSessionEvent({ type: "SETTINGS_UPDATED", sessionTimeoutMinutes: safe });
+};
+
+/**
+ * Get configured session inactivity timeout in milliseconds.
+ */
+export const getSessionTimeoutMs = (): number => {
+  return getSessionTimeoutMinutes() * 60 * 1000;
+};
+
+/** Backward-compatible getter for legacy callers */
+export const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+
+/**
+ * Update the timestamp of the last user interaction.
+ * Synchronizes across multiple open tabs if broadcast = true.
+ */
+export const updateLastActivity = (broadcast = true): void => {
+  const now = Date.now();
+  const nowStr = now.toString();
   try {
     sessionStorage.setItem(AUTH_STORAGE_KEYS.lastActivity, nowStr);
   } catch {
@@ -73,8 +136,14 @@ export const updateLastActivity = (): void => {
   } catch {
     /* storage unavailable; ignore */
   }
+  if (broadcast) {
+    broadcastSessionEvent({ type: "ACTIVITY", timestamp: now });
+  }
 };
 
+/**
+ * Get the timestamp (ms) of the last recorded user interaction.
+ */
 export const getLastActivity = (): number | null => {
   const raw = read(AUTH_STORAGE_KEYS.lastActivity);
   if (!raw) return null;
@@ -82,17 +151,31 @@ export const getLastActivity = (): number | null => {
   return isNaN(num) ? null : num;
 };
 
+/**
+ * Get remaining milliseconds before the inactivity timeout expires.
+ */
+export const getRemainingInactivityMs = (): number => {
+  const last = getLastActivity();
+  const timeoutMs = getSessionTimeoutMs();
+  if (!last) return timeoutMs;
+  const elapsed = Date.now() - last;
+  return Math.max(0, timeoutMs - elapsed);
+};
+
+/**
+ * Check whether the active session has exceeded the configured inactivity timeout.
+ */
 export const isSessionExpired = (): boolean => {
   const user = getStoredUser();
   if (!user) return false;
 
   const lastActivity = getLastActivity();
   if (!lastActivity) {
-    updateLastActivity();
+    updateLastActivity(false);
     return false;
   }
 
-  return Date.now() - lastActivity >= SESSION_TIMEOUT_MS;
+  return Date.now() - lastActivity >= getSessionTimeoutMs();
 };
 
 export const getStoredUser = <T = unknown>(): T | null => {
@@ -196,15 +279,17 @@ export const setAuthData = (data: AuthData, rememberMe: boolean, isInitialLogin 
     write(AUTH_STORAGE_KEYS.refreshToken, data.refresh_token);
   }
   if (isInitialLogin || !getLastActivity()) {
-    updateLastActivity();
+    updateLastActivity(true);
   }
 };
 
 /** Remove session user metadata from BOTH storages (leaves remember-email preference). */
-export const clearAuthData = (): void => {
+export const clearAuthData = (broadcast = true): void => {
   remove(AUTH_STORAGE_KEYS.user);
   remove(AUTH_STORAGE_KEYS.lastActivity);
   remove(AUTH_STORAGE_KEYS.accessToken);
   remove(AUTH_STORAGE_KEYS.refreshToken);
+  if (broadcast) {
+    broadcastSessionEvent({ type: "LOGOUT", reason: "session_cleared" });
+  }
 };
-

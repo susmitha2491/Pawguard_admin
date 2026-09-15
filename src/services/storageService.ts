@@ -1,6 +1,5 @@
 import api from "../api/axios";
-
-import { resolveImageUrl } from "../utils/imageUtils";
+import { resolveImageUrl, formatAuthoritativeMediaUrl } from "../utils/imageUtils";
 
 export interface StorageUploadPayload {
   original_filename: string;
@@ -138,7 +137,7 @@ export const storageService = {
       });
       const data = res.data?.data || res.data;
       if (data?.object_key) {
-        return `/api/v1/storage/media/original/${data.object_key}`;
+        return formatAuthoritativeMediaUrl(data.object_key);
       }
       const rawUrl =
         data?.cdn_url ||
@@ -149,7 +148,7 @@ export const storageService = {
         data?.photo_url ||
         (typeof data === "string" ? data : "");
       if (rawUrl && typeof rawUrl === "string") {
-        return resolveImageUrl(rawUrl);
+        return formatAuthoritativeMediaUrl(rawUrl);
       }
     } catch {
       // Fall through to presigned upload pipeline
@@ -215,7 +214,7 @@ export const storageService = {
 
     // 4. Return backend media stream URL if object_key is known
     if (object_key) {
-      return `/api/v1/storage/media/original/${object_key}`;
+      return formatAuthoritativeMediaUrl(object_key);
     }
 
     // 5. Retrieve presigned download URL fallback

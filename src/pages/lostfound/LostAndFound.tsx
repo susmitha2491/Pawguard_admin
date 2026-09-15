@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import type { CSSProperties, FormEvent, ReactNode } from "react";
+import type { CSSProperties, FormEvent } from "react";
 import DataTable, { type Column } from "../../components/common/DataTable";
 import StatCard from "../../components/dashboard/StatCard";
 import Modal from "../../components/common/Modal";
@@ -187,13 +187,6 @@ const kindBadge = (kind?: string) => {
     </span>
   );
 };
-
-interface DetailField {
-  label: string;
-  value: string;
-  badge?: ReactNode;
-  icon?: ReactNode;
-}
 
 interface RegistryReport {
   id: string;
@@ -1166,82 +1159,32 @@ const LostAndFound = () => {
 
   const hasActiveFilters = Boolean(search || statusFilter);
 
-  const detailFields: DetailField[] = selectedReport
-    ? (() => {
-        const report = selectedReport;
-        const kind = selectedReportKind;
-        const base: DetailField[] =
-          kind === "lost"
-            ? [
-                { label: "Pet Name", value: report.pet_name || "-" },
-                { label: "Species", value: titleCase(report.species || "other") },
-                { label: "Breed", value: report.breed || "-" },
-                { label: "Color", value: report.color || "-" },
-                {
-                  label: "Microchip ID",
-                  value: report.microchip_id || "Not available",
-                  icon: <FaMicrochip size={13} />,
-                },
-                {
-                  label: "Lost Date/Time",
-                  value: formatDate(report.lost_at),
-                  icon: <FaClock size={13} />,
-                },
-              ]
-            : [
-                { label: "Species", value: titleCase(report.species || "other") },
-                { label: "Breed Observed", value: report.breed_observed || "-" },
-                { label: "Color Observed", value: report.color_observed || "-" },
-                {
-                  label: "Found Date/Time",
-                  value: formatDate(report.found_at),
-                  icon: <FaClock size={13} />,
-                },
-              ];
-        return base.concat([
-          {
-            label: kind === "lost" ? "Last Seen Location" : "Found Location",
-            value: report.location_address || "-",
-            icon: <FaMapMarkerAlt size={13} />,
-          },
-          {
-            label: "Latitude",
-            value: formatCoord(report.latitude),
-          },
-          {
-            label: "Longitude",
-            value: formatCoord(report.longitude),
-          },
-          {
-            label: "Collar",
-            value:
-              [report.collar_color, report.collar_description].filter(Boolean).join(" \u2014 ") ||
-              "Not specified",
-          },
-          {
-            label: "Markers / Description",
-            value: report.marker_description || "Not specified",
-          },
-          { label: "Reported", value: formatDate(report.created_at) },
-          {
-            label: "Reporter",
-            value:
-              role === "super_admin" || role === "rescue_centre_admin" || report.status === "resolved"
-                ? report.user?.full_name || report.user?.email || "Reporter Profile"
-                : "🔒 Protected (Pending Verification)",
-            icon: <FaUser size={13} />,
-          },
-          {
-            label: "Reporter Contact",
-            value:
-              role === "super_admin" || role === "rescue_centre_admin" || report.status === "resolved"
-                ? [report.user?.phone, report.user?.email].filter(Boolean).join(" \u00b7 ") || "Not available"
-                : "🔒 Protected (Released after ownership match verification)",
-          },
-          { label: "Status", value: "", badge: statusBadge(report.status) },
-        ]);
-      })()
-    : [];
+  const fieldCardStyle: CSSProperties = {
+    background: "#F8FAFC",
+    padding: "9px 12px",
+    borderRadius: "8px",
+    border: "1px solid #F1F5F9",
+  };
+
+  const fieldLabelStyle: CSSProperties = {
+    fontSize: "10.5px",
+    fontWeight: 700,
+    color: "#64748B",
+    textTransform: "uppercase",
+    letterSpacing: "0.03em",
+    marginBottom: "3px",
+    display: "flex",
+    alignItems: "center",
+    gap: "5px",
+  };
+
+  const fieldValueStyle: CSSProperties = {
+    fontSize: "13px",
+    fontWeight: 600,
+    color: "#0F172A",
+    wordBreak: "break-word",
+    lineHeight: 1.35,
+  };
 
   const commonInputStyle: CSSProperties = {
     width: "100%",
@@ -1829,7 +1772,7 @@ const LostAndFound = () => {
           isOpen={true}
           onClose={closeDetails}
           title={`Report Details \u2014 ${selectedReport.pet_name || selectedReport.breed_observed || shortId(selectedReport.id)}`}
-          maxWidth="640px"
+          maxWidth="1020px"
           footer={
             <div
               style={{
@@ -1921,186 +1864,484 @@ const LostAndFound = () => {
             </div>
           }
         >
-          {selectedReport.photo_url && (
-            <div style={{ marginBottom: "16px", textAlign: "center" }}>
-              <img
-                src={selectedReport.photo_url}
-                alt="Reported pet"
-                style={{
-                  maxWidth: "100%",
-                  maxHeight: "260px",
-                  borderRadius: "12px",
-                  border: "1px solid #E2E8F0",
-                  objectFit: "cover",
-                }}
-                onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
-              />
-            </div>
-          )}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: "12px",
-            }}
-          >
-            {detailFields.map((f) => (
-              <div
-                key={f.label}
-                style={{
-                  background: "#F8FAFC",
-                  padding: "12px 14px",
-                  borderRadius: "10px",
-                  border: "1px solid #F1F5F9",
-                }}
-              >
+          {(() => {
+            const isReporterVisible =
+              role === "super_admin" || role === "rescue_centre_admin" || selectedReport.status === "resolved";
+            const reporterName = isReporterVisible
+              ? selectedReport.user?.full_name || selectedReport.user?.email || "Reporter Profile"
+              : "🔒 Protected (Pending Verification)";
+            const reporterContact = isReporterVisible
+              ? [selectedReport.user?.phone, selectedReport.user?.email].filter(Boolean).join(" \u00b7 ") || "Not available"
+              : "🔒 Protected (Released after ownership match verification)";
+
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                {/* 2-Column Responsive Information Grid */}
                 <div
                   style={{
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    color: "#64748B",
-                    textTransform: "uppercase",
-                    marginBottom: "4px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))",
+                    gap: "14px",
+                    alignItems: "start",
                   }}
                 >
-                  {f.icon}
-                  {f.label}
-                </div>
-                <div style={{ fontSize: "14px", fontWeight: 600, color: "#0F172A", wordBreak: "break-word" }}>
-                  {f.badge || f.value}
-                </div>
-              </div>
-            ))}
-          </div>
+                  {/* Left Column: Pet Photo & Identification */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    {selectedReport.photo_url && (
+                      <div
+                        style={{
+                          background: "#F8FAFC",
+                          border: "1px solid #E2E8F0",
+                          borderRadius: "10px",
+                          padding: "10px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          maxHeight: "220px",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <img
+                          src={selectedReport.photo_url}
+                          alt="Reported pet"
+                          style={{
+                            maxWidth: "100%",
+                            maxHeight: "200px",
+                            borderRadius: "8px",
+                            objectFit: "contain",
+                            display: "block",
+                          }}
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            if (target.parentElement) target.parentElement.style.display = "none";
+                          }}
+                        />
+                      </div>
+                    )}
 
-          {/* Safety Tag / QR Section for Lost Reports */}
-          {selectedReportKind === "lost" && (
-            <div
-              style={{
-                marginTop: "16px",
-                padding: "14px",
-                borderRadius: "10px",
-                background: "#F8FAFC",
-                border: "1px solid #E2E8F0",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: "12px",
-                  fontWeight: 700,
-                  color: "#334155",
-                  marginBottom: "8px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                }}
-              >
-                <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                  <FaQrcode color="#6366F1" size={16} /> Dog Safety Tag &amp; QR Identifier
-                </span>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const animalId = selectedReport.companion_pet_id || (selectedReport as any).pet_id || (selectedReport as any).dog_id;
-                      setVerifyExpectedAnimalId(animalId ? String(animalId) : undefined);
-                      setIsVerifyScannerOpen(true);
-                    }}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "4px",
-                      padding: "4px 8px",
-                      borderRadius: "6px",
-                      border: "none",
-                      background: "#2563EB",
-                      color: "#FFFFFF",
-                      fontSize: "11px",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <FaQrcode size={11} /> Verify via Scanner
-                  </button>
-                  {tagData && (
-                    <span
+                    <div
                       style={{
-                        padding: "2px 8px",
-                        borderRadius: "12px",
-                        fontSize: "11px",
-                        fontWeight: 700,
-                        background: tagData.is_active ? "#ECFDF5" : "#FEF2F2",
-                        color: tagData.is_active ? "#059669" : "#DC2626",
+                        background: "#FFFFFF",
+                        borderRadius: "10px",
+                        border: "1px solid #E2E8F0",
+                        padding: "14px",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
                       }}
                     >
-                      {tagData.is_active ? "● ACTIVE SAFETY TAG" : "○ INACTIVE / REVOKED"}
-                    </span>
-                  )}
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          color: "#334155",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em",
+                          marginBottom: "10px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          borderBottom: "1px solid #F1F5F9",
+                          paddingBottom: "8px",
+                        }}
+                      >
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                          🐾 Pet Identification
+                        </span>
+                        {statusBadge(selectedReport.status)}
+                      </div>
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                          gap: "8px",
+                        }}
+                      >
+                        {selectedReportKind === "lost" ? (
+                          <>
+                            <div style={fieldCardStyle}>
+                              <div style={fieldLabelStyle}>Pet Name</div>
+                              <div style={fieldValueStyle}>{selectedReport.pet_name || "-"}</div>
+                            </div>
+                            <div style={fieldCardStyle}>
+                              <div style={fieldLabelStyle}>Species</div>
+                              <div style={fieldValueStyle}>{titleCase(selectedReport.species || "other")}</div>
+                            </div>
+                            <div style={fieldCardStyle}>
+                              <div style={fieldLabelStyle}>Breed</div>
+                              <div style={fieldValueStyle}>{selectedReport.breed || "-"}</div>
+                            </div>
+                            <div style={fieldCardStyle}>
+                              <div style={fieldLabelStyle}>Color</div>
+                              <div style={fieldValueStyle}>{selectedReport.color || "-"}</div>
+                            </div>
+                            <div style={fieldCardStyle}>
+                              <div style={fieldLabelStyle}>
+                                <FaMicrochip size={11} /> Microchip ID
+                              </div>
+                              <div style={{ ...fieldValueStyle, fontFamily: "monospace" }}>
+                                {selectedReport.microchip_id || "Not available"}
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div style={fieldCardStyle}>
+                              <div style={fieldLabelStyle}>Species</div>
+                              <div style={fieldValueStyle}>{titleCase(selectedReport.species || "other")}</div>
+                            </div>
+                            <div style={fieldCardStyle}>
+                              <div style={fieldLabelStyle}>Breed Observed</div>
+                              <div style={fieldValueStyle}>{selectedReport.breed_observed || "-"}</div>
+                            </div>
+                            <div style={fieldCardStyle}>
+                              <div style={fieldLabelStyle}>Color Observed</div>
+                              <div style={fieldValueStyle}>{selectedReport.color_observed || "-"}</div>
+                            </div>
+                          </>
+                        )}
+
+                        <div style={fieldCardStyle}>
+                          <div style={fieldLabelStyle}>Collar</div>
+                          <div style={fieldValueStyle}>
+                            {[selectedReport.collar_color, selectedReport.collar_description].filter(Boolean).join(" \u2014 ") ||
+                              "Not specified"}
+                          </div>
+                        </div>
+
+                        <div style={{ ...fieldCardStyle, gridColumn: "1 / -1" }}>
+                          <div style={fieldLabelStyle}>Markers / Description</div>
+                          <div style={fieldValueStyle}>
+                            {selectedReport.marker_description || "Not specified"}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Incident, Location & Reporter */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    <div
+                      style={{
+                        background: "#FFFFFF",
+                        borderRadius: "10px",
+                        border: "1px solid #E2E8F0",
+                        padding: "14px",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          color: "#334155",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em",
+                          marginBottom: "10px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          borderBottom: "1px solid #F1F5F9",
+                          paddingBottom: "8px",
+                        }}
+                      >
+                        <FaClock size={12} color="#2563EB" />
+                        <span>Incident &amp; Location</span>
+                      </div>
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                          gap: "8px",
+                        }}
+                      >
+                        <div style={fieldCardStyle}>
+                          <div style={fieldLabelStyle}>
+                            <FaClock size={11} /> {selectedReportKind === "lost" ? "Lost Date/Time" : "Found Date/Time"}
+                          </div>
+                          <div style={fieldValueStyle}>
+                            {formatDate(selectedReportKind === "lost" ? selectedReport.lost_at : selectedReport.found_at)}
+                          </div>
+                        </div>
+
+                        <div style={fieldCardStyle}>
+                          <div style={fieldLabelStyle}>Reported</div>
+                          <div style={fieldValueStyle}>{formatDate(selectedReport.created_at)}</div>
+                        </div>
+
+                        <div style={{ ...fieldCardStyle, gridColumn: "1 / -1" }}>
+                          <div style={fieldLabelStyle}>
+                            <FaMapMarkerAlt size={11} /> {selectedReportKind === "lost" ? "Last Seen Location" : "Found Location"}
+                          </div>
+                          <div style={fieldValueStyle}>{selectedReport.location_address || "-"}</div>
+                        </div>
+
+                        <div style={fieldCardStyle}>
+                          <div style={fieldLabelStyle}>Latitude</div>
+                          <div style={{ ...fieldValueStyle, fontFamily: "monospace", fontSize: "12px" }}>
+                            {formatCoord(selectedReport.latitude)}
+                          </div>
+                        </div>
+
+                        <div style={fieldCardStyle}>
+                          <div style={fieldLabelStyle}>Longitude</div>
+                          <div style={{ ...fieldValueStyle, fontFamily: "monospace", fontSize: "12px" }}>
+                            {formatCoord(selectedReport.longitude)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        background: "#FFFFFF",
+                        borderRadius: "10px",
+                        border: "1px solid #E2E8F0",
+                        padding: "14px",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          color: "#334155",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em",
+                          marginBottom: "10px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          borderBottom: "1px solid #F1F5F9",
+                          paddingBottom: "8px",
+                        }}
+                      >
+                        <FaUser size={12} color="#6366F1" />
+                        <span>Reporter Profile</span>
+                      </div>
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                          gap: "8px",
+                        }}
+                      >
+                        <div style={fieldCardStyle}>
+                          <div style={fieldLabelStyle}>
+                            <FaUser size={11} /> Reporter
+                          </div>
+                          <div style={fieldValueStyle}>{reporterName}</div>
+                        </div>
+
+                        <div style={fieldCardStyle}>
+                          <div style={fieldLabelStyle}>Reporter Contact</div>
+                          <div style={fieldValueStyle}>{reporterContact}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Safety Tag / QR Section for Lost Reports */}
+                {selectedReportKind === "lost" && (
+                  <div
+                    style={{
+                      padding: "14px",
+                      borderRadius: "10px",
+                      background: "#FFFFFF",
+                      border: "1px solid #E2E8F0",
+                      boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        color: "#334155",
+                        marginBottom: "10px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        flexWrap: "wrap",
+                        gap: "8px",
+                        borderBottom: "1px solid #F1F5F9",
+                        paddingBottom: "8px",
+                      }}
+                    >
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                        <FaQrcode color="#6366F1" size={15} /> Dog Safety Tag &amp; QR Identifier
+                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const animalId =
+                              selectedReport.companion_pet_id ||
+                              (selectedReport as any).pet_id ||
+                              (selectedReport as any).dog_id;
+                            setVerifyExpectedAnimalId(animalId ? String(animalId) : undefined);
+                            setIsVerifyScannerOpen(true);
+                          }}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "5px",
+                            padding: "5px 10px",
+                            borderRadius: "6px",
+                            border: "none",
+                            background: "#2563EB",
+                            color: "#FFFFFF",
+                            fontSize: "11.5px",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <FaQrcode size={11} /> Verify via Scanner
+                        </button>
+                        {tagData && (
+                          <span
+                            style={{
+                              padding: "3px 9px",
+                              borderRadius: "12px",
+                              fontSize: "11px",
+                              fontWeight: 700,
+                              background: tagData.is_active ? "#ECFDF5" : "#FEF2F2",
+                              color: tagData.is_active ? "#059669" : "#DC2626",
+                            }}
+                          >
+                            {tagData.is_active ? "● ACTIVE SAFETY TAG" : "○ INACTIVE / REVOKED"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {tagLoading ? (
+                      <div
+                        style={{
+                          padding: "12px 0",
+                          color: "#2563EB",
+                          fontSize: "13px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <FaSpinner size={14} style={{ animation: "spin 1s linear infinite" }} /> Fetching registered dog Safety Tag...
+                      </div>
+                    ) : tagError ? (
+                      <div
+                        style={{
+                          color: "#991B1B",
+                          background: "#FEF2F2",
+                          padding: "8px 12px",
+                          borderRadius: "6px",
+                          fontSize: "12px",
+                        }}
+                      >
+                        ⚠️ {tagError}
+                      </div>
+                    ) : tagData ? (
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                          gap: "10px",
+                        }}
+                      >
+                        <div style={fieldCardStyle}>
+                          <div style={fieldLabelStyle}>Tag ID / Token Prefix</div>
+                          <div
+                            style={{
+                              fontSize: "13px",
+                              fontWeight: 800,
+                              color: "#4338CA",
+                              fontFamily: "monospace",
+                              marginTop: "2px",
+                            }}
+                          >
+                            {tagData.token_prefix || tagData.tag_number || shortId(tagData.id)}
+                          </div>
+                        </div>
+
+                        <div style={fieldCardStyle}>
+                          <div style={fieldLabelStyle}>Tag Internal ID</div>
+                          <div
+                            style={{
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              color: "#0F172A",
+                              fontFamily: "monospace",
+                              marginTop: "2px",
+                            }}
+                          >
+                            {shortId(tagData.id)}
+                          </div>
+                        </div>
+
+                        {typeof tagData.scan_count === "number" && (
+                          <div style={fieldCardStyle}>
+                            <div style={fieldLabelStyle}>Total Public Scans</div>
+                            <div
+                              style={{
+                                fontSize: "13px",
+                                fontWeight: 800,
+                                color: "#059669",
+                                marginTop: "2px",
+                              }}
+                            >
+                              {tagData.scan_count} Scans
+                            </div>
+                          </div>
+                        )}
+
+                        {tagData.created_at && (
+                          <div style={fieldCardStyle}>
+                            <div style={fieldLabelStyle}>Provisioned Date</div>
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                fontWeight: 600,
+                                color: "#334155",
+                                marginTop: "2px",
+                              }}
+                            >
+                              {formatDate(tagData.created_at)}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          padding: "10px 12px",
+                          borderRadius: "8px",
+                          background: "#F8FAFC",
+                          border: "1px dashed #CBD5E1",
+                          fontSize: "12.5px",
+                          color: "#64748B",
+                          fontWeight: 600,
+                        }}
+                      >
+                        🏷️ No Safety Tag Assigned
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Location Map Preview */}
+                <div>
+                  <LocationMapPreview
+                    latitude={selectedReport.latitude}
+                    longitude={selectedReport.longitude}
+                    locationAddress={selectedReport.location_address}
+                    height="190px"
+                    title={selectedReportKind === "lost" ? "Last Seen GPS Location Pin" : "Found GPS Location Pin"}
+                  />
                 </div>
               </div>
-
-              {tagLoading ? (
-                <div style={{ padding: "12px 0", color: "#2563EB", fontSize: "13px", display: "flex", alignItems: "center", gap: "8px" }}>
-                  <FaSpinner size={14} style={{ animation: "spin 1s linear infinite" }} /> Fetching registered dog Safety Tag...
-                </div>
-              ) : tagError ? (
-                <div style={{ color: "#991B1B", background: "#FEF2F2", padding: "8px 12px", borderRadius: "6px", fontSize: "12px" }}>
-                  ⚠️ {tagError}
-                </div>
-              ) : tagData ? (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px", marginTop: "6px" }}>
-                  <div style={{ background: "#FFF", padding: "10px", borderRadius: "8px", border: "1px solid #CBD5E1" }}>
-                    <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Tag ID / Token Prefix</div>
-                    <div style={{ fontSize: "13px", fontWeight: 800, color: "#4338CA", fontFamily: "monospace", marginTop: "2px" }}>
-                      {tagData.token_prefix || tagData.tag_number || shortId(tagData.id)}
-                    </div>
-                  </div>
-
-                  <div style={{ background: "#FFF", padding: "10px", borderRadius: "8px", border: "1px solid #CBD5E1" }}>
-                    <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Tag Internal ID</div>
-                    <div style={{ fontSize: "12px", fontWeight: 600, color: "#0F172A", fontFamily: "monospace", marginTop: "2px" }}>
-                      {shortId(tagData.id)}
-                    </div>
-                  </div>
-
-                  {typeof tagData.scan_count === "number" && (
-                    <div style={{ background: "#FFF", padding: "10px", borderRadius: "8px", border: "1px solid #CBD5E1" }}>
-                      <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Total Public Scans</div>
-                      <div style={{ fontSize: "13px", fontWeight: 800, color: "#059669", marginTop: "2px" }}>
-                        {tagData.scan_count} Scans
-                      </div>
-                    </div>
-                  )}
-
-                  {tagData.created_at && (
-                    <div style={{ background: "#FFF", padding: "10px", borderRadius: "8px", border: "1px solid #CBD5E1" }}>
-                      <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Provisioned Date</div>
-                      <div style={{ fontSize: "12px", fontWeight: 600, color: "#334155", marginTop: "2px" }}>
-                        {formatDate(tagData.created_at)}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div style={{ padding: "10px", borderRadius: "8px", background: "#FFF", border: "1px dashed #CBD5E1", fontSize: "13px", color: "#64748B", fontWeight: 600 }}>
-                  🏷️ No Safety Tag Assigned
-                </div>
-              )}
-            </div>
-          )}
-
-          <div style={{ marginTop: "16px" }}>
-            <LocationMapPreview
-              latitude={selectedReport.latitude}
-              longitude={selectedReport.longitude}
-              locationAddress={selectedReport.location_address}
-              height="220px"
-              title={selectedReportKind === "lost" ? "Last Seen GPS Location Pin" : "Found GPS Location Pin"}
-            />
-          </div>
+            );
+          })()}
         </Modal>
       )}
 
