@@ -994,7 +994,7 @@ export const Shelters = () => {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))",
           gap: "12px",
           marginBottom: "20px",
         }}
@@ -1131,7 +1131,7 @@ export const Shelters = () => {
       </div>
 
       {/* Main Tab Navigation — 2 Clean Enterprise Tabs */}
-      <div style={{ display: "flex", gap: "8px", borderBottom: "1px solid #E2E8F0", marginBottom: "16px" }}>
+      <div className="responsive-tabs" style={{ display: "flex", gap: "8px", borderBottom: "1px solid #E2E8F0", marginBottom: "16px", overflowX: "auto", maxWidth: "100%" }}>
         <button
           type="button"
           onClick={() => setActiveTab("facilities")}

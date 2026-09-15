@@ -85,7 +85,7 @@ const QuickActions = ({ onSendNotification }: QuickActionsProps) => {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))",
+        gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 220px), 1fr))",
         gap: "12px",
       }}
     >

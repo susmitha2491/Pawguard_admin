@@ -1529,7 +1529,7 @@ const LostAndFound = () => {
               <p style={{ fontSize: "14px", margin: 0 }}>Reunion stories from resolved matches will appear here.</p>
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "16px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", gap: "16px" }}>
               {reunionStories.map((story) => (
                 <div
                   key={story.id || Math.random()}
@@ -1880,7 +1880,7 @@ const LostAndFound = () => {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
                     gap: "14px",
                     alignItems: "start",
                   }}

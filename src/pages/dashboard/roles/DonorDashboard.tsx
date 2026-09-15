@@ -2562,7 +2562,7 @@ const DonorDashboard: React.FC = () => {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
               gap: "14px",
               width: "100%",
             }}
@@ -3046,7 +3046,7 @@ const DonorDashboard: React.FC = () => {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 280px), 1fr))",
                   gap: "14px",
                   width: "100%",
                 }}
@@ -3563,7 +3563,7 @@ const DonorDashboard: React.FC = () => {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
                   gap: "16px",
                   width: "100%",
                 }}
@@ -3749,7 +3749,7 @@ const DonorDashboard: React.FC = () => {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
               gap: "16px",
               width: "100%",
             }}
@@ -4625,7 +4625,7 @@ const DonorDashboard: React.FC = () => {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
               gap: "16px",
               width: "100%",
             }}
@@ -4867,7 +4867,7 @@ const DonorDashboard: React.FC = () => {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
               gap: "16px",
               width: "100%",
             }}
@@ -5073,8 +5073,8 @@ const DonorDashboard: React.FC = () => {
             </div>
 
             {/* Table Container */}
-            <div style={{ overflowX: "auto", width: "100%" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
+            <div className="table-responsive-container" style={{ overflowX: "auto", width: "100%" }}>
+              <table style={{ width: "100%", minWidth: "550px", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
                 <thead>
                   <tr style={{ background: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
                     <th style={{ padding: "10px 12px", color: "#475569", fontWeight: 700 }}>Rank</th>
@@ -5243,7 +5243,7 @@ const DonorDashboard: React.FC = () => {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
                 gap: "12px",
               }}
             >

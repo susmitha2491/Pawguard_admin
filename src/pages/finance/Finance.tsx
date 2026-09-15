@@ -1220,7 +1220,7 @@ const Finance = () => {
               <div>No fundraising campaigns created yet.</div>
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: "16px" }}>
               {campaigns.map((c) => (
                 <div key={c.id} style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "20px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
@@ -1404,7 +1404,7 @@ const Finance = () => {
             Authoritative financial transparency summary for period <strong>01 Jan 2026 &rarr; 03 Sep 2026</strong>.
           </p>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: "16px" }}>
             <div style={{ background: "#ECFDF5", border: "1px solid #6EE7B7", borderRadius: "12px", padding: "20px" }}>
               <div style={{ fontSize: "13px", color: "#047857", fontWeight: 700 }}>Total Income</div>
               <div style={{ fontSize: "24px", fontWeight: 800, color: "#065F46", marginTop: "4px" }}>

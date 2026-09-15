@@ -62,6 +62,7 @@ const CmsLayout = () => {
 
       {/* Navigation Sub-Tabs */}
       <div
+        className="responsive-tabs"
         style={{
           display: "flex",
           gap: "8px",

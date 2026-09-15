@@ -168,7 +168,7 @@ const Sidebar = ({
 
   const isMobile = Boolean(isMobileScreen);
   const showCollapsed = collapsed && !isMobile;
-  const sidebarWidth = isMobile ? "280px" : showCollapsed ? "70px" : "260px";
+  const sidebarWidth = isMobile ? "min(280px, 82vw)" : showCollapsed ? "70px" : "260px";
   const transform = isMobile ? (isMobileOpen ? "translateX(0)" : "translateX(-100%)") : "none";
 
   const handleNavClick = () => {

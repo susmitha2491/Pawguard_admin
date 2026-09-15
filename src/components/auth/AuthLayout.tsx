@@ -36,6 +36,7 @@ const AuthLayout = ({ children }: AuthLayoutProps) => {
     >
       {/* Left Panel - Premium Enterprise Visual Section */}
       <div
+        className="auth-left-panel"
         style={{
           position: "relative",
           padding: "clamp(24px, 3.5vh, 40px) clamp(32px, 4vw, 56px)",

@@ -2013,7 +2013,7 @@ const FosterManagement = () => {
                   <button type="button" onClick={() => fetchFosters()} style={{ border: "none", background: "none", color: "#DC2626", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>Retry</button>
                 </div>
               )}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: "16px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 320px), 1fr))", gap: "16px" }}>
               {filteredPlacements.map((p, idx) => {
                 const dogId = String(p.dog_id || p.dog?.id || "");
                 const dogObj = p.dog || dogsMap.get(dogId);
@@ -3027,7 +3027,7 @@ const FosterManagement = () => {
               ];
 
               return (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px", background: "#F1F5F9", padding: "6px", borderRadius: "10px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 140px), 1fr))", gap: "8px", background: "#F1F5F9", padding: "6px", borderRadius: "10px" }}>
                   {steps.map((st) => {
                     const isActive = reviewActiveStep === st.id;
                     let bgStyle = "#FFFFFF";

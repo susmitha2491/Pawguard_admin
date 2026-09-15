@@ -117,8 +117,8 @@ const ShelterOccupancyTable = ({ shelters, dogs = [], loading }: ShelterOccupanc
           </p>
         </div>
       ) : (
-        <div style={{ overflowX: "auto", width: "100%" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+        <div className="table-responsive-container" style={{ overflowX: "auto", width: "100%" }}>
+          <table style={{ width: "100%", minWidth: "500px", borderCollapse: "collapse", fontSize: "13px" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid #E2E8F0", background: "#F8FAFC" }}>
                 <th style={thStyle}>Shelter Facility</th>

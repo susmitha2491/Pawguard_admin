@@ -1718,7 +1718,7 @@ const extractTagData = (res: any) => {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
+          gridTemplateColumns: "repeat(auto-fit,minmax(min(100%, 220px),1fr))",
           gap: "14px",
           marginBottom: "24px",
         }}
@@ -1775,7 +1775,7 @@ const extractTagData = (res: any) => {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
+          gridTemplateColumns: "repeat(auto-fit,minmax(min(100%, 220px),1fr))",
           gap: "16px",
           marginBottom: "24px",
         }}
@@ -1804,7 +1804,7 @@ const extractTagData = (res: any) => {
             </p>
           </div>
 
-          <div style={{ display: "flex", gap: "6px", background: "#F1F5F9", padding: "4px", borderRadius: "8px" }}>
+          <div className="responsive-tabs" style={{ display: "flex", gap: "6px", background: "#F1F5F9", padding: "4px", borderRadius: "8px", maxWidth: "100%", overflowX: "auto" }}>
             <button
               type="button"
               onClick={() => { setRegistryTab("all"); setPage(1); }}

@@ -8,8 +8,8 @@ const PageHeader = ({ title, subtitle }: PageHeaderProps) => {
     <div style={{ marginBottom: "20px" }}>
       <h1
         style={{
-          fontSize: "24px",
-          lineHeight: "32px",
+          fontSize: "clamp(20px, 3vw, 24px)",
+          lineHeight: "1.25",
           fontWeight: 700,
           color: "#0F172A",
           letterSpacing: "-0.015em",
