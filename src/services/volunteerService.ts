@@ -165,56 +165,59 @@ export const volunteerService = {
   },
 
   // GET /volunteers/{profile_id}/service-summary
-  getServiceSummary: async (profileId: string) => {
-    const response = await api.get(`/volunteers/${profileId}/service-summary`);
-    return response.data;
+  getServiceSummary: async (profileId?: string | null) => {
+    if (!profileId || profileId.trim() === "") return null;
+    try {
+      const response = await api.get(`/volunteers/${profileId}/service-summary`);
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 404 || err?.response?.status === 422 || err?.response?.status === 400) {
+        return null;
+      }
+      throw err;
+    }
   },
 
   // GET /volunteers/{profile_id}/certificate
-  getCertificate: async (profileId: string) => {
+  getCertificate: async (profileId?: string | null) => {
+    if (!profileId || profileId.trim() === "") return null;
     try {
       const response = await api.get(`/volunteers/${profileId}/certificate`);
       return response.data;
     } catch (err: any) {
       if (err?.response?.status === 400 || err?.response?.status === 403 || err?.response?.status === 404 || err?.response?.status === 422) {
-        throw err;
+        return null;
       }
-      const response = await api.get(`/volunteers/${profileId}/certificate`, {
-        responseType: "blob",
-      });
-      if (response.data && response.data.type === "application/json") {
-        const text = await response.data.text();
-        try {
-          return JSON.parse(text);
-        } catch {
-          return response.data;
+      try {
+        const response = await api.get(`/volunteers/${profileId}/certificate`, {
+          responseType: "blob",
+        });
+        if (response.data && response.data.type === "application/json") {
+          const text = await response.data.text();
+          try {
+            return JSON.parse(text);
+          } catch {
+            return response.data;
+          }
         }
+        return response.data;
+      } catch {
+        return null;
       }
-      return response.data;
     }
   },
 
-  // GET /volunteers/me/certificate
+  // Helper to get certificate for current authenticated volunteer
   getMyCertificate: async () => {
     try {
-      const response = await api.get(`/volunteers/me/certificate`);
-      return response.data;
-    } catch (err: any) {
-      if (err?.response?.status === 400 || err?.response?.status === 403 || err?.response?.status === 404 || err?.response?.status === 422) {
-        throw err;
+      const statusRes = await volunteerService.getMyStatus();
+      const profileId = getVolunteerProfileId(statusRes);
+      if (profileId) {
+        return await volunteerService.getCertificate(profileId);
       }
-      const response = await api.get(`/volunteers/me/certificate`, {
-        responseType: "blob",
-      });
-      if (response.data && response.data.type === "application/json") {
-        const text = await response.data.text();
-        try {
-          return JSON.parse(text);
-        } catch {
-          return response.data;
-        }
-      }
-      return response.data;
+      return null;
+    } catch {
+      return null;
     }
   },
 
@@ -278,18 +281,23 @@ export const volunteerService = {
   },
 
   // POST /volunteers/attendance/{attendance_id}/check-in - Check in
-  checkInAttendance: async (attendanceId: string, checkInAt?: string) => {
-    const payload = checkInAt ? { check_in_at: checkInAt } : {};
-    const response = await api.post(`/volunteers/attendance/${attendanceId}/check-in`, payload);
+  checkInAttendance: async (attendanceId: string, latitude?: number | null, longitude?: number | null, checkInAt?: string) => {
+    const payload: Record<string, unknown> = {};
+    if (typeof latitude === "number") payload.latitude = latitude;
+    if (typeof longitude === "number") payload.longitude = longitude;
+    if (checkInAt) payload.check_in_at = checkInAt;
+    const response = await api.post(`/volunteers/attendance/${attendanceId}/check-in`, Object.keys(payload).length > 0 ? payload : undefined);
     return response.data;
   },
 
   // POST /volunteers/attendance/{attendance_id}/check-out - Check out
-  checkOutAttendance: async (attendanceId: string, notes?: string, checkOutAt?: string) => {
+  checkOutAttendance: async (attendanceId: string, notes?: string, latitude?: number | null, longitude?: number | null, checkOutAt?: string) => {
     const payload: Record<string, unknown> = {};
     if (notes) payload.notes = notes;
+    if (typeof latitude === "number") payload.latitude = latitude;
+    if (typeof longitude === "number") payload.longitude = longitude;
     if (checkOutAt) payload.check_out_at = checkOutAt;
-    const response = await api.post(`/volunteers/attendance/${attendanceId}/check-out`, payload);
+    const response = await api.post(`/volunteers/attendance/${attendanceId}/check-out`, Object.keys(payload).length > 0 ? payload : undefined);
     return response.data;
   },
 
@@ -431,8 +439,16 @@ export const volunteerService = {
 
   // GET /volunteers/me/attendance - Current user volunteer attendance
   getMyAttendance: async () => {
-    const response = await api.get("/volunteers/me/attendance");
-    return response.data;
+    try {
+      const response = await api.get("/volunteers/me/attendance");
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 404 || err?.response?.status === 405) {
+        const response = await api.get("/volunteers/attendance");
+        return response.data;
+      }
+      throw err;
+    }
   },
 
   // GET /volunteers/me/application - Current user volunteer application
@@ -453,6 +469,17 @@ export const volunteerService = {
     return response.data;
   },
 
+  // GET /grievance/me - List user's submitted grievances & feedback
+  getMyFeedback: async (params?: Record<string, unknown>) => {
+    try {
+      const response = await api.get("/grievance/me", { params });
+      return response.data;
+    } catch {
+      const response = await api.get("/grievance/feedback", { params });
+      return response.data;
+    }
+  },
+
   // Helper to safely extract UUID shift ID from any backend response structure
   extractShiftId: (res: any): string => {
     return extractShiftId(res);
@@ -463,11 +490,15 @@ export const volunteerService = {
     if (!vol) return "";
     if (typeof vol === "string") return vol;
     return String(
+      vol.data?.profile?.id ||
+      vol.profile?.id ||
+      vol.data?.profile_id ||
       vol.profile_id ||
       vol.volunteer_profile_id ||
       vol.volunteer_id ||
       (vol.volunteer && (vol.volunteer.profile_id || vol.volunteer.id)) ||
-      vol.id ||
+      (vol.application && vol.application.volunteer_profile_id) ||
+      (vol.status && vol.status !== "active" && vol.status !== "pending" && vol.status !== "applied" ? "" : vol.id) ||
       ""
     );
   },

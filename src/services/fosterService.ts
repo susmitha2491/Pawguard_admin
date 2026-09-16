@@ -550,18 +550,26 @@ export const fosterService = {
     return response.data;
   },
 
-  // POST /fosters/placements/{placement_id}/convert-to-adopt - Foster to Adopt conversion (Direct Dedicated Endpoint)
+  // POST /fosters/placements/{placement_id}/convert-to-adoption - Foster to Adopt conversion
   convertToAdopt: async (placementId: string, notes?: string) => {
     const payload = notes ? { notes } : {};
-    const response = await api.post(`/fosters/placements/${placementId}/convert-to-adopt`, payload);
-    await publishActionEvent({
-      module: "foster",
-      action: "approve",
-      title: "Foster Placement Converted to Adoption",
-      message: `Placement ${placementId} converted into permanent adoption!`,
-      targetRoles: ["super_admin", "foster_coordinator", "adoption_coordinator"],
-    });
-    return response.data;
+    try {
+      const response = await api.post(`/fosters/placements/${placementId}/convert-to-adoption`, payload);
+      await publishActionEvent({
+        module: "foster",
+        action: "approve",
+        title: "Foster Placement Converted to Adoption",
+        message: `Placement ${placementId} converted into permanent adoption!`,
+        targetRoles: ["super_admin", "foster_coordinator", "adoption_coordinator"],
+      });
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 404) {
+        const altRes = await api.post(`/fosters/placements/${placementId}/convert-to-adopt`, payload);
+        return altRes.data;
+      }
+      throw err;
+    }
   },
 
   // Alias for convertToAdopt

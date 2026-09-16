@@ -620,19 +620,18 @@ export const getMenusForRole = (role?: string | UserRole | null): RoleMenuItem[]
     case "volunteer":
       return [
         { name: "Overview", path: dashboardPath, iconType: "dashboard" },
-        { name: "All Volunteers", path: `${dashboardPath}?tab=volunteers`, iconType: "volunteers" },
-        { name: "Shifts & Duties", path: `${dashboardPath}?tab=shifts`, iconType: "tasks" },
+        { name: "Available Shifts", path: `${dashboardPath}?tab=shifts`, iconType: "tasks" },
         { name: "Attendance & Check-in", path: `${dashboardPath}?tab=attendance`, iconType: "reports" },
+        { name: "Activity History", path: `${dashboardPath}?tab=activities`, iconType: "audit" },
         { name: "Shelter Feedback", path: `${dashboardPath}?tab=feedback`, iconType: "heart" },
+        { name: "Volunteer Profile", path: `${dashboardPath}?tab=profile`, iconType: "users" },
         { name: "Notifications", path: `${dashboardPath}?tab=notifications`, iconType: "notifications" },
       ];
 
     case "foster_family":
       return [
-        { name: "Overview", path: dashboardPath, iconType: "dashboard" },
-        { name: "Foster Families", path: `${dashboardPath}?tab=families`, iconType: "users" },
-        { name: "Foster Placements", path: `${dashboardPath}?tab=placements`, iconType: "fosters" },
-        { name: "Foster Dogs", path: `${dashboardPath}?tab=dogs`, iconType: "pets" },
+        { name: "Dashboard", path: dashboardPath, iconType: "dashboard" },
+        { name: "My Foster Dogs", path: `${dashboardPath}?tab=dogs`, iconType: "pets" },
         { name: "Daily Progress", path: `${dashboardPath}?tab=progress`, iconType: "tasks" },
         { name: "Medical & Symptoms", path: `${dashboardPath}?tab=medical`, iconType: "medical" },
         { name: "Supply Requests", path: `${dashboardPath}?tab=supplies`, iconType: "inventory" },

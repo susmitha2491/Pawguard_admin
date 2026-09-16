@@ -9,6 +9,7 @@ interface QuickActionCardProps {
   color?: string;
   path?: string;
   onClick?: () => void;
+  wrapText?: boolean;
 }
 
 const QuickActionCard = ({
@@ -19,6 +20,7 @@ const QuickActionCard = ({
   color = "#1E3A8A",
   path,
   onClick,
+  wrapText = false,
 }: QuickActionCardProps) => {
   const navigate = useNavigate();
   const handleClick = (e?: React.MouseEvent) => {
@@ -50,6 +52,7 @@ const QuickActionCard = ({
         position: "relative",
         zIndex: 1,
         pointerEvents: "auto",
+        boxSizing: "border-box",
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = "translateY(-2px)";
@@ -86,9 +89,11 @@ const QuickActionCard = ({
             fontSize: "14px",
             fontWeight: 700,
             color: "#0F172A",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
+            whiteSpace: wrapText ? "normal" : "nowrap",
+            overflow: wrapText ? "visible" : "hidden",
+            textOverflow: wrapText ? "clip" : "ellipsis",
+            lineHeight: 1.3,
+            wordBreak: "break-word",
           }}
         >
           {title}
@@ -99,9 +104,11 @@ const QuickActionCard = ({
               margin: "2px 0 0",
               fontSize: "12px",
               color: "#64748B",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
+              whiteSpace: wrapText ? "normal" : "nowrap",
+              overflow: wrapText ? "visible" : "hidden",
+              textOverflow: wrapText ? "clip" : "ellipsis",
+              lineHeight: 1.3,
+              wordBreak: "break-word",
             }}
           >
             {subtitle || description}

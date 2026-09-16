@@ -282,6 +282,72 @@ main > div, main section, .page-container {
   box-sizing: border-box;
 }
 
+/* Foster Family Dashboard Responsive Grids & Tabs */
+.foster-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+
+@media (max-width: 1024px) {
+  .foster-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 540px) {
+  .foster-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.foster-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  width: 100%;
+}
+
+@media (max-width: 1024px) {
+  .foster-actions-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 540px) {
+  .foster-actions-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.foster-dogs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+  width: 100%;
+}
+
+@media (max-width: 480px) {
+  .foster-dogs-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.responsive-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  max-width: 100%;
+  width: 100%;
+}
+
+.responsive-tabs::-webkit-scrollbar {
+  display: none;
+}
+
 @media (max-width: 1440px) {
   .master-module-grid {
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

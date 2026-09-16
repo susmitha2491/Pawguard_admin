@@ -624,7 +624,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   ],
   volunteer: [
     "view_dashboard",
-    "view_volunteers",
   ],
   foster_family: [
     "view_dashboard",
