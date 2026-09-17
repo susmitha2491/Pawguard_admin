@@ -75,6 +75,9 @@ export const Modal: React.FC<ModalProps> = ({
       }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         style={{
           background: "#FFFFFF",
           borderRadius: "12px",
@@ -116,6 +119,7 @@ export const Modal: React.FC<ModalProps> = ({
           <button
             type="button"
             onClick={onClose}
+            aria-label={`Close ${title} dialog`}
             style={{
               background: "transparent",
               border: "none",

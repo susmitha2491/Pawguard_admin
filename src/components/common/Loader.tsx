@@ -3,6 +3,8 @@ import React from "react";
 const Loader: React.FC = () => {
   return (
     <div
+      role="status"
+      aria-label="Loading PawGuard"
       style={{
         display: "flex",
         flexDirection: "column",

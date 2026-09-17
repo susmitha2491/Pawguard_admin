@@ -5,6 +5,11 @@ import https from 'node:https'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
+  },
   server: {
     port: 5173,
     strictPort: true,
@@ -15,8 +20,8 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
         agent: new https.Agent({ family: 4, keepAlive: true }),
-        configure: (proxy) => {
-          proxy.on('proxyRes', (proxyRes) => {
+        configure: (proxy: any) => {
+          proxy.on('proxyRes', (proxyRes: any) => {
             const setCookie = proxyRes.headers['set-cookie'];
             if (setCookie && Array.isArray(setCookie)) {
               proxyRes.headers['set-cookie'] = setCookie.map((cookie) => {
@@ -40,4 +45,4 @@ export default defineConfig({
       },
     },
   },
-})
+} as any)
