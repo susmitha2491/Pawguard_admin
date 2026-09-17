@@ -10,6 +10,8 @@ interface QuickActionCardProps {
   path?: string;
   onClick?: () => void;
   wrapText?: boolean;
+  className?: string;
+  dataTestId?: string;
 }
 
 const QuickActionCard = ({
@@ -21,6 +23,8 @@ const QuickActionCard = ({
   path,
   onClick,
   wrapText = false,
+  className,
+  dataTestId,
 }: QuickActionCardProps) => {
   const navigate = useNavigate();
   const handleClick = (e?: React.MouseEvent) => {
@@ -35,6 +39,8 @@ const QuickActionCard = ({
   return (
     <button
       type="button"
+      className={className ? `add-button ${className}` : "add-button"}
+      data-testid={dataTestId || "add-button"}
       onClick={handleClick}
       style={{
         background: "#FFFFFF",
