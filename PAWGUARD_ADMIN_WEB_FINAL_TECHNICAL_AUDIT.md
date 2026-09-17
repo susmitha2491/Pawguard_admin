@@ -6,7 +6,7 @@
 **Baseline Commit:** `b53aa1a` — `fix(admin): implement technical audit batch 2`  
 **Remediation Commit:** `705fcbd` — `fix(admin): finalize technical audit remediation`  
 **Target Environment:** PawGuard Admin Web Frontend (Vite + React + TypeScript)  
-**Readiness Status:** **GO FOR PRODUCTION DEPLOYMENT**
+**Readiness Status:** **GO WITH CONDITIONS**
 
 ---
 
@@ -227,12 +227,14 @@ All identified quick wins (modal accessibility, test suite foundation, bundle co
 
 ## 24. FINAL GO / NO-GO ASSESSMENT
 
-### Readiness Status: **GO FOR PRODUCTION DEPLOYMENT**
+### Readiness Status: **GO WITH CONDITIONS**
 
 **Factual Justification:**
+GO WITH CONDITIONS — Admin Web technical remediation and repository-level verification are complete. Backend database performance/indexing, Redis configuration/TTL/rate limiting, and production infrastructure controls remain outside the scope of this frontend repository audit and require independent verification.
+
 - **Automated Tests:** 17 / 17 tests PASSED cleanly (`vitest run`).
 - **TypeScript:** 0 errors (`npx tsc --noEmit` & `tsc -b`).
-- **ESLint:** 0 errors (`npm run lint`).
+- **ESLint:** 0 errors (`npm run lint`, 28 warnings).
 - **Production Build:** Successfully generated optimized bundle in `dist/assets/`.
 - **Security:** HttpOnly cookie refresh token architecture verified; 0 hardcoded backend URLs.
 - **Git Status:** Working tree clean on branch `main`.
