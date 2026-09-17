@@ -1,4 +1,18 @@
-export const BACKEND_PUBLIC_ORIGIN = "https://pawguard-backend-mqri.onrender.com";
+const getBackendOrigin = (): string => {
+  const envApiUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;
+  if (envApiUrl && envApiUrl.trim() !== "") {
+    const trimmed = envApiUrl.trim();
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+      return trimmed.replace(/\/+$/, "").replace(/\/api\/v1$/, "");
+    }
+  }
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
+  }
+  return "";
+};
+
+export const BACKEND_PUBLIC_ORIGIN = getBackendOrigin();
 
 /**
  * Transforms any raw media URL, Supabase bucket URL, object key, or relative media path

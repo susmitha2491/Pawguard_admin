@@ -16,7 +16,7 @@ const getBaseUrl = (): string => {
     }
     return trimmed;
   }
-  return "https://pawguard-backend-mqri.onrender.com/api/v1";
+  return "/api/v1";
 };
 
 const serviceApi = axios.create({
