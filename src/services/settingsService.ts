@@ -28,18 +28,6 @@ export interface PasswordPolicyPayload {
   [key: string]: unknown;
 }
 
-export interface BusinessRulesPayload {
-  max_foster_animals_per_family?: number;
-  quarantine_period_days?: number;
-  rescue_dispatch_timeout_minutes?: number;
-  auto_archive_tickets_days?: number;
-  rule_value?: string;
-  description?: string;
-  module?: string;
-  is_active?: boolean;
-  [key: string]: unknown;
-}
-
 export interface EmailSettingsPayload {
   mail_host?: string;
   mail_port?: number;
@@ -142,7 +130,6 @@ export const settingsService = {
 
   // PUT /settings/password-policy
   updatePasswordPolicy: async (payload: PasswordPolicyPayload) => {
-    // Only send fields defined in backend OpenAPI PasswordPolicyUpdate schema
     const cleanPayload: Record<string, unknown> = {};
     if (payload.min_length !== undefined) cleanPayload.min_length = Number(payload.min_length);
     if (payload.require_uppercase !== undefined) cleanPayload.require_uppercase = Boolean(payload.require_uppercase);
@@ -168,25 +155,6 @@ export const settingsService = {
     return response.data;
   },
 
-  // GET /settings/business-rules
-  getBusinessRules: async () => {
-    const response = await api.get("/settings/business-rules");
-    return response.data;
-  },
-
-  // PUT /settings/business-rules/{rule_id}
-  updateBusinessRule: async (ruleKeyOrId: string, payload: Record<string, unknown>) => {
-    const response = await api.put(`/settings/business-rules/${ruleKeyOrId}`, payload);
-    await publishActionEvent({
-      module: "settings",
-      action: "update",
-      title: "Business Operation Rule Updated",
-      message: `Operational rule ${ruleKeyOrId} updated by Super Admin.`,
-      targetRoles: ["super_admin"],
-    });
-    return response.data;
-  },
-
   // GET /settings/email
   getEmailSettings: async () => {
     const response = await api.get("/settings/email");
@@ -207,3 +175,4 @@ export const settingsService = {
 };
 
 export default settingsService;
+
