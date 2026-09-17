@@ -1,5 +1,6 @@
 import api from "../api/axios";
 import { publishActionEvent } from "../utils/eventSystem";
+import { unwrapList } from "../utils/chartUtils";
 
 export interface ClinicalExamPayload {
   dog_id: string;
@@ -164,12 +165,15 @@ const normalizeMedicalRow = (r: Record<string, unknown>, type: string): Record<s
     if (r.visible_injuries) notes.push(String(r.visible_injuries));
     if (r.dental_health) notes.push(`Dental: ${r.dental_health}`);
     if (r.coat_condition) notes.push(`Coat: ${r.coat_condition}`);
+    const examStatus = String(r.status || r.health_status || r.condition || r.triage_diagnosis || "Healthy / Cleared");
     return {
       recordId: r.id,
       id: r.id,
       entityType: "exams",
       type: "exams",
       categoryName: "Clinical Exam",
+      status: examStatus,
+      health_status: examStatus,
       petName: (r.dog as { name?: string } | undefined)?.name || r.dog_id || "-",
       petId: r.dog_id || "-",
       vetName,
@@ -182,12 +186,15 @@ const normalizeMedicalRow = (r: Record<string, unknown>, type: string): Record<s
   }
 
   if (type === "treatments") {
+    const treatStatus = String(r.status || r.treatment_type || "Treatment Completed");
     return {
       recordId: r.id,
       id: r.id,
       entityType: "treatments",
       type: "treatments",
       categoryName: "Treatment / Surgery",
+      status: treatStatus,
+      health_status: treatStatus,
       petName: (r.dog as { name?: string } | undefined)?.name || r.dog_id || "-",
       petId: r.dog_id || "-",
       vetName,
@@ -204,12 +211,15 @@ const normalizeMedicalRow = (r: Record<string, unknown>, type: string): Record<s
   }
 
   if (type === "vaccinations") {
+    const vacStatus = String(r.status || "Vaccination Administered");
     return {
       recordId: r.id,
       id: r.id,
       entityType: "vaccinations",
       type: "vaccinations",
       categoryName: "Vaccination",
+      status: vacStatus,
+      health_status: vacStatus,
       petName: (r.dog as { name?: string } | undefined)?.name || r.dog_id || "-",
       petId: r.dog_id || "-",
       vetName,
@@ -225,12 +235,15 @@ const normalizeMedicalRow = (r: Record<string, unknown>, type: string): Record<s
   }
 
   if (type === "prescriptions") {
+    const rxStatus = r.is_active === false ? "Prescription Completed" : "Active Prescription";
     return {
       recordId: r.id,
       id: r.id,
       entityType: "prescriptions",
       type: "prescriptions",
       categoryName: "Prescription",
+      status: rxStatus,
+      health_status: rxStatus,
       petName: (r.dog as { name?: string } | undefined)?.name || r.dog_id || "-",
       petId: r.dog_id || "-",
       vetName,
@@ -248,12 +261,15 @@ const normalizeMedicalRow = (r: Record<string, unknown>, type: string): Record<s
     };
   }
 
+  const genericStatus = String(r.status || r.health_status || type);
   return {
     recordId: r.id,
     id: r.id,
     entityType: type,
     type,
     categoryName: type,
+    status: genericStatus,
+    health_status: genericStatus,
     petName: (r.dog as { name?: string } | undefined)?.name || r.dog_id || "-",
     petId: r.dog_id || "-",
     vetName,
@@ -322,18 +338,11 @@ export const medicalService = {
       api.get("/medical/prescriptions", { params }).catch(() => ({ data: [] })),
     ]);
 
-    const unwrap = (res: { data?: { data?: Record<string, unknown>[] } | Record<string, unknown>[] }): Record<string, unknown>[] => {
-      const data = res?.data;
-      if (Array.isArray(data)) return data;
-      if (data && typeof data === "object" && Array.isArray(data.data)) return data.data;
-      return [];
-    };
-
     const rows = [
-      ...unwrap(exams).map((r) => normalizeMedicalRow(r, "exams")),
-      ...unwrap(vaccinations).map((r) => normalizeMedicalRow(r, "vaccinations")),
-      ...unwrap(treatments).map((r) => normalizeMedicalRow(r, "treatments")),
-      ...unwrap(prescriptions).map((r) => normalizeMedicalRow(r, "prescriptions")),
+      ...unwrapList(exams?.data ?? exams).map((r) => normalizeMedicalRow(r, "exams")),
+      ...unwrapList(vaccinations?.data ?? vaccinations).map((r) => normalizeMedicalRow(r, "vaccinations")),
+      ...unwrapList(treatments?.data ?? treatments).map((r) => normalizeMedicalRow(r, "treatments")),
+      ...unwrapList(prescriptions?.data ?? prescriptions).map((r) => normalizeMedicalRow(r, "prescriptions")),
     ].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 
     return { data: rows, total: rows.length };

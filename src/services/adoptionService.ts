@@ -1,5 +1,6 @@
 import api from "../api/axios";
 import { triggerAdoptionWorkflow, publishActionEvent } from "../utils/eventSystem";
+import { unwrapList } from "../utils/chartUtils";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -150,11 +151,9 @@ export const normalizeAdoptionRow = (record: Record<string, unknown>): Record<st
 
 /** Unwrap a paginated/wrapped list response into a plain array. */
 export const unwrapAdoptions = (body: unknown): Record<string, unknown>[] => {
-  if (!body || typeof body !== "object") return [];
-  const obj = body as Record<string, unknown>;
-  const data = Array.isArray(body) ? body : obj.data;
-  if (!Array.isArray(data)) return [];
-  return (data as Record<string, unknown>[]).map(normalizeAdoptionRow);
+  if (!body) return [];
+  const rawList = unwrapList(body);
+  return rawList.map(normalizeAdoptionRow);
 };
 
 export const adoptionService = {

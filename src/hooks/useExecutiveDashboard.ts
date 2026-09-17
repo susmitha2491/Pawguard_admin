@@ -162,7 +162,7 @@ export function useExecutiveDashboard() {
       dashboardService.getAuditLogs({ limit: 25 }).catch(() => dashboardService.getRecentActivities(25).catch(() => [])),
       inventoryService.getInventory({ page_size: 500 }).catch(() => []),
       medicalService.getMedicalRecords().catch(() => []),
-      financeService.getExpenses().catch(() => []),
+      financeService.getTransactions().catch(() => financeService.getExpenses().catch(() => [])),
     ]);
 
     if (requestId !== requestIdRef.current) return;
@@ -182,7 +182,7 @@ export function useExecutiveDashboard() {
       activitiesRes,
       inventoryRes,
       medicalRes,
-      financeExpensesRes,
+      financeTransactionsRes,
     ] = results;
 
     const summaryObj = unwrapObject(summaryRes.status === "fulfilled" ? summaryRes.value : {});
@@ -190,14 +190,15 @@ export function useExecutiveDashboard() {
     const dogsList = unwrapList(dogsRes.status === "fulfilled" ? dogsRes.value : []);
     const sheltersList = unwrapList(sheltersRes.status === "fulfilled" ? sheltersRes.value : []);
     const rescuesList = unwrapList(rescuesRes.status === "fulfilled" ? rescuesRes.value : []);
-    const adoptionsList = unwrapList(adoptionsRes.status === "fulfilled" ? adoptionsRes.value : []);
+    const adoptionsList = unwrapList(adoptionsRes.status === "fulfilled" ? (adoptionsRes.value as any)?.data ?? adoptionsRes.value : []);
     const fostersList = unwrapList(fostersRes.status === "fulfilled" ? fostersRes.value : []);
     const volunteersList = unwrapList(volunteersRes.status === "fulfilled" ? volunteersRes.value : []);
-    const donationsList = unwrapList(donationsRes.status === "fulfilled" ? donationsRes.value : []);
+    const donationsList = unwrapList(donationsRes.status === "fulfilled" ? (donationsRes.value as any)?.data ?? donationsRes.value : []);
     const inventoryVal: any = inventoryRes.status === "fulfilled" ? inventoryRes.value : [];
     const inventoryList = unwrapList(inventoryVal?.data ?? inventoryVal);
-    const medicalList = unwrapList(medicalRes.status === "fulfilled" ? medicalRes.value : []);
-    const financeVal = financeExpensesRes.status === "fulfilled" ? financeExpensesRes.value : [];
+    const medicalVal: any = medicalRes.status === "fulfilled" ? medicalRes.value : [];
+    const medicalList = unwrapList(medicalVal?.data ?? medicalVal);
+    const financeVal: any = financeTransactionsRes.status === "fulfilled" ? financeTransactionsRes.value : [];
     const financeList = unwrapList(financeVal?.data ?? financeVal);
 
     const finSummaryVal = financeSummaryRes.status === "fulfilled" ? financeSummaryRes.value : null;

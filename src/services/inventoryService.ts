@@ -97,8 +97,17 @@ export const fromItemCategory = (category?: string): string => {
 
 /** Normalize raw InventoryItemResponse row to standard page format. */
 export const normalizeInventoryRow = (item: any): any => {
-  const quantity = Number(item.quantity ?? 0);
-  const threshold = Number(item.reorder_threshold ?? 0);
+  const quantity = Number(item.quantity ?? item.stock ?? item.current_stock ?? 0);
+  const threshold = Number(item.reorder_threshold ?? item.threshold ?? item.min_stock ?? 10);
+  let status = "In Stock";
+  if (quantity === 0) {
+    status = "Out of Stock";
+  } else if (threshold > 0 && quantity <= threshold) {
+    status = "Low Stock";
+  }
+  if (item.status && typeof item.status === "string" && !/^\s*$/.test(item.status)) {
+    status = item.status;
+  }
   return {
     id: item.id,
     sku: item.id,
@@ -107,7 +116,8 @@ export const normalizeInventoryRow = (item: any): any => {
     rawCategory: item.category as ItemCategory,
     stock: `${quantity} ${item.unit || "units"}`,
     threshold: `${threshold} ${item.unit || "units"}`,
-    status: threshold > 0 && quantity <= threshold ? "Low Stock" : "In Stock",
+    status,
+    stock_status: status,
     supplier: item.supplier || item.supplier_name || item.vendor || "—",
     quantity,
     unit: item.unit || "units",

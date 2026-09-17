@@ -6,15 +6,67 @@ export const unwrapList = (value: unknown): AnyRecord[] => {
   if (typeof value === "object") {
     const obj = value as AnyRecord;
     // Check direct array properties
-    for (const key of ["data", "results", "items", "records", "facilities", "dogs", "transfers"]) {
+    for (const key of [
+      "data",
+      "results",
+      "items",
+      "records",
+      "applications",
+      "donations",
+      "cases",
+      "dispatches",
+      "exams",
+      "treatments",
+      "vaccinations",
+      "prescriptions",
+      "facilities",
+      "shelters",
+      "dogs",
+      "pets",
+      "animals",
+      "transfers",
+      "inventory",
+      "fosters",
+      "placements",
+      "volunteers",
+      "shifts",
+      "transactions",
+      "expenses",
+    ]) {
       const v = obj[key];
       if (Array.isArray(v)) return v as AnyRecord[];
     }
-    // Check nested array properties (e.g. data.items, data.facilities, results.items)
-    for (const parentKey of ["data", "result", "results", "response", "body"]) {
+    // Check nested array properties (e.g. data.items, data.facilities, results.items, data.data)
+    for (const parentKey of ["data", "result", "results", "response", "body", "report", "report_data"]) {
       const parent = obj[parentKey];
       if (parent && typeof parent === "object" && !Array.isArray(parent)) {
-        for (const childKey of ["items", "data", "results", "records", "facilities", "dogs", "transfers"]) {
+        for (const childKey of [
+          "items",
+          "data",
+          "results",
+          "records",
+          "applications",
+          "donations",
+          "cases",
+          "dispatches",
+          "exams",
+          "treatments",
+          "vaccinations",
+          "prescriptions",
+          "facilities",
+          "shelters",
+          "dogs",
+          "pets",
+          "animals",
+          "transfers",
+          "inventory",
+          "fosters",
+          "placements",
+          "volunteers",
+          "shifts",
+          "transactions",
+          "expenses",
+        ]) {
           const child = (parent as AnyRecord)[childKey];
           if (Array.isArray(child)) return child as AnyRecord[];
         }
@@ -45,14 +97,29 @@ export const getRecordDate = (record: AnyRecord): Date | null => {
     record.timestamp,
     record.date,
     record.payment_date,
+    record.paid_at,
+    record.donation_date,
+    record.transaction_date,
+    record.incident_time,
+    record.reported_at,
+    record.report_date,
+    record.rescue_date,
+    record.dispatched_at,
+    record.admission_date,
+    record.intake_date,
+    record.exam_date,
+    record.treatment_date,
+    record.administered_at,
     record.submitted_at,
     record.requested_at,
     record.recorded_at,
     record.adoption_date,
-    record.transaction_date,
-    record.donation_date,
+    record.completed_at,
     record.start_date,
-    record.updated_at
+    record.start_at,
+    record.due_date,
+    record.updated_at,
+    record.time
   );
   if (!raw) return null;
   const d = new Date(String(raw));
@@ -80,7 +147,16 @@ export function buildMonthlyTrend(
     const key = `${d.getFullYear()}-${d.getMonth()}`;
     let amount = 1;
     if (valueKey) {
-      const v = firstDefined(record[valueKey], record.amount, record.total_amount, record.value, record.price);
+      const v = firstDefined(
+        record[valueKey],
+        record.amount,
+        record.total_amount,
+        record.donation_amount,
+        record.price,
+        record.value,
+        record.credit,
+        record.net_amount
+      );
       const strVal = String(v ?? "").replace(/[^0-9.]/g, "");
       amount = toNumber(strVal);
     }
@@ -112,6 +188,10 @@ const PALETTE = [
   "#475569",
   "#94A3B8",
   "#64748B",
+  "#6366F1",
+  "#EC4899",
+  "#06B6D4",
+  "#8B5CF6",
 ];
 
 const toDistribution = (
@@ -129,11 +209,25 @@ export function buildStatusDistribution(
 ): DistributionPoint[] {
   const counts = new Map<string, number>();
   records.forEach((record) => {
-    const raw = firstDefined(record[statusKey], record.condition, record.health_status);
+    const raw = firstDefined(
+      record[statusKey],
+      record.status,
+      record.health_status,
+      record.condition,
+      record.triage_diagnosis,
+      record.diagnosis,
+      record.stock_status,
+      record.categoryName,
+      record.category,
+      record.type
+    );
     if (raw === null) return;
     const label = String(raw).trim();
-    if (!label) return;
-    counts.set(label, (counts.get(label) || 0) + 1);
+    if (!label || label === "-") return;
+    const formatted = label
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (l) => l.toUpperCase());
+    counts.set(formatted, (counts.get(formatted) || 0) + 1);
   });
   return toDistribution(counts);
 }

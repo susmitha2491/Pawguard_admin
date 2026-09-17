@@ -20,7 +20,6 @@ import QuickActions from "../../../components/dashboard/QuickActions";
 import SystemAlerts from "../../../components/dashboard/SystemAlerts";
 import DashboardNotificationsPanel from "../../../components/dashboard/DashboardNotificationsPanel";
 import RecentActivitiesPanel from "../../../components/dashboard/RecentActivitiesPanel";
-import ShelterOccupancyTable from "../../../components/dashboard/ShelterOccupancyTable";
 import DashboardNavigationCards from "../../../components/dashboard/DashboardNavigationCards";
 import { getCurrentUser, getCurrentUserRole, getRoleTitle } from "../../../utils/roleUtils";
 import { formatDateTime } from "../../../utils/dateUtils";
@@ -100,7 +99,6 @@ const SuperAdminDashboard = () => {
   const {
     summary,
     users,
-    dogs,
     shelters,
     rescues,
     adoptions,
@@ -247,7 +245,7 @@ const SuperAdminDashboard = () => {
   ];
 
   return (
-    <div>
+    <div style={{ width: "100%", minWidth: 0, boxSizing: "border-box" }}>
       <div
         style={{
           marginBottom: "24px",
@@ -380,7 +378,7 @@ const SuperAdminDashboard = () => {
         />
       </div>
 
-      <div style={{ marginBottom: "28px" }}>
+      <div style={{ marginBottom: "28px", width: "100%", minWidth: 0 }}>
         <DashboardSectionHeader
           title="Analytics"
           subtitle="Live operational insights across the platform"
@@ -395,12 +393,9 @@ const SuperAdminDashboard = () => {
             medical={medical}
             shelters={shelters}
             users={users}
+            loading={loading}
           />
         </Suspense>
-      </div>
-
-      <div style={{ marginBottom: "28px" }}>
-        <ShelterOccupancyTable shelters={shelters} dogs={dogs} loading={loading} />
       </div>
 
       <div style={{ marginBottom: "28px" }}>
