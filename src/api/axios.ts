@@ -2,20 +2,17 @@ import axios from "axios";
 import { notifyAuthChanged } from "../utils/dataSync";
 import { clearAuthData, isSessionExpired, getStoredUser, getAccessToken } from "../utils/authStorage";
 
-// Base API configuration: use relative /api/v1 in Vite dev mode (proxied to backend), or environment-configured URL
+// Base API configuration: use environment-configured VITE_API_BASE_URL or relative /api/v1 default
 const getBaseUrl = (): string => {
   const envApiUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;
-  if (import.meta.env.DEV) {
-    return "/api/v1";
-  }
-  if (envApiUrl && envApiUrl.trim() !== "" && envApiUrl.trim() !== "/api/v1") {
+  if (envApiUrl && envApiUrl.trim() !== "") {
     const trimmed = envApiUrl.trim();
     if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
       return trimmed.endsWith("/api/v1") ? trimmed : `${trimmed.replace(/\/+$/, "")}/api/v1`;
     }
     return trimmed;
   }
-  return "https://pawguard-backend-mqri.onrender.com/api/v1";
+  return "/api/v1";
 };
 
 const API_BASE_URL = getBaseUrl();

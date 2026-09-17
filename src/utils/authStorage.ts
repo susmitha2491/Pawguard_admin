@@ -230,13 +230,19 @@ export const setRememberedEmail = (email: string): void => {
   }
 };
 
+let memoryAccessToken: string | null = null;
+
 export const getAccessToken = (): string | null => {
-  let raw: string | null =
-    read(AUTH_STORAGE_KEYS.accessToken) ||
-    read("token") ||
-    read("accessToken") ||
-    read("access_token") ||
-    read("auth_token");
+  if (memoryAccessToken) return memoryAccessToken;
+  
+  let raw: string | null = null;
+  try {
+    raw = sessionStorage.getItem(AUTH_STORAGE_KEYS.accessToken) ||
+          sessionStorage.getItem("access_token") ||
+          sessionStorage.getItem("auth_token");
+  } catch {
+    /* storage unavailable */
+  }
 
   if (!raw) {
     const user = getStoredUser<Record<string, unknown>>();
@@ -250,11 +256,14 @@ export const getAccessToken = (): string | null => {
   if (!raw) return null;
 
   const clean = raw.trim().replace(/^["']|["']$/g, "").trim();
-  return clean || null;
+  memoryAccessToken = clean || null;
+  return memoryAccessToken;
 };
 
 export const getRefreshToken = (): string | null => {
-  return read(AUTH_STORAGE_KEYS.refreshToken) || read("refresh_token") || read("refreshToken");
+  // Refresh token is handled exclusively via secure HttpOnly cookie (pg_refresh_token).
+  // Raw refresh tokens are never persisted in localStorage or sessionStorage.
+  return null;
 };
 
 export interface AuthData {
@@ -265,6 +274,7 @@ export interface AuthData {
 
 /**
  * Persist user session metadata required for UI role context.
+ * Access token is scoped to sessionStorage/in-memory. Refresh token is kept in HttpOnly cookie.
  */
 export const setAuthData = (data: AuthData, rememberMe: boolean, isInitialLogin = true): void => {
   setRememberMe(rememberMe);
@@ -273,22 +283,39 @@ export const setAuthData = (data: AuthData, rememberMe: boolean, isInitialLogin 
     write(AUTH_STORAGE_KEYS.user, JSON.stringify(data.user));
   }
   if (data.access_token) {
-    write(AUTH_STORAGE_KEYS.accessToken, data.access_token);
+    memoryAccessToken = data.access_token.trim();
+    try {
+      sessionStorage.setItem(AUTH_STORAGE_KEYS.accessToken, memoryAccessToken);
+    } catch {
+      /* storage unavailable */
+    }
   }
-  if (data.refresh_token) {
-    write(AUTH_STORAGE_KEYS.refreshToken, data.refresh_token);
+  // Explicitly purge any legacy stored refresh tokens to enforce HttpOnly cookie security
+  try {
+    localStorage.removeItem(AUTH_STORAGE_KEYS.refreshToken);
+    localStorage.removeItem("refresh_token");
+    sessionStorage.removeItem(AUTH_STORAGE_KEYS.refreshToken);
+    sessionStorage.removeItem("refresh_token");
+  } catch {
+    /* ignore storage errors */
   }
+
   if (isInitialLogin || !getLastActivity()) {
     updateLastActivity(true);
   }
 };
 
-/** Remove session user metadata from BOTH storages (leaves remember-email preference). */
+/** Remove session user metadata and tokens from browser storage. */
 export const clearAuthData = (broadcast = true): void => {
+  memoryAccessToken = null;
   remove(AUTH_STORAGE_KEYS.user);
   remove(AUTH_STORAGE_KEYS.lastActivity);
   remove(AUTH_STORAGE_KEYS.accessToken);
   remove(AUTH_STORAGE_KEYS.refreshToken);
+  remove("access_token");
+  remove("refresh_token");
+  remove("auth_token");
+  remove("token");
   if (broadcast) {
     broadcastSessionEvent({ type: "LOGOUT", reason: "session_cleared" });
   }

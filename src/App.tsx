@@ -1,75 +1,79 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-
-import Login from "./pages/auth/Login";
-import ResetPassword from "./pages/auth/ResetPassword";
-import Unauthorized from "./pages/auth/Unauthorized";
-import PublicDogProfile from "./pages/public/PublicDogProfile";
-import Dashboard from "./pages/dashboard/Dashboard";
-import Users from "./pages/users/Users";
-import Pets from "./pages/pets/Pets";
-import Shelters from "./pages/shelters/Shelters";
-import ShelterDogs from "./pages/shelters/ShelterDogs";
-import Adoptions from "./pages/adoptions/Adoptions";
-import Reports from "./pages/reports/Reports";
-import MedicalRecords from "./pages/medical/MedicalRecords";
-import VaccinationReminders from "./pages/medical/VaccinationReminders";
-
-import VetAppointments from "./pages/medical/VetAppointments";
-
-import Inventory from "./pages/inventory/Inventory";
-import Finance from "./pages/finance/Finance";
-import AuditLogs from "./pages/audit/AuditLogs";
-import Certificates from "./pages/certificates/Certificates";
-import RolesPermissions from "./pages/permissions/RolesPermissions";
-import SystemSettings from "./pages/settings/SystemSettings";
-
-import RescueManagement from "./pages/rescues/RescueManagement";
-import RescueRequests from "./pages/rescues/RescueRequests";
-import RescueDispatch from "./pages/rescues/RescueDispatch";
-import FosterManagement from "./pages/fosters/FosterManagement";
-import VolunteerManagement from "./pages/volunteers/VolunteerManagement";
-import LostAndFound from "./pages/lostfound/LostAndFound";
-import VehicleManagement from "./pages/vehicles/VehicleManagement";
-import Notifications from "./pages/notifications/Notifications";
-import NotFoundFallback from "./pages/common/NotFoundFallback";
-
-import CmsLayout from "./pages/cms/CmsLayout";
-import CmsHomeView from "./pages/cms/CmsHomeView";
-import CmsPagesView from "./pages/cms/CmsPagesView";
-import CmsAboutView from "./pages/cms/CmsAboutView";
-import CmsSuccessStoriesView from "./pages/cms/CmsSuccessStoriesView";
-import CmsArticlesView from "./pages/cms/CmsArticlesView";
-import CmsFaqView from "./pages/cms/CmsFaqView";
-import CmsContactView from "./pages/cms/CmsContactView";
-import CmsContactInquiriesView from "./pages/cms/CmsContactInquiriesView";
-import CmsLegalView from "./pages/cms/CmsLegalView";
-import CmsAlertsView from "./pages/cms/CmsAlertsView";
-
-import SuperAdminDashboard from "./pages/dashboard/roles/SuperAdminDashboard";
-import RescueCentreAdminDashboard from "./pages/dashboard/roles/RescueCentreAdminDashboard";
-import RescueCoordinatorDashboard from "./pages/dashboard/roles/RescueCoordinatorDashboard";
-import RescueAgentDashboard from "./pages/dashboard/roles/RescueAgentDashboard";
-import VeterinarianDashboard from "./pages/dashboard/roles/VeterinarianDashboard";
-import ShelterManagerDashboard from "./pages/dashboard/roles/ShelterManagerDashboard";
-import AdoptionCoordinatorDashboard from "./pages/dashboard/roles/AdoptionCoordinatorDashboard";
-import FosterCoordinatorDashboard from "./pages/dashboard/roles/FosterCoordinatorDashboard";
-import VolunteerCoordinatorDashboard from "./pages/dashboard/roles/VolunteerCoordinatorDashboard";
-import VolunteerDashboard from "./pages/dashboard/roles/VolunteerDashboard";
-import InventoryManagerDashboard from "./pages/dashboard/roles/InventoryManagerDashboard";
-import FinanceUserDashboard from "./pages/dashboard/roles/FinanceUserDashboard";
-import FosterFamilyDashboard from "./pages/dashboard/roles/FosterFamilyDashboard";
-import DonorDashboard from "./pages/dashboard/roles/DonorDashboard";
-import GeneralPublicDashboard from "./pages/dashboard/roles/GeneralPublicDashboard";
 
 import AdminLayout from "./layouts/AdminLayout";
 import ProtectedRoute from "./components/layout/ProtectedRoute/ProtectedRoute";
 import ScrollToTop from "./components/common/ScrollToTop";
+import Loader from "./components/common/Loader";
+
+// Lazy-loaded Page Route Components for Bundle Code-Splitting
+const Login = lazy(() => import("./pages/auth/Login"));
+const ResetPassword = lazy(() => import("./pages/auth/ResetPassword"));
+const Unauthorized = lazy(() => import("./pages/auth/Unauthorized"));
+const PublicDogProfile = lazy(() => import("./pages/public/PublicDogProfile"));
+const Dashboard = lazy(() => import("./pages/dashboard/Dashboard"));
+const Users = lazy(() => import("./pages/users/Users"));
+const Pets = lazy(() => import("./pages/pets/Pets"));
+const Shelters = lazy(() => import("./pages/shelters/Shelters"));
+const ShelterDogs = lazy(() => import("./pages/shelters/ShelterDogs"));
+const Adoptions = lazy(() => import("./pages/adoptions/Adoptions"));
+const Reports = lazy(() => import("./pages/reports/Reports"));
+const MedicalRecords = lazy(() => import("./pages/medical/MedicalRecords"));
+const VaccinationReminders = lazy(() => import("./pages/medical/VaccinationReminders"));
+
+const VetAppointments = lazy(() => import("./pages/medical/VetAppointments"));
+
+const Inventory = lazy(() => import("./pages/inventory/Inventory"));
+const Finance = lazy(() => import("./pages/finance/Finance"));
+const AuditLogs = lazy(() => import("./pages/audit/AuditLogs"));
+const Certificates = lazy(() => import("./pages/certificates/Certificates"));
+const RolesPermissions = lazy(() => import("./pages/permissions/RolesPermissions"));
+const SystemSettings = lazy(() => import("./pages/settings/SystemSettings"));
+
+const RescueManagement = lazy(() => import("./pages/rescues/RescueManagement"));
+const RescueRequests = lazy(() => import("./pages/rescues/RescueRequests"));
+const RescueDispatch = lazy(() => import("./pages/rescues/RescueDispatch"));
+const FosterManagement = lazy(() => import("./pages/fosters/FosterManagement"));
+const VolunteerManagement = lazy(() => import("./pages/volunteers/VolunteerManagement"));
+const LostAndFound = lazy(() => import("./pages/lostfound/LostAndFound"));
+const VehicleManagement = lazy(() => import("./pages/vehicles/VehicleManagement"));
+const Notifications = lazy(() => import("./pages/notifications/Notifications"));
+const NotFoundFallback = lazy(() => import("./pages/common/NotFoundFallback"));
+
+const CmsLayout = lazy(() => import("./pages/cms/CmsLayout"));
+const CmsHomeView = lazy(() => import("./pages/cms/CmsHomeView"));
+const CmsPagesView = lazy(() => import("./pages/cms/CmsPagesView"));
+const CmsAboutView = lazy(() => import("./pages/cms/CmsAboutView"));
+const CmsSuccessStoriesView = lazy(() => import("./pages/cms/CmsSuccessStoriesView"));
+const CmsArticlesView = lazy(() => import("./pages/cms/CmsArticlesView"));
+const CmsFaqView = lazy(() => import("./pages/cms/CmsFaqView"));
+const CmsContactView = lazy(() => import("./pages/cms/CmsContactView"));
+const CmsContactInquiriesView = lazy(() => import("./pages/cms/CmsContactInquiriesView"));
+const CmsLegalView = lazy(() => import("./pages/cms/CmsLegalView"));
+const CmsAlertsView = lazy(() => import("./pages/cms/CmsAlertsView"));
+
+const SuperAdminDashboard = lazy(() => import("./pages/dashboard/roles/SuperAdminDashboard"));
+const RescueCentreAdminDashboard = lazy(() => import("./pages/dashboard/roles/RescueCentreAdminDashboard"));
+const RescueCoordinatorDashboard = lazy(() => import("./pages/dashboard/roles/RescueCoordinatorDashboard"));
+const RescueAgentDashboard = lazy(() => import("./pages/dashboard/roles/RescueAgentDashboard"));
+const VeterinarianDashboard = lazy(() => import("./pages/dashboard/roles/VeterinarianDashboard"));
+const ShelterManagerDashboard = lazy(() => import("./pages/dashboard/roles/ShelterManagerDashboard"));
+const AdoptionCoordinatorDashboard = lazy(() => import("./pages/dashboard/roles/AdoptionCoordinatorDashboard"));
+const FosterCoordinatorDashboard = lazy(() => import("./pages/dashboard/roles/FosterCoordinatorDashboard"));
+const VolunteerCoordinatorDashboard = lazy(() => import("./pages/dashboard/roles/VolunteerCoordinatorDashboard"));
+const VolunteerDashboard = lazy(() => import("./pages/dashboard/roles/VolunteerDashboard"));
+const InventoryManagerDashboard = lazy(() => import("./pages/dashboard/roles/InventoryManagerDashboard"));
+const FinanceUserDashboard = lazy(() => import("./pages/dashboard/roles/FinanceUserDashboard"));
+const FosterFamilyDashboard = lazy(() => import("./pages/dashboard/roles/FosterFamilyDashboard"));
+const DonorDashboard = lazy(() => import("./pages/dashboard/roles/DonorDashboard"));
+const GeneralPublicDashboard = lazy(() => import("./pages/dashboard/roles/GeneralPublicDashboard"));
 
 function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
-      <Routes>
+      <Suspense fallback={<Loader />}>
+        <Routes>
         {/* Public Login */}
         <Route path="/" element={<Login />} />
 
@@ -472,6 +476,7 @@ function App() {
           </Route>
         </Route>
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }
