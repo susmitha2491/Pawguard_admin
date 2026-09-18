@@ -36,24 +36,21 @@ export const useInactivityTimeout = (): UseInactivityTimeoutResult => {
   const isLoggingOutRef = useRef<boolean>(false);
 
   const performLogout = useCallback(
-    async (reasonMessage?: string) => {
+    async (reasonMessage = "Your session has expired due to inactivity. Please sign in again.") => {
       if (isLoggingOutRef.current) return;
       isLoggingOutRef.current = true;
 
       try {
         if (typeof window !== "undefined") {
           try {
-            sessionStorage.setItem(
-              "session_expired_message",
-              reasonMessage || "Your session has expired due to inactivity. Please sign in again."
-            );
+            sessionStorage.setItem("session_expired_message", reasonMessage);
           } catch {
             /* ignore storage errors */
           }
         }
-        await authService.logout();
+        await authService.logout("inactivity");
       } catch {
-        clearAuthData(true);
+        clearAuthData(true, "inactivity");
         notifyAuthChanged();
       } finally {
         setIsWarningOpen(false);
@@ -68,9 +65,16 @@ export const useInactivityTimeout = (): UseInactivityTimeoutResult => {
     setIsWarningOpen(false);
   }, []);
 
-  const logoutNow = useCallback(() => {
-    void performLogout("You have signed out.");
-  }, [performLogout]);
+  const logoutNow = useCallback(async () => {
+    setIsWarningOpen(false);
+    try {
+      sessionStorage.removeItem("session_expired_message");
+    } catch {
+      /* ignore */
+    }
+    await authService.logout("manual");
+    navigate("/", { replace: true });
+  }, [navigate]);
 
   // Route navigation is meaningful user activity
   useEffect(() => {
@@ -121,9 +125,19 @@ export const useInactivityTimeout = (): UseInactivityTimeoutResult => {
           if (e.data.type === "ACTIVITY") {
             setIsWarningOpen(false);
           } else if (e.data.type === "LOGOUT") {
-            clearAuthData(false);
+            const reason = e.data.reason;
+            clearAuthData(false, reason);
             notifyAuthChanged();
-            navigate("/?expired=true", { replace: true });
+            if (reason === "inactivity" || reason === "unauthorized") {
+              navigate("/?expired=true", { replace: true });
+            } else {
+              try {
+                sessionStorage.removeItem("session_expired_message");
+              } catch {
+                /* ignore */
+              }
+              navigate("/", { replace: true });
+            }
           }
         };
       } catch {
@@ -136,9 +150,21 @@ export const useInactivityTimeout = (): UseInactivityTimeoutResult => {
       if (e.key === "last_activity") {
         setIsWarningOpen(false);
       } else if (e.key === "user" && !e.newValue) {
-        clearAuthData(false);
+        clearAuthData(false, "manual");
         notifyAuthChanged();
-        navigate("/?expired=true", { replace: true });
+        let hasExpiredMsg = false;
+        try {
+          if (sessionStorage.getItem("session_expired_message")) {
+            hasExpiredMsg = true;
+          }
+        } catch {
+          // ignore
+        }
+        if (hasExpiredMsg) {
+          navigate("/?expired=true", { replace: true });
+        } else {
+          navigate("/", { replace: true });
+        }
       }
     };
     window.addEventListener("storage", handleStorageChange);

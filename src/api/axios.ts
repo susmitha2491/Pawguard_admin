@@ -48,13 +48,13 @@ api.interceptors.request.use(
 
     const isAuthEndpoint =
       typeof config.url === "string" &&
-      (config.url.includes("/auth/login") || config.url.includes("/auth/register"));
+      (config.url.includes("/auth/login") || config.url.includes("/auth/register") || config.url.includes("/auth/logout"));
 
     if (!isAuthEndpoint) {
       const user = getStoredUser();
       if (user) {
         if (isSessionExpired()) {
-          clearAuthData();
+          clearAuthData(true, "inactivity");
           notifyAuthChanged();
           if (typeof window !== "undefined") {
             try {
@@ -89,10 +89,11 @@ api.interceptors.response.use(
       const isAuthEndpoint =
         requestUrl.includes("/auth/login") ||
         requestUrl.includes("/auth/register") ||
+        requestUrl.includes("/auth/logout") ||
         requestUrl.includes("/auth/password/reset");
 
       if (!isAuthEndpoint) {
-        clearAuthData();
+        clearAuthData(true, "unauthorized");
         notifyAuthChanged();
 
         if (!isRedirectingToLogin) {

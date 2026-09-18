@@ -351,10 +351,6 @@ const CmsHomeView: React.FC = () => {
               {activePage?.status?.toUpperCase() || "PUBLISHED"}
             </span>
           </div>
-          <span style={{ fontSize: "12.5px", color: "#64748B" }}>
-            Backend Slug: <code>home</code> | API Endpoint:{" "}
-            <code>/portal/admin/cms/pages/home</code>
-          </span>
         </div>
 
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
@@ -598,8 +594,7 @@ const CmsHomeView: React.FC = () => {
                     {section.section_name || section.section_key}
                   </h4>
                   <span style={{ fontSize: "11.5px", color: "#64748B" }}>
-                    Section Key: <code>{section.section_key}</code> | Display Order:{" "}
-                    {section.display_order}
+                    Display Order: {section.display_order}
                   </span>
                 </div>
                 <span

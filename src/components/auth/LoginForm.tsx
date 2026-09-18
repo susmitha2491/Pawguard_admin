@@ -39,7 +39,18 @@ const LoginForm = () => {
     if (msg) {
       setErrorMsg(msg);
     }
-  }, []);
+    // Consume and remove the expired query parameter so refreshing does not repeatedly display the expiration banner
+    if (typeof window !== "undefined" && window.location.search.includes("expired=")) {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("expired");
+        const cleanUrl = url.pathname + (url.search ? url.search : "") + url.hash;
+        window.history.replaceState({}, document.title, cleanUrl || "/");
+      } catch {
+        navigate("/", { replace: true });
+      }
+    }
+  }, [navigate]);
 
   const resolveUserObject = (payload: unknown): any => {
     if (!payload || typeof payload !== "object") return null;

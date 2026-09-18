@@ -23,7 +23,7 @@ export interface PasswordPolicyPayload {
   max_login_attempts?: number;
   lockout_duration_minutes?: number;
   is_active?: boolean;
-  session_timeout_minutes?: number;
+  session_timeout_minutes?: number | string;
   totp_mfa_required_for_admins?: boolean;
   [key: string]: unknown;
 }
@@ -143,6 +143,10 @@ export const settingsService = {
     if (payload.max_login_attempts !== undefined) cleanPayload.max_login_attempts = Number(payload.max_login_attempts);
     if (payload.lockout_duration_minutes !== undefined) cleanPayload.lockout_duration_minutes = Number(payload.lockout_duration_minutes);
     if (payload.is_active !== undefined) cleanPayload.is_active = Boolean(payload.is_active);
+    if (payload.session_timeout_minutes !== undefined && payload.session_timeout_minutes !== "") {
+      const parsedTimeout = Number(payload.session_timeout_minutes);
+      if (!isNaN(parsedTimeout)) cleanPayload.session_timeout_minutes = parsedTimeout;
+    }
 
     const response = await api.put("/settings/password-policy", cleanPayload);
     await publishActionEvent({

@@ -99,11 +99,43 @@ const SystemSettings: React.FC = () => {
         errors.push(`General Config: ${extractErrorMessage(genRes.reason, "Failed to load general settings")}`);
       }
 
+      // Extract persisted session timeout with priority: sysRes key-value > secRes field > authStorage > default 30
+      let sessionTimeout = getSessionTimeoutMinutes();
+
+      if (sysRes.status === "fulfilled" && sysRes.value) {
+        const items = Array.isArray(sysRes.value.data)
+          ? sysRes.value.data
+          : Array.isArray(sysRes.value)
+          ? sysRes.value
+          : [];
+        const timeoutSetting = items.find((s: { key?: string; value?: string }) => s.key === "session_timeout_minutes");
+        if (timeoutSetting && timeoutSetting.value) {
+          const parsed = parseInt(timeoutSetting.value, 10);
+          if (!isNaN(parsed) && parsed >= 5 && parsed <= 120) {
+            sessionTimeout = parsed;
+          }
+        }
+      } else if (secRes.status === "fulfilled" && secRes.value) {
+        const data = secRes.value.data || secRes.value;
+        if (data && typeof data === "object" && data.session_timeout_minutes !== undefined && data.session_timeout_minutes !== null) {
+          const parsed = Number(data.session_timeout_minutes);
+          if (!isNaN(parsed) && parsed >= 5 && parsed <= 120) {
+            sessionTimeout = parsed;
+          }
+        }
+      }
+
+      setSessionTimeoutMinutes(sessionTimeout);
+
       // Security Policy
       if (secRes.status === "fulfilled" && secRes.value) {
         const data = secRes.value.data || secRes.value;
         setSecurityForm((prev) => {
-          const updated = { ...prev, ...data };
+          const updated: PasswordPolicyPayload = {
+            ...prev,
+            ...data,
+            session_timeout_minutes: sessionTimeout,
+          };
           if (data.require_special !== undefined && data.require_special_char === undefined) {
             updated.require_special_char = Boolean(data.require_special);
           }
@@ -116,32 +148,14 @@ const SystemSettings: React.FC = () => {
           if (data.require_numbers !== undefined && data.require_digit === undefined) {
             updated.require_digit = Boolean(data.require_numbers);
           }
-          if (data.session_timeout_minutes !== undefined && Number(data.session_timeout_minutes) > 0) {
-            const timeout = Number(data.session_timeout_minutes);
-            updated.session_timeout_minutes = timeout;
-            setSessionTimeoutMinutes(timeout);
+          if (data.totp_mfa_required_for_admins !== undefined) {
+            updated.totp_mfa_required_for_admins = Boolean(data.totp_mfa_required_for_admins);
           }
           return updated;
         });
       } else if (secRes.status === "rejected") {
         errors.push(`Security Policy: ${extractErrorMessage(secRes.reason, "Failed to load security policy")}`);
-      }
-
-      // Check system settings key-value store for persisted session timeout
-      if (sysRes.status === "fulfilled" && sysRes.value) {
-        const items = Array.isArray(sysRes.value.data)
-          ? sysRes.value.data
-          : Array.isArray(sysRes.value)
-          ? sysRes.value
-          : [];
-        const timeoutSetting = items.find((s: { key?: string; value?: string }) => s.key === "session_timeout_minutes");
-        if (timeoutSetting && timeoutSetting.value) {
-          const parsed = parseInt(timeoutSetting.value, 10);
-          if (!isNaN(parsed) && parsed >= 5 && parsed <= 120) {
-            setSecurityForm((prev) => ({ ...prev, session_timeout_minutes: parsed }));
-            setSessionTimeoutMinutes(parsed);
-          }
-        }
+        setSecurityForm((prev) => ({ ...prev, session_timeout_minutes: sessionTimeout }));
       }
 
       // Email Settings
@@ -197,7 +211,8 @@ const SystemSettings: React.FC = () => {
       setSaving(true);
       setBackendError(null);
 
-      const rawTimeout = Number(securityForm.session_timeout_minutes);
+      const timeoutInput = securityForm.session_timeout_minutes;
+      const rawTimeout = timeoutInput === "" || timeoutInput === undefined || timeoutInput === null ? NaN : Number(timeoutInput);
       if (isNaN(rawTimeout) || rawTimeout < 5 || rawTimeout > 120) {
         addToast("Session Inactivity Auto-Lockout must be between 5 and 120 minutes.", "error");
         setSaving(false);
@@ -217,12 +232,22 @@ const SystemSettings: React.FC = () => {
       setSessionTimeoutMinutes(safeTimeout);
 
       // 3. Persist backend-supported password/security policy fields
+      const policyPayload: PasswordPolicyPayload = {
+        ...securityForm,
+        session_timeout_minutes: safeTimeout,
+      };
+
       let policyWarning: string | null = null;
       try {
-        await settingsService.updatePasswordPolicy(securityForm);
+        await settingsService.updatePasswordPolicy(policyPayload);
       } catch (policyErr: unknown) {
         policyWarning = extractErrorMessage(policyErr, "Failed to update password policy fields");
       }
+
+      setSecurityForm((prev) => ({
+        ...prev,
+        session_timeout_minutes: safeTimeout,
+      }));
 
       if (policyWarning) {
         setBackendError(`Notice: Session Inactivity Auto-Lockout (${safeTimeout} mins) saved & active. Password policy update: ${policyWarning}`);
@@ -578,34 +603,52 @@ const SystemSettings: React.FC = () => {
                 Authentication Governance & Password Security Policy
               </h3>
               <p style={{ margin: 0, fontSize: "13.5px", color: "#64748B", lineHeight: "1.5" }}>
-                Enforce organization-wide credential security rules, session auto-lockouts, and multi-factor authentication requirements as mandated by PRR Section 6.
+                Configure core session governance, password security standards, and multi-factor authentication requirements as specified in the PawGuard Project Requirement Report (PRR Section 6.1).
               </p>
             </div>
 
-            {/* Session Timeout */}
-            <div style={{ background: "#F8FAFC", padding: "18px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
-              <label style={{ display: "block", fontSize: "14px", fontWeight: 700, color: "#0F172A", marginBottom: "4px" }}>
-                Session Inactivity Auto-Lockout (Minutes) *
+            {/* A. Session Security */}
+            <div style={{ background: "#F8FAFC", padding: "20px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+              <div style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", marginBottom: "4px" }}>
+                Session Security
+              </div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "4px" }}>
+                Session Inactivity Timeout (Minutes) *
               </label>
-              <div style={{ fontSize: "12.5px", color: "#64748B", marginBottom: "10px", lineHeight: "1.4" }}>
-                Per PRR Section 6.1.5 (Session Governance), user sessions automatically terminate across all browser tabs when inactive. Allowed bounds: 5 to 120 minutes.
+              <div style={{ fontSize: "12.5px", color: "#64748B", marginBottom: "12px", lineHeight: "1.4" }}>
+                The authenticated session is automatically terminated across all open browser windows after the configured period of user inactivity (Allowed: 5 to 120 minutes).
               </div>
               <input
                 type="number"
                 min={5}
                 max={120}
-                value={securityForm.session_timeout_minutes || 30}
-                onChange={(e) => setSecurityForm({ ...securityForm, session_timeout_minutes: Number(e.target.value) })}
+                value={securityForm.session_timeout_minutes !== undefined && securityForm.session_timeout_minutes !== null ? securityForm.session_timeout_minutes : ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSecurityForm((prev) => ({
+                    ...prev,
+                    session_timeout_minutes: val === "" ? "" : Number(val),
+                  }));
+                }}
                 style={{ width: "160px", padding: "10px 14px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px", fontWeight: 600 }}
                 required
               />
             </div>
 
-            {/* Password Complexity & Length */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px" }}>
+            {/* B. Password Security */}
+            <div style={{ background: "#F8FAFC", padding: "20px", borderRadius: "10px", border: "1px solid #E2E8F0", display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div>
+                <div style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", marginBottom: "4px" }}>
+                  Password Security
+                </div>
+                <div style={{ fontSize: "12.5px", color: "#64748B", lineHeight: "1.4" }}>
+                  Enforce complexity rules for staff and administrative user passwords.
+                </div>
+              </div>
+
               <div>
                 <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
-                  Minimum Password Length
+                  Minimum Password Length *
                 </label>
                 <input
                   type="number"
@@ -613,144 +656,89 @@ const SystemSettings: React.FC = () => {
                   max={32}
                   value={securityForm.min_length || 10}
                   onChange={(e) => setSecurityForm({ ...securityForm, min_length: Number(e.target.value) })}
-                  style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px" }}
+                  style={{ width: "160px", padding: "10px 14px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px", fontWeight: 600 }}
+                  required
                 />
               </div>
 
-              <div>
-                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
-                  Max Failed Login Attempts (Lockout)
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "12px",
+                  background: "#FFFFFF",
+                  padding: "16px",
+                  borderRadius: "8px",
+                  border: "1px solid #E2E8F0",
+                }}
+              >
+                <label style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", fontWeight: 600, color: "#0F172A", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(securityForm.require_uppercase)}
+                    onChange={(e) => setSecurityForm({ ...securityForm, require_uppercase: e.target.checked })}
+                  />
+                  Require Uppercase Letter (A-Z)
                 </label>
-                <input
-                  type="number"
-                  min={3}
-                  max={10}
-                  value={securityForm.max_login_attempts || 5}
-                  onChange={(e) => setSecurityForm({ ...securityForm, max_login_attempts: Number(e.target.value) })}
-                  style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px" }}
-                />
+
+                <label style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", fontWeight: 600, color: "#0F172A", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(securityForm.require_lowercase)}
+                    onChange={(e) => setSecurityForm({ ...securityForm, require_lowercase: e.target.checked })}
+                  />
+                  Require Lowercase Letter (a-z)
+                </label>
+
+                <label style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", fontWeight: 600, color: "#0F172A", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(securityForm.require_digit || securityForm.require_numbers)}
+                    onChange={(e) => setSecurityForm({ ...securityForm, require_digit: e.target.checked, require_numbers: e.target.checked })}
+                  />
+                  Require Numeric Digit (0-9)
+                </label>
+
+                <label style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", fontWeight: 600, color: "#0F172A", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(securityForm.require_special_char || securityForm.require_special)}
+                    onChange={(e) => setSecurityForm({ ...securityForm, require_special_char: e.target.checked, require_special: e.target.checked })}
+                  />
+                  Require Special Character (!@#$...)
+                </label>
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "18px" }}>
-              <div>
-                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
-                  Max Password Age (Days)
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={365}
-                  value={securityForm.max_age_days || 90}
-                  onChange={(e) => setSecurityForm({ ...securityForm, max_age_days: Number(e.target.value) })}
-                  style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px" }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
-                  Password History Retention
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={20}
-                  value={securityForm.password_history_count || 5}
-                  onChange={(e) => setSecurityForm({ ...securityForm, password_history_count: Number(e.target.value) })}
-                  style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px" }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
-                  Account Lockout Duration (Mins)
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={1440}
-                  value={securityForm.lockout_duration_minutes || 15}
-                  onChange={(e) => setSecurityForm({ ...securityForm, lockout_duration_minutes: Number(e.target.value) })}
-                  style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "14px" }}
-                />
-              </div>
-            </div>
-
-            {/* Character Complexity Checkboxes */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "14px",
-                background: "#F8FAFC",
-                padding: "18px",
-                borderRadius: "10px",
-                border: "1px solid #E2E8F0",
-              }}
-            >
-              <label style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", fontWeight: 600, color: "#0F172A", cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={Boolean(securityForm.require_uppercase)}
-                  onChange={(e) => setSecurityForm({ ...securityForm, require_uppercase: e.target.checked })}
-                />
-                Require Uppercase Letter (A-Z)
-              </label>
-
-              <label style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", fontWeight: 600, color: "#0F172A", cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={Boolean(securityForm.require_lowercase)}
-                  onChange={(e) => setSecurityForm({ ...securityForm, require_lowercase: e.target.checked })}
-                />
-                Require Lowercase Letter (a-z)
-              </label>
-
-              <label style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", fontWeight: 600, color: "#0F172A", cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={Boolean(securityForm.require_digit || securityForm.require_numbers)}
-                  onChange={(e) => setSecurityForm({ ...securityForm, require_digit: e.target.checked, require_numbers: e.target.checked })}
-                />
-                Require Numeric Digit (0-9)
-              </label>
-
-              <label style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", fontWeight: 600, color: "#0F172A", cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={Boolean(securityForm.require_special_char || securityForm.require_special)}
-                  onChange={(e) => setSecurityForm({ ...securityForm, require_special_char: e.target.checked, require_special: e.target.checked })}
-                />
-                Require Special Character (!@#$...)
-              </label>
-            </div>
-
-            {/* MFA Policy */}
+            {/* C. Multi-Factor Authentication */}
             <div
               style={{
                 display: "flex",
                 flexDirection: "column",
-                gap: "10px",
+                gap: "8px",
                 background: "#EFF6FF",
-                padding: "18px",
+                padding: "20px",
                 borderRadius: "10px",
                 border: "1px solid #BFDBFE",
               }}
             >
+              <div style={{ fontSize: "14px", fontWeight: 700, color: "#1E3A8A" }}>
+                Multi-Factor Authentication
+              </div>
               <label style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "14px", fontWeight: 700, color: "#1E3A8A", cursor: "pointer" }}>
                 <input
                   type="checkbox"
                   checked={Boolean(securityForm.totp_mfa_required_for_admins)}
                   onChange={(e) => setSecurityForm({ ...securityForm, totp_mfa_required_for_admins: e.target.checked })}
                 />
-                Enforce Multi-Factor Authentication (TOTP) for Privileged Roles
+                Require Multi-Factor Authentication for Administrative Accounts
               </label>
               <p style={{ margin: 0, fontSize: "13px", color: "#3B82F6", lineHeight: "1.4" }}>
-                Mandates 2-Step Verification for Super Administrators, Rescue Centre Admins, and Shelter Managers per PRR Section 6.1.5.
+                Enforces two-step verification for privileged administrative login roles (Super Administrators, Rescue Centre Admins, and Shelter Managers) per PRR Section 6.1.5.
               </p>
             </div>
 
-            {/* PII Masking Governance Notice */}
+            {/* PRR Compliance Notice */}
             <div
               style={{
                 display: "flex",
@@ -766,7 +754,7 @@ const SystemSettings: React.FC = () => {
             >
               <FaInfoCircle size={18} style={{ color: "#3B82F6", marginTop: "2px", flexShrink: 0 }} />
               <div>
-                <strong style={{ color: "#0F172A" }}>PRR Section 6.1.3 Compliance Notice:</strong> Personal Identifying Information (PII) including reporter contact phone numbers, home addresses, and donor financial specifics are masked in general operational data grids, accessible only to authorized coordinators and Super Administrators.
+                <strong style={{ color: "#0F172A" }}>PRR Security Governance:</strong> These controls enforce the security requirements defined in PRR Section 6.1 covering authentication governance, inactive session termination, password standards, and administrative account protection.
               </div>
             </div>
 

@@ -535,9 +535,6 @@ const CmsArticlesView = () => {
                       )}
                       <div>
                         <div>{post.title}</div>
-                        <div style={{ fontSize: "11px", color: "#64748B", fontWeight: 400 }}>
-                          Slug: <code>{post.slug}</code>
-                        </div>
                       </div>
                     </div>
                   </td>

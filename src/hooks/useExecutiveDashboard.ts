@@ -161,8 +161,8 @@ export function useExecutiveDashboard() {
       donationsService.getDonationSummary().catch(() => null),
       dashboardService.getAuditLogs({ limit: 25 }).catch(() => dashboardService.getRecentActivities(25).catch(() => [])),
       inventoryService.getInventory({ page_size: 500 }).catch(() => []),
-      medicalService.getMedicalRecords().catch(() => []),
-      financeService.getTransactions().catch(() => financeService.getExpenses().catch(() => [])),
+      medicalService.getMedicalRecords().catch(() => ({ data: [] })),
+      financeService.getTransactions().catch(() => []),
     ]);
 
     if (requestId !== requestIdRef.current) return;
@@ -254,14 +254,16 @@ export function useExecutiveDashboard() {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      refresh();
-    }, 0);
+    let mounted = true;
+    refresh();
+
     const unsubscribe = subscribeToDataChange(() => {
-      refresh();
+      if (mounted) {
+        refresh();
+      }
     });
     return () => {
-      clearTimeout(timer);
+      mounted = false;
       unsubscribe();
     };
   }, [refresh]);

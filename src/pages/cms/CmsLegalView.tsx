@@ -307,9 +307,6 @@ const CmsLegalView = () => {
                       <FaFileContract style={{ color: "#2563EB" }} />
                       <div>
                         <div>{doc.title}</div>
-                        <div style={{ fontSize: "11px", color: "#64748B", fontWeight: 400 }}>
-                          Slug: <code>{doc.slug}</code>
-                        </div>
                       </div>
                     </div>
                   </td>

@@ -35,6 +35,7 @@ import { DEFAULT_ROLE_PERMISSIONS } from "../../utils/permissionsCatalog";
 import { usePermissions } from "../../context/PermissionContext";
 import { notifyAuthChanged } from "../../utils/dataSync";
 import { clearAuthData } from "../../utils/authStorage";
+import authService from "../../services/auth/authService";
 import PawGuardLogo from "../common/PawGuardLogo";
 
 interface SidebarProps {
@@ -123,11 +124,22 @@ const Sidebar = ({
 
   const navContainerRef = useRef<HTMLDivElement>(null);
 
-  const handleLogout = (e: React.MouseEvent) => {
+  const handleLogout = async (e: React.MouseEvent) => {
     e.preventDefault();
-    clearAuthData();
-    notifyAuthChanged();
-    navigate("/");
+    try {
+      sessionStorage.removeItem("session_expired_message");
+    } catch {
+      /* ignore */
+    }
+    try {
+      await authService.logout("manual");
+    } catch {
+      // Ignore
+    } finally {
+      clearAuthData(false, "manual");
+      notifyAuthChanged();
+      navigate("/", { replace: true });
+    }
   };
 
   const isPathActive = (menuPath: string): boolean => {

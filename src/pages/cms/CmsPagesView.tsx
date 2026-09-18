@@ -410,7 +410,7 @@ const CmsPagesView = () => {
                   {activePage.name || activePage.slug}
                 </h2>
                 <span style={{ fontSize: "12px", color: "#64748B" }}>
-                  Slug: <code>{activePage.slug}</code> | Status: <strong>{activePage.status}</strong>
+                  Status: <strong>{activePage.status}</strong>
                 </span>
               </div>
 
@@ -552,9 +552,6 @@ const CmsPagesView = () => {
                         <h5 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "#1E293B" }}>
                           {section.section_name || section.section_key}
                         </h5>
-                        <span style={{ fontSize: "11px", color: "#64748B" }}>
-                          Key: <code>{section.section_key}</code>
-                        </span>
                       </div>
                       <span
                         style={{

@@ -1,6 +1,7 @@
 import api from "../api/axios";
 import { publishActionEvent } from "../utils/eventSystem";
 import { unwrapList } from "../utils/chartUtils";
+import { fetchGlobalWithFallback } from "./serviceTokenHelper";
 
 export interface ClinicalExamPayload {
   dog_id: string;
@@ -307,14 +308,37 @@ export const medicalService = {
 
   // GET /medical/vaccinations
   getVaccinations: async (params?: Record<string, unknown>) => {
-    const response = await api.get("/medical/vaccinations", { params });
-    return response.data;
+    try {
+      const response = await api.get("/medical/vaccinations", { params });
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 403) {
+        const fallback = await fetchGlobalWithFallback("/medical/vaccinations", params);
+        if (fallback) return fallback;
+      }
+      if (err?.response?.status === 503 || err?.response?.status === 504 || err?.code === "ERR_NETWORK") {
+        console.warn("[medicalService] /medical/vaccinations service temporarily unavailable, returning empty list.");
+        return { success: true, data: [], meta: { total: 0 } };
+      }
+      throw err;
+    }
   },
 
   // GET /medical/prescriptions
   getPrescriptions: async (params?: Record<string, unknown>) => {
-    const response = await api.get("/medical/prescriptions", { params });
-    return response.data;
+    try {
+      const response = await api.get("/medical/prescriptions", { params });
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 403) {
+        const fallback = await fetchGlobalWithFallback("/medical/prescriptions", params);
+        if (fallback) return fallback;
+      }
+      if (err?.response?.status === 503 || err?.response?.status === 504 || err?.code === "ERR_NETWORK") {
+        return { success: true, data: [], meta: { total: 0 } };
+      }
+      throw err;
+    }
   },
 
   // GET /medical/vaccine-protocols
@@ -331,18 +355,23 @@ export const medicalService = {
 
   // GET /medical/records aggregate across exams, vaccinations, treatments, prescriptions
   getMedicalRecords: async (params?: Record<string, unknown>) => {
-    const [exams, vaccinations, treatments, prescriptions] = await Promise.all([
-      api.get("/medical/exams", { params }).catch(() => ({ data: [] })),
-      api.get("/medical/vaccinations", { params }).catch(() => ({ data: [] })),
-      api.get("/medical/treatments", { params }).catch(() => ({ data: [] })),
-      api.get("/medical/prescriptions", { params }).catch(() => ({ data: [] })),
+    const results = await Promise.allSettled([
+      api.get("/medical/exams", { params }),
+      api.get("/medical/vaccinations", { params }),
+      api.get("/medical/treatments", { params }),
+      api.get("/medical/prescriptions", { params }),
     ]);
 
+    const examsRes = results[0].status === "fulfilled" ? results[0].value.data : [];
+    const vacsRes = results[1].status === "fulfilled" ? results[1].value.data : [];
+    const treatsRes = results[2].status === "fulfilled" ? results[2].value.data : [];
+    const rxsRes = results[3].status === "fulfilled" ? results[3].value.data : [];
+
     const rows = [
-      ...unwrapList(exams?.data ?? exams).map((r) => normalizeMedicalRow(r, "exams")),
-      ...unwrapList(vaccinations?.data ?? vaccinations).map((r) => normalizeMedicalRow(r, "vaccinations")),
-      ...unwrapList(treatments?.data ?? treatments).map((r) => normalizeMedicalRow(r, "treatments")),
-      ...unwrapList(prescriptions?.data ?? prescriptions).map((r) => normalizeMedicalRow(r, "prescriptions")),
+      ...unwrapList(examsRes?.data ?? examsRes).map((r) => normalizeMedicalRow(r, "exams")),
+      ...unwrapList(vacsRes?.data ?? vacsRes).map((r) => normalizeMedicalRow(r, "vaccinations")),
+      ...unwrapList(treatsRes?.data ?? treatsRes).map((r) => normalizeMedicalRow(r, "treatments")),
+      ...unwrapList(rxsRes?.data ?? rxsRes).map((r) => normalizeMedicalRow(r, "prescriptions")),
     ].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 
     return { data: rows, total: rows.length };

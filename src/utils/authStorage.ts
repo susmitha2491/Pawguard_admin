@@ -24,7 +24,7 @@ export const MAX_SESSION_TIMEOUT_MINUTES = 120;
 
 export type SessionSyncMessage =
   | { type: "ACTIVITY"; timestamp: number }
-  | { type: "LOGOUT"; reason?: string }
+  | { type: "LOGOUT"; reason?: "manual" | "inactivity" | "unauthorized" | string }
   | { type: "SETTINGS_UPDATED"; sessionTimeoutMinutes: number };
 
 let sessionChannel: BroadcastChannel | null = null;
@@ -96,7 +96,7 @@ export const getSessionTimeoutMinutes = (): number => {
   const raw = read(AUTH_STORAGE_KEYS.sessionTimeoutMinutes);
   if (!raw) return DEFAULT_SESSION_TIMEOUT_MINUTES;
   const num = parseInt(raw, 10);
-  if (isNaN(num) || num < 1 || num > 1440) return DEFAULT_SESSION_TIMEOUT_MINUTES;
+  if (isNaN(num) || num < MIN_SESSION_TIMEOUT_MINUTES || num > MAX_SESSION_TIMEOUT_MINUTES) return DEFAULT_SESSION_TIMEOUT_MINUTES;
   return num;
 };
 
@@ -104,7 +104,7 @@ export const getSessionTimeoutMinutes = (): number => {
  * Persist configured session inactivity timeout (in minutes) and sync across tabs.
  */
 export const setSessionTimeoutMinutes = (minutes: number): void => {
-  const safe = Math.max(1, Math.min(1440, Math.floor(minutes || DEFAULT_SESSION_TIMEOUT_MINUTES)));
+  const safe = Math.max(MIN_SESSION_TIMEOUT_MINUTES, Math.min(MAX_SESSION_TIMEOUT_MINUTES, Math.floor(minutes || DEFAULT_SESSION_TIMEOUT_MINUTES)));
   write(AUTH_STORAGE_KEYS.sessionTimeoutMinutes, safe.toString());
   broadcastSessionEvent({ type: "SETTINGS_UPDATED", sessionTimeoutMinutes: safe });
 };
@@ -306,7 +306,7 @@ export const setAuthData = (data: AuthData, rememberMe: boolean, isInitialLogin 
 };
 
 /** Remove session user metadata and tokens from browser storage. */
-export const clearAuthData = (broadcast = true): void => {
+export const clearAuthData = (broadcast = true, reason: "manual" | "inactivity" | "unauthorized" | string = "manual"): void => {
   memoryAccessToken = null;
   remove(AUTH_STORAGE_KEYS.user);
   remove(AUTH_STORAGE_KEYS.lastActivity);
@@ -316,7 +316,16 @@ export const clearAuthData = (broadcast = true): void => {
   remove("refresh_token");
   remove("auth_token");
   remove("token");
+
+  if (reason === "manual") {
+    try {
+      sessionStorage.removeItem("session_expired_message");
+    } catch {
+      /* ignore */
+    }
+  }
+
   if (broadcast) {
-    broadcastSessionEvent({ type: "LOGOUT", reason: "session_cleared" });
+    broadcastSessionEvent({ type: "LOGOUT", reason });
   }
 };

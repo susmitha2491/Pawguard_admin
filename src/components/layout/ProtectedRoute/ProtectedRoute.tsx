@@ -42,7 +42,7 @@ const ProtectedRoute = ({ allowedRoles, permission }: ProtectedRouteProps) => {
 
   // Enforce session inactivity timeout
   if (isSessionExpired()) {
-    clearAuthData();
+    clearAuthData(true, "inactivity");
     notifyAuthChanged();
     try {
       sessionStorage.setItem(

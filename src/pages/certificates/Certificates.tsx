@@ -110,6 +110,7 @@ const Certificates = () => {
 
   // Data & Export states
   const [certData, setCertData] = useState<CertificateRecord[]>([]);
+  const [selectedFilter, setSelectedFilter] = useState<"all" | "adoption" | "health">("all");
   const [dogs, setDogs] = useState<any[]>([]);
   const [exams, setExams] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -413,6 +414,24 @@ const Certificates = () => {
   const adoptionCertCount = certData.filter((c) => c.type === "Adoption Clearance" || String(c.type).includes("adoption")).length;
   const verifiedCount = certData.filter((c) => /approved|issued|active|verified/i.test(String(c.status ?? ""))).length;
 
+  const handleStatCardClick = useCallback((filterType: "all" | "adoption" | "health") => {
+    setSelectedFilter(filterType);
+    const registryEl = document.getElementById("issued-certificates-registry");
+    if (registryEl) {
+      registryEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, []);
+
+  const filteredCertData = useMemo(() => {
+    if (selectedFilter === "adoption") {
+      return certData.filter((c) => c.type === "Adoption Clearance" || String(c.type).toLowerCase().includes("adoption"));
+    }
+    if (selectedFilter === "health") {
+      return certData.filter((c) => c.type === "Health Clearance" || String(c.type).toLowerCase().includes("health"));
+    }
+    return certData;
+  }, [certData, selectedFilter]);
+
   const stats = [
     {
       title: "Total Certificates",
@@ -420,6 +439,8 @@ const Certificates = () => {
       trend: `${verifiedCount} Verified Valid`,
       color: "#2563EB",
       icon: <FaCertificate />,
+      onClick: () => handleStatCardClick("all"),
+      selected: selectedFilter === "all",
     },
     ...(canCreateAdoptionCert
       ? [
@@ -429,6 +450,8 @@ const Certificates = () => {
             trend: "Phase 5 Handover",
             color: "#10B981",
             icon: <FaFileContract />,
+            onClick: () => handleStatCardClick("adoption"),
+            selected: selectedFilter === "adoption",
           },
         ]
       : []),
@@ -438,6 +461,8 @@ const Certificates = () => {
       trend: "Ready for Adoption",
       color: "#059669",
       icon: <FaCheckCircle />,
+      onClick: () => handleStatCardClick("health"),
+      selected: selectedFilter === "health",
     },
   ];
 
@@ -696,7 +721,7 @@ const Certificates = () => {
       </div>
 
       {/* Registry Table */}
-      <div className="soft-card" style={{ padding: "20px" }}>
+      <div id="issued-certificates-registry" className="soft-card" style={{ padding: "20px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
           <div>
             <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#0F172A" }}>
@@ -730,10 +755,16 @@ const Certificates = () => {
         ) : (
           <DataTable
             columns={columns}
-            data={certData}
+            data={filteredCertData}
             onRowClick={(row) => setPreviewCert(row)}
             onView={(row) => setPreviewCert(row)}
-            emptyMessage="No certificates issued yet. Issue a Health Clearance Certificate above for a medically assessed dog."
+            emptyMessage={
+              selectedFilter === "adoption"
+                ? "No adoption certificates found."
+                : selectedFilter === "health"
+                ? "No health clearance certificates found."
+                : "No certificates issued yet. Issue a Health Clearance Certificate above for a medically assessed dog."
+            }
           />
         )}
       </div>

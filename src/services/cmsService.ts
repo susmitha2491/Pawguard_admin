@@ -406,7 +406,12 @@ export const getFaqs = async (params?: {
   page?: number;
   page_size?: number;
 }): Promise<PaginatedResult<FaqRecord>> => {
-  const response = await api.get("/portal/admin/faq", { params });
+  const queryParams = {
+    page: params?.page ?? 1,
+    page_size: params?.page_size ?? 100,
+    ...params,
+  };
+  const response = await api.get("/portal/admin/faq", { params: queryParams });
   return unwrapPaginated<FaqRecord>(response.data);
 };
 

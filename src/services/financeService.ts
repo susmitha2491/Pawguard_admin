@@ -81,6 +81,10 @@ export const financeService = {
         const fallback = await fetchGlobalWithFallback("/finance/summary", queryParams);
         if (fallback) return fallback;
       }
+      if (err?.response?.status === 503 || err?.response?.status === 504 || err?.code === "ERR_NETWORK") {
+        console.warn("[financeService] /finance/summary service temporarily unavailable.");
+        return null;
+      }
       throw err;
     }
   },
@@ -94,6 +98,9 @@ export const financeService = {
       if (err?.response?.status === 403) {
         const fallback = await fetchGlobalWithFallback("/finance/pnl", params);
         if (fallback) return fallback;
+      }
+      if (err?.response?.status === 503 || err?.response?.status === 504 || err?.code === "ERR_NETWORK") {
+        return null;
       }
       throw err;
     }
@@ -109,6 +116,10 @@ export const financeService = {
         const fallback = await fetchGlobalWithFallback("/finance/transactions", params);
         if (fallback) return fallback;
       }
+      if (err?.response?.status === 503 || err?.response?.status === 504 || err?.code === "ERR_NETWORK") {
+        console.warn("[financeService] /finance/transactions service temporarily unavailable, returning empty list.");
+        return { success: true, data: [], meta: { total: 0 } };
+      }
       throw err;
     }
   },
@@ -121,8 +132,15 @@ export const financeService = {
 
   // GET /finance/expenses - List Expenses
   getExpenses: async (params?: Record<string, unknown>) => {
-    const response = await api.get("/finance/expenses", { params });
-    return response.data;
+    try {
+      const response = await api.get("/finance/expenses", { params });
+      return response.data;
+    } catch (err: any) {
+      if (err?.response?.status === 503 || err?.response?.status === 504 || err?.code === "ERR_NETWORK") {
+        return { success: true, data: [], meta: { total: 0 } };
+      }
+      throw err;
+    }
   },
 
   // POST /finance/expenses - Create Expense

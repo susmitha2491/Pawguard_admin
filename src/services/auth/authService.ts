@@ -56,13 +56,13 @@ const refreshSession = async () => {
   return response.data;
 };
 
-const logout = async () => {
+const logout = async (reason: "manual" | "inactivity" | "unauthorized" = "manual") => {
   try {
     await axios.post("/auth/logout");
   } catch {
     // Ignore network failures on logout
   } finally {
-    clearAuthData();
+    clearAuthData(true, reason);
     notifyAuthChanged();
   }
 };

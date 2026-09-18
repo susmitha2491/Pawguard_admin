@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { getCurrentUserRole, getDashboardPathForRole, getRoleTitle } from "../../utils/roleUtils";
 import { notifyAuthChanged } from "../../utils/dataSync";
 import { clearAuthData } from "../../utils/authStorage";
+import authService from "../../services/auth/authService";
 import { FaShieldAlt, FaArrowLeft, FaSignOutAlt } from "react-icons/fa";
 
 const Unauthorized = () => {
@@ -14,10 +15,21 @@ const Unauthorized = () => {
     navigate(dashboardPath);
   };
 
-  const handleLogout = () => {
-    clearAuthData();
-    notifyAuthChanged();
-    navigate("/");
+  const handleLogout = async () => {
+    try {
+      sessionStorage.removeItem("session_expired_message");
+    } catch {
+      /* ignore */
+    }
+    try {
+      await authService.logout("manual");
+    } catch {
+      // Ignore
+    } finally {
+      clearAuthData(false, "manual");
+      notifyAuthChanged();
+      navigate("/", { replace: true });
+    }
   };
 
   return (

@@ -333,12 +333,18 @@ const Header = ({
 
   const handleLogout = async () => {
     try {
-      await authService.logout();
+      sessionStorage.removeItem("session_expired_message");
+    } catch {
+      /* ignore */
+    }
+    try {
+      await authService.logout("manual");
     } catch {
       // Ignore network errors on logout
     } finally {
-      clearAuthData();
-      navigate("/");
+      clearAuthData(false, "manual");
+      notifyAuthChanged();
+      navigate("/", { replace: true });
     }
   };
 
